@@ -622,6 +622,39 @@
     return vals.size ? `<div class="chips">${[...vals].map(n => `<button class="chip" data-fill="svc" data-val="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : '';
   }
 
+  // ---------------------------------------------------------------- Internetdienste: passender Knopf
+  const SVC_ACTIONS = ['mail', 'mailget', 'video', 'call', 'game'];
+  /** Welcher Server steckt hinter dem eingetippten Namen bzw. der IP-Adresse? (nur als Hilfe für die Anzeige) */
+  function svcServer(val) {
+    val = (val || '').trim().toLowerCase();
+    if (!val) return null;
+    const byIp = ip => S.net.devices.find(o => o.services && (o.ip || '').trim() === (ip || '').trim());
+    let srv = byIp(val);
+    if (!srv) S.net.devices.forEach(o => o.services && o.services.dns && o.services.dns.on && (o.services.dns.entries || []).forEach(e => {
+      if (!srv && (e.name || '').trim().toLowerCase() === val) srv = byIp(e.ip);
+    }));
+    return srv || null;
+  }
+  /** Knöpfe, die zum Server im Feld passen. */
+  function svcMatches(val) {
+    const srv = svcServer(val);
+    return srv ? SVC_ACTIONS.filter(a => NW.svcOn(srv, NW.ACTIONS[a].svc)) : [];
+  }
+  function svcHintText(val) {
+    const srv = svcServer(val), m = svcMatches(val);
+    if (srv && m.length) return `${esc(srv.name)} bietet das an – tippe auf ${m.map(a => '<b>„' + esc(NW.ACTIONS[a].label) + '“</b>').join(' oder ')}:`;
+    return 'Wähle zuerst einen Server. Dann tippst du auf einen dieser Knöpfe – er schickt die Anfrage los:';
+  }
+  /** Hebt die passenden Knöpfe hervor, sobald ein Server im Feld steht. */
+  function markSvcButtons() {
+    const inp = $('svc-target');
+    if (!inp) return;
+    const m = svcMatches(inp.value);
+    insp.querySelectorAll('[data-act="svc"]').forEach(b => b.classList.toggle('primary', m.includes(b.dataset.svc)));
+    const h = $('svc-hint');
+    if (h) h.innerHTML = svcHintText(inp.value);
+  }
+
   // ---------------------------------------------------------------- Sichtbare Funktionen und Abschnitte
   /** Ist diese Funktion in der aktuellen Aufgabe eingeblendet? */
   const has = k => !!(S.feat && S.feat.has(k));
@@ -901,7 +934,8 @@
       if (has('dienste')) h += sec('svc-use', 'Internetdienste nutzen', `<label class="field">Server (Name oder IP-Adresse)
           <input id="svc-target" placeholder="z. B. mail.beispiel.de" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
         ${serverChips()}
-        <div class="svc-btns">${['mail', 'mailget', 'video', 'call', 'game'].map(a => `<button class="btn" data-act="svc" data-svc="${a}">${esc(NW.ACTIONS[a].label)}</button>`).join('')}</div>
+        <p class="svc-ask" id="svc-hint">${svcHintText()}</p>
+        <div class="svc-btns">${SVC_ACTIONS.map(a => `<button class="btn" data-act="svc" data-svc="${a}">${esc(NW.ACTIONS[a].label)}</button>`).join('')}</div>
         <label class="toggle"><input type="checkbox" data-act="tcp-details" ${S.tcp ? 'checked' : ''}> TCP genau zeigen (Verbindungsaufbau und Bestätigungen)</label>`, 'dienste', 'test');
       const bt = NW.btPartners(S.net, d.id);
       if (bt.length) {
@@ -1108,6 +1142,7 @@
 
   insp.addEventListener('input', ev => {
     const inp = ev.target;
+    if (inp.id === 'svc-target') { markSvcButtons(); return; }
     if (!inp.dataset.path || readOnly()) return;
     const d = NW.dev(S.net, S.selected);
     if (!d || d.locked) return;
@@ -1170,7 +1205,13 @@
     if (ev.key !== 'Enter') return;
     if (ev.target.id === 'ping-target') { ev.preventDefault(); doPing(); }
     if (ev.target.id === 'url-target') { ev.preventDefault(); doBrowse(); }
-    if (ev.target.id === 'svc-target') { ev.preventDefault(); doService('mail'); }
+    if (ev.target.id === 'svc-target') {
+      ev.preventDefault();
+      // Eingabetaste: Bietet der Server genau einen passenden Dienst an, wird er benutzt
+      const m = svcMatches(ev.target.value);
+      if (m.length === 1 || (m.length === 2 && m.includes('mail') && m.includes('mailget'))) doService(m[0]);
+      else toast('Tippe auf einen der Knöpfe unter dem Feld, z. B. „Video ansehen“.', 'error');
+    }
   });
 
   insp.addEventListener('click', async ev => {
@@ -1179,6 +1220,7 @@
     if (b.dataset.fill) {
       const target = $({ ping: 'ping-target', url: 'url-target', file: 'file-target', svc: 'svc-target' }[b.dataset.fill]);
       target.value = b.dataset.val;
+      if (b.dataset.fill === 'svc') markSvcButtons();
       return;
     }
     if (b.dataset.act === 'stadt') {

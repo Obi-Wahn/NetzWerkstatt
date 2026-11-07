@@ -443,6 +443,8 @@ table.cmp col.k { width: 26%; }
 .log-entry.tcp .log-label { font-weight: 600; }
 .log-proto.tcp { background: var(--brand-soft); color: var(--brand); }
 .log-proto.udp { background: var(--udp-soft); color: var(--udp); }
+.svc-ask { font-size: .85em; color: var(--muted); margin: 2px 0 6px; }
+.svc-ask b { color: var(--ink); }
 .svc-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
 .svc-btns .btn { padding: 6px 8px; font-size: .88em; }
 .svc-info { font-size: .85em; color: var(--muted); margin: -4px 0 8px 30px; }
