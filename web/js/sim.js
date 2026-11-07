@@ -26,7 +26,7 @@
     server: 'Ein Rechner, der Dienste für andere anbietet (Server im Client-Server-Modell), z. B. Webseiten oder die Namensauflösung (DNS).',
     switch: 'Verbindet mehrere Geräte im selben Netz (LAN). Er leitet Pakete gezielt an das Gerät weiter, für das sie bestimmt sind. Er braucht keine IP-Adresse.',
     ap: 'Der Access Point (Zugangspunkt) bringt Geräte per Funk (WLAN) ins Kabelnetz. Er braucht keine IP-Adresse.',
-    router: 'Verbindet verschiedene Netze miteinander. Jeder Anschluss hat eine eigene IP-Adresse im jeweiligen Netz. Endgeräte tragen ihn als Gateway ein.',
+    router: 'Verbindet verschiedene Netze miteinander, z. B. das Heimnetz mit dem Internet. Er hat drei LAN-Anschlüsse für das Heimnetz (wie ein eingebauter Switch) und einen Internet-Anschluss (WAN). In jedem der beiden Netze hat er eine eigene IP-Adresse. Endgeräte tragen ihn als Gateway ein.',
   };
 
   // ------------------------------------------------------------------ IP-Hilfen
@@ -104,12 +104,16 @@
     const d = { id: newId('d'), type, name: nextName(net, type), x, y };
     const t = TYPES[type];
     if (t.host) { d.ip = ''; d.mask = '255.255.255.0'; d.gw = ''; d.dns = ''; }
-    if (t.host) d.dhcp = false;
+    if (t.host) d.dhcp = true; // wie bei echten Geräten: Adresse automatisch beziehen
     if (t.router) {
-      // Wie bei echten Routern: Jeder Anschluss hat ab Werk eine feste lokale Adresse,
-      // jeweils in einem eigenen, noch freien Netz (192.168.0.1, 192.168.1.1, …)
-      const nets = freeNets(net, 4);
-      d.ports = nets.map(n => ({ ip: n, mask: '255.255.255.0', dhcp: { on: false, from: '', to: '', dns: '' } }));
+      // Wie ein Heimrouter: Anschluss 0 ist der Internet-Anschluss (WAN), die Anschlüsse 1–3
+      // bilden zusammen das Heimnetz (LAN). Die Einstellungen des LAN stehen bei ports[1].
+      // Ab Werk hat das LAN eine feste lokale Adresse in einem noch freien Netz (192.168.0.1, …).
+      const port = ip => ({ ip, mask: '255.255.255.0', dhcp: { on: false, from: '', to: '', dns: '' } });
+      d.ports = [port(''), port(freeNets(net, 1)[0]), port(''), port('')];
+      d.ports[1].dhcp.on = true; // DHCP im Heimnetz ist ab Werk an
+      d.wlan = true;             // eingebautes WLAN (wie ein Access Point)
+      d.modem = true;            // eingebautes Internet-Modem (DSL/Kabel)
     }
     if (t.services) d.services = { web: { on: false, title: 'Willkommen!', text: 'Das ist meine erste Webseite.' }, dns: { on: false, entries: [] } };
     Object.assign(d, extra || {});
@@ -122,7 +126,7 @@
     const all = [];
     for (const d of net.devices) {
       if (TYPES[d.type].host) { const a = ifaceAddr(d, 0); if (a) all.push(a); }
-      if (TYPES[d.type].router) d.ports.forEach((p, i) => { if (d === skipDev && i === skipPort) return; const a = ifaceAddr(d, i); if (a) all.push(a); });
+      if (TYPES[d.type].router) IFACES.forEach(i => { if (d === skipDev && i === iface(skipPort)) return; const a = ifaceAddr(d, i); if (a) all.push(a); });
     }
     return all;
   }
@@ -148,10 +152,53 @@
   function cableCount(net, id) { return linksOf(net, id).filter(l => l.kind === 'kabel').length; }
   function wlanCount(net, id) { return linksOf(net, id).filter(l => l.kind === 'wlan').length; }
 
-  function freeRouterPort(net, r) {
+  // ------------------------------------------------------------------ Router: LAN und WAN
+  const WAN = 0, LAN = 1, IFACES = [WAN, LAN];
+  /** Schnittstelle eines Router-Anschlusses: 0 = Internet (WAN), 1 = Heimnetz (LAN, Anschlüsse 1–3). */
+  function iface(port) { return port >= 1 ? LAN : WAN; }
+  function ifaceName(i) { return i === WAN ? 'Internet-Anschluss (WAN)' : 'Heimnetz (LAN)'; }
+
+  function freePortIn(net, r, which) {
     const used = new Set(linksOf(net, r.id).map(l => portOf(l, r.id)));
-    for (let i = 0; i < r.ports.length; i++) if (!used.has(i)) return i;
+    const cands = which === WAN ? [0] : [1, 2, 3];
+    for (const i of cands) if (!used.has(i)) return i;
     return -1;
+  }
+
+  /** WLAN-Verbindungen zum Router zählen zum Heimnetz (LAN), belegen aber keinen Kabelanschluss. */
+  const WLAN_PORT = 9;
+  /** Kann das Gerät WLAN-Verbindungen annehmen (Access Point oder Router mit WLAN)? */
+  function wlanHub(d) { return d.type === 'ap' || (TYPES[d.type].router && !!d.wlan); }
+
+  /** Freien Anschluss wählen: zu einem anderen Router oder ins Internet → WAN, sonst LAN. */
+  function freeRouterPort(net, r, other) {
+    const wanFirst = other && (TYPES[other.type].router || other.cloud);
+    const order = wanFirst ? [WAN, LAN] : [LAN, WAN];
+    for (const w of order) { const p = freePortIn(net, r, w); if (p >= 0) return p; }
+    return -1;
+  }
+
+  /** Router-WLAN ein/aus. Beim Ausschalten werden die WLAN-Verbindungen getrennt. Liefert die Zahl getrennter Geräte. */
+  function setRouterWlan(net, r, on) {
+    r.wlan = !!on;
+    if (on) return 0;
+    const ls = linksOf(net, r.id).filter(l => l.kind === 'wlan');
+    net.links = net.links.filter(l => !ls.includes(l));
+    return ls.length;
+  }
+
+  /** Steckt ein Kabel am Router zwischen LAN und WAN um. Liefert {ok, reason}. */
+  function replug(net, linkId, routerId) {
+    const l = net.links.find(x => x.id === linkId);
+    const r = dev(net, routerId);
+    if (!l || !r) return { ok: false, reason: 'Verbindung nicht gefunden.' };
+    if (l.kind !== 'kabel') return { ok: false, reason: 'Nur Kabel können umgesteckt werden.' };
+    const key = l.a === routerId ? 'aPort' : 'bPort';
+    const target = iface(l[key]) === WAN ? LAN : WAN;
+    const p = freePortIn(net, r, target);
+    if (p < 0) return { ok: false, reason: target === WAN ? `Der Internet-Anschluss von ${r.name} ist schon belegt.` : `Alle LAN-Anschlüsse von ${r.name} sind belegt.` };
+    l[key] = p;
+    return { ok: true, iface: target };
   }
 
   /** Prüft, ob zwei Geräte verbunden werden dürfen. Liefert {ok, reason}. */
@@ -172,8 +219,12 @@
     }
     if (kind === 'wlan') {
       let apD, other;
-      if (a.type === 'ap') { apD = a; other = b; } else if (b.type === 'ap') { apD = b; other = a; }
-      if (!apD) return { ok: false, reason: 'Eine WLAN-Verbindung braucht immer einen Access Point.' };
+      if (wlanHub(a)) { apD = a; other = b; } else if (wlanHub(b)) { apD = b; other = a; }
+      if (!apD) {
+        const r = [a, b].find(x => TYPES[x.type].router);
+        if (r) return { ok: false, reason: `Das WLAN von ${r.name} ist ausgeschaltet. Tippe den Router an und schalte es ein.` };
+        return { ok: false, reason: 'Eine WLAN-Verbindung braucht immer einen Access Point oder einen Router mit WLAN.' };
+      }
       const to = TYPES[other.type];
       if (!to.wlan) return { ok: false, reason: `${other.name} hat kein WLAN. Schließe es per Kabel an.` };
       if (wlanCount(net, other.id) >= 1) return { ok: false, reason: `${other.name} ist schon mit einem WLAN verbunden.` };
@@ -188,8 +239,8 @@
     if (!chk.ok) return chk;
     const l = { id: newId('l'), a: aId, b: bId, kind };
     const a = dev(net, aId), b = dev(net, bId);
-    if (TYPES[a.type].router) l.aPort = freeRouterPort(net, a);
-    if (TYPES[b.type].router) l.bPort = freeRouterPort(net, b);
+    if (TYPES[a.type].router) l.aPort = kind === 'wlan' ? WLAN_PORT : freeRouterPort(net, a, b);
+    if (TYPES[b.type].router) l.bPort = kind === 'wlan' ? WLAN_PORT : freeRouterPort(net, b, a);
     net.links.push(l);
     return { ok: true, link: l };
   }
@@ -202,11 +253,11 @@
   function removeLink(net, id) { net.links = net.links.filter(l => l.id !== id); }
 
   // ------------------------------------------------------------------ Schnittstellen
-  /** IP und Präfix einer Schnittstelle (Endgerät: port 0; Router: Anschlussnummer). */
+  /** IP und Präfix einer Schnittstelle (Endgerät: port 0; Router: Anschlussnummer, LAN-Anschlüsse teilen sich eine Adresse). */
   function ifaceAddr(d, port) {
     if (!d) return null;
     if (TYPES[d.type].router) {
-      const p = d.ports[port];
+      const p = d.ports[iface(port)];
       if (!p) return null;
       const ip = parseIP(p.ip), pre = parseMask(p.mask);
       return ip === null || pre === null ? null : { ip, prefix: pre };
@@ -229,7 +280,7 @@
     const seen = new Set([startId]);
     const queue = [];
     for (const l of linksOf(net, startId)) {
-      if (TYPES[start.type].router && portOf(l, startId) !== startPort) continue;
+      if (TYPES[start.type].router && iface(portOf(l, startId)) !== iface(startPort)) continue;
       const other = l.a === startId ? l.b : l.a;
       queue.push({ id: other, port: portOf(l, other), path: [startId, other] });
     }
@@ -244,8 +295,17 @@
           const other = l.a === d.id ? l.b : l.a;
           if (!seen.has(other)) queue.push({ id: other, port: portOf(l, other), path: cur.path.concat(other) });
         }
+      } else if (t.router) {
+        const i = iface(cur.port);
+        out.push({ dev: d, port: i, path: cur.path });
+        // Die LAN-Anschlüsse sind wie ein eingebauter Switch miteinander verbunden
+        if (i === LAN) for (const l of linksOf(net, d.id)) {
+          if (iface(portOf(l, d.id)) !== LAN) continue;
+          const other = l.a === d.id ? l.b : l.a;
+          if (!seen.has(other)) queue.push({ id: other, port: portOf(l, other), path: cur.path.concat(other) });
+        }
       } else {
-        out.push({ dev: d, port: t.router ? cur.port : 0, path: cur.path });
+        out.push({ dev: d, port: 0, path: cur.path });
       }
     }
     return out;
@@ -255,7 +315,7 @@
     const res = [];
     for (const d of net.devices) {
       if (TYPES[d.type].host && parseIP(d.ip) === ip) res.push(d);
-      if (TYPES[d.type].router) d.ports.forEach(p => { if (parseIP(p.ip) === ip) res.push(d); });
+      if (TYPES[d.type].router) IFACES.forEach(i => { if (parseIP(d.ports[i].ip) === ip) res.push(d); });
     }
     return res;
   }
@@ -312,15 +372,15 @@
       if (visitedRouters.has(r.id)) return fail(path, 'Das Paket läuft im Kreis.');
       visitedRouters.add(r.id);
       // Ziel ist ein Anschluss des Routers selbst?
-      if (r.ports.some(p => parseIP(p.ip) === dstIP)) return { ok: true, path, target: r };
-      // Passenden Anschluss suchen (direkt angeschlossene Netze)
-      const used = new Set(linksOf(net, r.id).map(l => portOf(l, r.id)));
+      if (IFACES.some(i => parseIP(r.ports[i].ip) === dstIP)) return { ok: true, path, target: r };
+      // Passenden Anschluss suchen (direkt angeschlossene Netze: LAN oder WAN)
+      const used = new Set(linksOf(net, r.id).map(l => iface(portOf(l, r.id))));
       let outPort = -1;
-      r.ports.forEach((p, i) => {
+      IFACES.forEach(i => {
         const a = ifaceAddr(r, i);
         if (outPort < 0 && a && used.has(i) && i !== routerHit.port && sameNet(a.ip, dstIP, a.prefix)) outPort = i;
       });
-      if (outPort < 0) return fail(path, `Der Router ${r.name} kennt kein Netz, in dem ${ipStr(dstIP)} liegt.`, 'Ein Router kennt die Netze, an die seine Anschlüsse angeschlossen sind. Prüfe die IP-Adressen der Router-Anschlüsse.');
+      if (outPort < 0) return fail(path, `Der Router ${r.name} kennt kein Netz, in dem ${ipStr(dstIP)} liegt.`, 'Ein Router kennt die Netze, an die er angeschlossen ist (Heimnetz und Internet-Anschluss). Prüfe seine IP-Adressen und ob das Kabel im richtigen Anschluss steckt.');
       curId = r.id; curPort = outPort;
     }
     return fail(path, 'Das Paket hat zu viele Stationen passiert und wurde verworfen.');
@@ -468,9 +528,11 @@
     if (!servers.length) {
       const router = eps.find(e => TYPES[e.dev.type].router);
       let hint = 'Ein DHCP-Server (meist im Router) muss im selben Netz eingeschaltet sein.';
-      if (router && !ifaceAddr(router.dev, router.port)) hint = `Der Anschluss ${router.port + 1} von ${router.dev.name} braucht zuerst eine IP-Adresse. Danach kannst du dort den DHCP-Server einschalten.`;
-      else if (router) hint = `Tippe ${router.dev.name} an und schalte bei Anschluss ${router.port + 1} den DHCP-Server ein.`;
-      return res(false, { error: 'Kein DHCP-Server hat geantwortet.', hint });
+      if (router && router.port === WAN) hint = `Das Gerät hängt am Internet-Anschluss (WAN) von ${router.dev.name}. Adressen per DHCP gibt es im Heimnetz: Stecke das Kabel an einen LAN-Anschluss.`;
+      else if (router && !ifaceAddr(router.dev, router.port)) hint = `${router.dev.name} braucht im Heimnetz (LAN) zuerst eine eigene IP-Adresse. Danach kannst du dort den DHCP-Server einschalten.`;
+      else if (router) hint = `Tippe ${router.dev.name} an und schalte im Heimnetz (LAN) den DHCP-Server ein.`;
+      // Wie echte Rechner: ohne DHCP-Server eine Notfall-Adresse (APIPA) aus 169.254.0.0/16 wählen
+      return res(false, { error: 'Kein DHCP-Server hat geantwortet.', hint, apipa: apipaLease(h, eps) });
     }
     const srv = servers[0];
     const r = srv.dev, port = srv.port;
@@ -495,6 +557,27 @@
     steps.push({ kind: 'request', label: 'DHCP-Request', proto: P_REQ + ' · an alle', text: `${h.name} an alle: „Ich nehme die Adresse ${lease.ip} von ${r.name}!"`, paths: bcPaths, path: srv.path, ok: true });
     steps.push({ kind: 'response', label: 'DHCP-Ack', proto: P_RESP, text: `${r.name}: „Bestätigt! IP ${lease.ip}, Maske ${lease.mask}, Gateway ${lease.gw}` + (lease.dns ? `, DNS ${lease.dns}` : '') + '"', path: back, ok: true });
     return res(true, { lease, server: r.id });
+  }
+
+  const APIPA_NET = 0xa9fe0000; // 169.254.0.0
+  function isApipa(ip) { return ip !== null && sameNet(ip, APIPA_NET, 16); }
+
+  /** Notfall-Adresse 169.254.x.y für ein Gerät (gleichbleibend je Gerät, nicht doppelt im Netz). */
+  function apipaLease(h, eps) {
+    const used = new Set();
+    for (const e of eps) { const a = ifaceAddr(e.dev, e.port); if (a) used.add(a.ip); }
+    const own = parseIP(h.ip || '');
+    let ip = isApipa(own) && !used.has(own) ? own : null;
+    if (ip === null) {
+      let hsh = 0;
+      for (const ch of h.id) hsh = (hsh * 31 + ch.charCodeAt(0)) >>> 0;
+      let n = 256 + (hsh % (254 * 256));            // 169.254.1.0 … 169.254.254.255
+      for (let k = 0; ip === null && k < 65000; k++, n = n >= 65279 ? 256 : n + 1) {
+        const c = APIPA_NET + n;
+        if ((c & 255) !== 0 && (c & 255) !== 255 && !used.has(c)) ip = c;
+      }
+    }
+    return { ip: ipStr(ip), mask: '255.255.0.0', gw: '', dns: '' };
   }
 
   /** Übernimmt eine DHCP-Zuteilung in das Gerät. */
@@ -562,7 +645,7 @@
     TYPES, DESCRIPTIONS, parseIP, ipStr, parseMask, sameNet, netStr, ipProblem, isPrivate,
     emptyNetwork, createDevice, dev, linksOf, portOf, canLink, addLink, removeDevice, removeLink,
     ifaceAddr, l2Endpoints, route, roundTrip, ping, browse, parseURL, logEvent, topology, clone, newId,
-    dhcpOf, dhcpRange, dhcp, applyLease, suggest, suggestPortIP,
+    dhcpOf, dhcpRange, dhcp, applyLease, suggest, suggestPortIP, iface, ifaceName, replug, WAN, LAN, wlanHub, setRouterWlan, isApipa,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = NW;
   else root.NW = NW;
