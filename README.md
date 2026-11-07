@@ -74,7 +74,9 @@ Der Raumcode wird bei jedem Start neu ausgewürfelt (außer er wird mit `-raumco
 
 ## Entwicklung
 
-Voraussetzung: [Go](https://go.dev) ab Version 1.22 und für die Tests [Node.js](https://nodejs.org).
+Voraussetzung: [Go](https://go.dev) ab Version 1.24 und für die Tests [Node.js](https://nodejs.org).
+
+Unter Linux lassen sich beide über die Paketverwaltung installieren, z. B. `sudo dnf install golang nodejs` (Fedora) oder `sudo apt install golang-go nodejs` (Debian/Ubuntu). Mit `go version` prüfen, ob die Go-Version neu genug ist.
 
 ```
 go run .                      # Server lokal starten
@@ -82,7 +84,7 @@ node test/simulation.test.js  # Tests für Simulation und Aufgaben
 ./build.sh v0.2.0             # Download-Pakete für Windows und Linux in dist/ erzeugen
 ```
 
-**Neue Version veröffentlichen:** Auf GitHub unter Releases → „Draft a new release“ einen neuen Tag wie `v0.2.0` anlegen und veröffentlichen. GitHub baut die Pakete dann automatisch und hängt sie an das Release an. Auf einem Windows-Rechner genügt zum Bauen auch `go build -o NetzWerkstatt.exe .`
+**Neue Version veröffentlichen:** Auf GitHub unter Releases → „Draft a new release“ einen neuen Tag wie `v0.2.0` anlegen und veröffentlichen. GitHub baut die Pakete dann automatisch und hängt sie an das Release an. Auf einem Windows-Rechner genügt zum Bauen auch `go build -o NetzWerkstatt.exe .`, unter Linux `go build -o netzwerkstatt .`
 
 Aufbau:
 
