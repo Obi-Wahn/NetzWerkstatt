@@ -36,6 +36,16 @@
     return '';
   }
 
+  /** Beschriftung unter einem Router: Adresse im Heimnetz (LAN) und ggf. am Internet-Anschluss (WAN). */
+  function routerLabels(d) {
+    const lan = d.ports[NW.LAN], wan = d.ports[NW.WAN];
+    const out = [];
+    const lip = lan.ip && lan.ip.trim();
+    out.push(lip ? lip + (lan.dhcp && lan.dhcp.on ? ' · DHCP' : '') : 'LAN: keine IP');
+    if (wan.ip && wan.ip.trim()) out.push('WAN ' + wan.ip.trim());
+    return out;
+  }
+
   /**
    * Zeichnet ein Netzwerk in ein <svg>.
    * opts: { selected, pending, highlight:Set, interactive }
@@ -59,14 +69,13 @@
       const g = el('g', { class: 'link ' + l.kind + (opts.selected === l.id ? ' selected' : ''), 'data-link': l.id }, gLinks);
       el('line', { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: 'hit' }, g);
       el('line', { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: 'wire' }, g);
-      // Router-Anschluss beschriften (IP-Adresse am Kabelende)
+      // Kabel am Internet-Anschluss (WAN) des Routers kennzeichnen; die IP-Adressen stehen unter dem Router
       for (const [d, other, port] of [[a, b, l.aPort], [b, a, l.bPort]]) {
-        if (!NW.TYPES[d.type].router || port === undefined) continue;
-        const p = d.ports[port];
+        if (!NW.TYPES[d.type].router || port === undefined || l.kind !== 'kabel' || NW.iface(port) !== NW.WAN) continue;
         const dist = Math.max(1, Math.hypot(other.x - d.x, other.y - d.y));
-        const t = Math.min(0.5, 92 / dist);
+        const t = Math.min(0.5, 58 / dist);
         const x = d.x + (other.x - d.x) * t, y = d.y + (other.y - d.y) * t;
-        const txt = ((p.ip && p.ip.trim()) ? p.ip.trim() : `Anschluss ${port + 1}`) + (p.dhcp && p.dhcp.on ? ' · DHCP' : '');
+        const txt = d.modem ? 'Internet' : 'WAN';
         const lab = el('g', { class: 'port-label' }, g);
         const w = txt.length * 6.6 + 10;
         el('rect', { x: x - w / 2, y: y - 9, width: w, height: 18, rx: 9 }, lab);
@@ -91,10 +100,16 @@
       icon.innerHTML = ICONS[d.cloud ? 'cloud' : d.type];
       const name = el('text', { x: 0, y: BOX.h / 2 + 17, 'text-anchor': 'middle', class: 'name' }, g);
       name.textContent = d.name;
-      const sub = hostLabel(d);
-      if (sub) {
-        const s = el('text', { x: 0, y: BOX.h / 2 + 33, 'text-anchor': 'middle', class: 'ip' + (sub === 'keine IP' ? ' missing' : '') }, g);
+      const subs = NW.TYPES[d.type].router && !d.cloud ? routerLabels(d) : [hostLabel(d)].filter(Boolean);
+      subs.forEach((sub, k) => {
+        const s = el('text', { x: 0, y: BOX.h / 2 + 33 + k * 15, 'text-anchor': 'middle', class: 'ip' + (/keine IP/.test(sub) ? ' missing' : '') }, g);
         s.textContent = sub;
+      });
+      if (NW.TYPES[d.type].router && d.wlan) {
+        // kleines Funk-Symbol: Der Router hat eingebautes WLAN
+        const wf = el('g', { class: 'wlan-badge', transform: `translate(${-BOX.w / 2 + 12},${-BOX.h / 2 + 12})` }, g);
+        el('path', { d: 'M-6 0a8.5 8.5 0 0 1 12 0M-3 3a4.2 4.2 0 0 1 6 0' }, wf);
+        el('circle', { cx: 0, cy: 6, r: 1.4 }, wf);
       }
       if (d.locked) {
         const lk = el('g', { class: 'lock', transform: `translate(${BOX.w / 2 - 12},${-BOX.h / 2 - 2})` }, g);

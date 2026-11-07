@@ -189,6 +189,8 @@
     if (!b || readOnly()) return;
     const p = NWView.freeSpot(S.net);
     const d = NW.createDevice(S.net, b.dataset.type, p.x, p.y);
+    // In Aufgaben, in denen Adressen von Hand vergeben werden, ist DHCP aus
+    if (S.task.manual) NWTasks.manualize({ devices: [d] });
     S.selected = d.id;
     setTool('move');
     renderAll();
@@ -198,7 +200,7 @@
   const HINTS = {
     move: '',
     kabel: 'Tippe nacheinander auf die zwei Geräte, die du mit einem Kabel verbinden willst.',
-    wlan: 'Tippe auf einen Access Point und dann auf ein Tablet oder Smartphone.',
+    wlan: 'Tippe auf einen Access Point oder Router und dann auf ein Tablet oder Smartphone.',
     delete: 'Tippe auf ein Gerät oder eine Verbindung, um es zu löschen.',
   };
   function setTool(t) {
@@ -269,11 +271,7 @@
         else { toast(S.tool === 'kabel' ? 'Kabel verbunden.' : 'WLAN verbunden.', 'ok'); scheduleSave(); }
         S.pending = null; $('tool-hint').textContent = HINTS[S.tool];
         renderGoals(); renderInspector();
-        if (r.ok) {
-          // Ein Gerät auf „Automatisch (DHCP)" fragt sofort nach einer Adresse, wie in echt
-          const waiting = [r.link.a, r.link.b].map(x => NW.dev(S.net, x)).find(x => T[x.type].host && x.dhcp && NW.parseIP(x.ip) === null);
-          if (waiting) { renderCanvas(); doDhcp(waiting); return; }
-        }
+        if (r.ok) { renderCanvas(); autoDhcp(); return; }
       }
       renderCanvas();
       return;
@@ -356,8 +354,15 @@
     const link = S.net.links.find(l => l.id === S.selected);
     if (link) {
       const a = NW.dev(S.net, link.a), b = NW.dev(S.net, link.b);
+      let plug = '';
+      for (const [r, port] of [[a, link.aPort], [b, link.bPort]]) {
+        if (!T[r.type].router || port === undefined) continue;
+        const isWan = NW.iface(port) === NW.WAN;
+        plug += `<p class="small">Steckt bei <b>${esc(r.name)}</b> ${link.kind === 'wlan' ? 'im WLAN des Heimnetzes' : isWan ? 'im Internet-Anschluss (WAN)' : 'in einem LAN-Anschluss (Heimnetz)'}.</p>`;
+        if (link.kind === 'kabel' && !ro && !link.locked) plug += `<button class="btn small" data-act="replug" data-dev="${esc(r.id)}">Umstecken: ${isWan ? 'in einen LAN-Anschluss' : 'in den Internet-Anschluss (WAN)'}</button>`;
+      }
       insp.innerHTML = `<h3>${link.kind === 'kabel' ? 'Netzwerkkabel' : 'WLAN-Verbindung'}</h3>
-        <p>zwischen <b>${esc(a.name)}</b> und <b>${esc(b.name)}</b></p>
+        <p>zwischen <b>${esc(a.name)}</b> und <b>${esc(b.name)}</b></p>${plug}
         <p class="muted small">${link.kind === 'kabel' ? 'Ein Kabel (passive Netzwerkkomponente) überträgt die Daten als elektrische Signale.' : 'Per WLAN werden die Daten als Funkwellen übertragen.'}</p>
         ${!ro && !link.locked ? '<button class="btn danger" data-act="del-link">Verbindung löschen</button>' : ''}`;
       return;
@@ -416,27 +421,38 @@
       h += '</div>';
     }
     if (t.router) {
-      h += '<div class="group"><h4>Anschlüsse</h4><p class="muted small">Jeder Anschluss gehört zu einem anderen Netz und hat dort eine eigene feste IP-Adresse. Wie bei echten Routern ist ab Werk schon eine eingetragen; du kannst sie ändern.</p>';
-      d.ports.forEach((p, i) => {
-        const l = NW.linksOf(S.net, d.id).find(x => NW.portOf(x, d.id) === i);
-        const other = l ? NW.dev(S.net, l.a === d.id ? l.b : l.a) : null;
-        h += `<div class="port"><div class="port-head">Anschluss ${i + 1} <span class="muted small">${other ? '→ ' + esc(other.name) : '(frei)'}</span></div>
-          <div class="port-fields">${field('IP-Adresse', `ports.${i}.ip`, p.ip, 'portip', { disabled: dis })}${field('Subnetzmaske', `ports.${i}.mask`, p.mask, 'mask', { disabled: dis })}</div>`;
-        const dh = NW.dhcpOf(p);
-        h += `<label class="toggle"><input type="checkbox" data-path="ports.${i}.dhcp.on" ${dh.on ? 'checked' : ''} ${dis ? 'disabled' : ''}> DHCP-Server für dieses Netz</label>`;
-        if (dh.on) {
-          const rg = NW.dhcpRange(d, i);
-          if (!rg) h += `<p class="fhint warn">Der Router braucht an diesem Anschluss selbst eine feste IP-Adresse, damit er Adressen verteilen kann.</p>${dis ? '' : `<div class="chips"><button class="chip suggest" data-act="port-auto" data-i="${i}">💡 Adresse für den Router eintragen</button></div>`}`;
-          else {
-            h += `<p class="dhcp-info">Der Router selbst hat die feste Adresse <b>${esc(p.ip.trim())}</b>. Die Geräte in diesem Netz bekommen ihre Adressen automatisch von ihm.</p>`;
-            h += `<div class="port-fields">${field('Adressen von', `ports.${i}.dhcp.from`, dh.from, 'range', { disabled: dis, placeholder: NW.ipStr(rg.from) })}${field('bis', `ports.${i}.dhcp.to`, dh.to, 'range', { disabled: dis, placeholder: NW.ipStr(rg.to) })}</div>`;
-            h += field('DNS-Server für die Geräte', `ports.${i}.dhcp.dns`, dh.dns, 'dns', { disabled: dis, placeholder: 'leer = kein DNS-Server' });
-            h += `<p class="muted small">Geräte in diesem Netz, die auf „Automatisch (DHCP)" stehen, bekommen eine freie Adresse von ${esc(NW.ipStr(rg.from))} bis ${esc(NW.ipStr(rg.to))}, die Subnetzmaske und ${esc(p.ip.trim())} als Gateway.</p>`;
-          }
+      const conns = which => NW.linksOf(S.net, d.id).filter(l => NW.iface(NW.portOf(l, d.id)) === which)
+        .map(l => { const o = NW.dev(S.net, l.a === d.id ? l.b : l.a); return `<span class="kind ${l.kind}">${l.kind === 'kabel' ? 'Kabel' : 'WLAN'}</span> ${esc(o.name)}`; });
+      const lanConns = conns(NW.LAN), wanConns = conns(NW.WAN);
+      const p = d.ports[NW.LAN], i = NW.LAN;
+      // Heimnetz (LAN)
+      h += `<div class="group"><h4>Heimnetz (LAN)</h4>
+        <p class="muted small">Drei LAN-Anschlüsse und das WLAN des Routers gehören zum selben Heimnetz – wie ein eingebauter Switch. Hier hat der Router eine feste Adresse; Endgeräte tragen sie als Gateway ein.</p>
+        <p class="small">${lanConns.length ? lanConns.join(' · ') : '<span class="muted">Noch nichts angeschlossen.</span>'}</p>
+        <div class="port-fields">${field('IP-Adresse des Routers', `ports.${i}.ip`, p.ip, 'portip', { disabled: dis })}${field('Subnetzmaske', `ports.${i}.mask`, p.mask, 'mask', { disabled: dis })}</div>`;
+      h += `<label class="toggle"><input type="checkbox" data-path="wlan" ${d.wlan ? 'checked' : ''} ${dis ? 'disabled' : ''}> WLAN (eingebauter Access Point)</label>`;
+      const dh = NW.dhcpOf(p);
+      h += `<label class="toggle"><input type="checkbox" data-path="ports.${i}.dhcp.on" ${dh.on ? 'checked' : ''} ${dis ? 'disabled' : ''}> DHCP-Server (verteilt IP-Adressen)</label>`;
+      if (dh.on) {
+        const rg = NW.dhcpRange(d, i);
+        if (!rg) h += `<p class="fhint warn">Der Router braucht im Heimnetz selbst eine feste IP-Adresse, damit er Adressen verteilen kann.</p>${dis ? '' : `<div class="chips"><button class="chip suggest" data-act="port-auto" data-i="${i}">💡 Adresse für den Router eintragen</button></div>`}`;
+        else {
+          h += `<p class="dhcp-info">Der Router selbst hat die feste Adresse <b>${esc(p.ip.trim())}</b>. Geräte auf „Automatisch (DHCP)" bekommen von ihm eine freie Adresse von ${esc(NW.ipStr(rg.from))} bis ${esc(NW.ipStr(rg.to))}, die Subnetzmaske und ${esc(p.ip.trim())} als Gateway.</p>`;
+          h += `<details class="desc"><summary>DHCP genauer einstellen</summary>
+            <div class="port-fields">${field('Adressen von', `ports.${i}.dhcp.from`, dh.from, 'range', { disabled: dis, placeholder: NW.ipStr(rg.from) })}${field('bis', `ports.${i}.dhcp.to`, dh.to, 'range', { disabled: dis, placeholder: NW.ipStr(rg.to) })}</div>
+            ${field('DNS-Server für die Geräte', `ports.${i}.dhcp.dns`, dh.dns, 'dns', { disabled: dis, placeholder: 'leer = kein DNS-Server' })}</details>`;
         }
-        h += '</div>';
-      });
+      }
       h += '</div>';
+      // Internet (WAN)
+      const w = d.ports[NW.WAN];
+      h += `<div class="group"><h4>Internet-Anschluss (WAN)</h4>
+        <label class="toggle"><input type="checkbox" data-path="modem" ${d.modem ? 'checked' : ''} ${dis ? 'disabled' : ''}> Eingebautes Internet-Modem (DSL/Kabel)</label>
+        <p class="muted small">${d.modem
+          ? 'Das Modem verbindet den Router über die Telefon- oder Kabelleitung mit dem Internetanbieter. Dort bekommt der Router seine externe (öffentliche) Adresse.'
+          : 'Ohne eingebautes Modem wird hier ein externes Modem oder ein anderer Router per Kabel angeschlossen.'}</p>
+        <p class="small">${wanConns.length ? wanConns.join(' · ') : '<span class="muted">Nichts angeschlossen.</span>'}</p>
+        <div class="port-fields">${field('Externe IP-Adresse', `ports.${NW.WAN}.ip`, w.ip, 'portip', { disabled: dis, placeholder: d.modem ? 'vom Internetanbieter' : 'z. B. 192.168.100.2' })}${field('Subnetzmaske', `ports.${NW.WAN}.mask`, w.mask, 'mask', { disabled: dis })}</div></div>`;
     }
     if (t.l2) h += `<p class="muted small">Ein ${esc(t.label)} braucht keine IP-Adresse – er leitet die Pakete nur weiter.</p>`;
 
@@ -484,6 +500,7 @@
           const mask = check === 'ip' ? d.mask : '255.255.255.0';
           const pr = NW.ipProblem(v, mask);
           if (pr) return ['bad', pr];
+          if (NW.isApipa(NW.parseIP(v))) return ['warn', 'Notfall-Adresse (APIPA): Es wurde kein DHCP-Server gefunden. Sie funktioniert nur direkt im selben Netz.'];
           return ['ok', NW.isPrivate(NW.parseIP(v)) ? 'lokale (private) Adresse' : 'öffentliche (externe) Adresse'];
         }
       case 'mask':
@@ -529,14 +546,35 @@
     // DHCP am Router einschalten: Hat der Anschluss noch keine Adresse, bekommt er automatisch eine
     const dm = inp.dataset.path.match(/^ports\.(\d+)\.dhcp\.on$/);
     if (dm && val && !NW.ifaceAddr(d, Number(dm[1]))) setPortAuto(d, Number(dm[1]));
+    if (inp.dataset.path === 'wlan' && !val) {
+      const n = NW.setRouterWlan(S.net, d, false);
+      if (n) toast(`WLAN aus: ${n === 1 ? 'Ein Gerät wurde' : n + ' Geräte wurden'} getrennt.`);
+    }
     if (inp.type === 'checkbox') renderInspector(); else updateHints();
     renderCanvas(); renderGoals(); scheduleSave();
+    if (dm && val) autoDhcp();
   });
 
   function setPortAuto(d, i) {
     const sg = NW.suggestPortIP(S.net, d, i);
     d.ports[i].ip = sg.ip; d.ports[i].mask = sg.mask;
-    toast(`${d.name} hat an Anschluss ${i + 1} die feste Adresse ${sg.ip} bekommen. Du kannst sie ändern.`, 'ok');
+    toast(`${d.name} hat im Heimnetz die feste Adresse ${sg.ip} bekommen. Du kannst sie ändern.`, 'ok');
+  }
+
+  /** Geräte auf „Automatisch (DHCP)" ohne Adresse fragen nach, sobald ein DHCP-Server erreichbar ist – wie in echt. */
+  async function autoDhcp() {
+    for (let k = 0; k < 20; k++) {
+      if (S.busy) return;
+      // ohne Adresse: fragen (notfalls APIPA); mit Notfall-Adresse: erneut fragen, sobald ein DHCP-Server da ist
+      const h = S.net.devices.find(x => {
+        if (!T[x.type].host || !x.dhcp || !NW.linksOf(S.net, x.id).length) return false;
+        const ip = NW.parseIP(x.ip);
+        if (ip === null) return true;
+        return NW.isApipa(ip) && NW.dhcp(S.net, x.id).ok;
+      });
+      if (!h) return;
+      await doDhcp(h);
+    }
   }
 
   insp.addEventListener('keydown', ev => {
@@ -569,6 +607,13 @@
         d.dhcp = true; d.ip = ''; d.gw = ''; d.dns = '';
         renderAll(); scheduleSave(); doDhcp(d); break;
       case 'dhcp': doDhcp(d); break;
+      case 'replug': {
+        const r = NW.replug(S.net, S.selected, b.dataset.dev);
+        if (!r.ok) toast(r.reason, 'error');
+        renderAll(); scheduleSave();
+        if (r.ok) autoDhcp();
+        break;
+      }
       case 'port-auto':
         setPortAuto(d, Number(b.dataset.i)); renderAll(); scheduleSave(); break;
       case 'suggest-ip': {
@@ -642,6 +687,9 @@
       NW.applyLease(d, res.lease);
       const srv = NW.dev(S.net, res.server);
       logResult(true, `${d.name} hat von ${srv ? srv.name : 'dem DHCP-Server'} die Adresse ${res.lease.ip} bekommen.`);
+    } else if (res.apipa) {
+      NW.applyLease(d, res.apipa);
+      logResult(false, `${res.error} ${d.name} gibt sich deshalb selbst die Notfall-Adresse ${res.apipa.ip} (APIPA). Damit erreicht es nur Geräte, die direkt im selben Netz auch eine 169.254-Adresse haben – ohne Gateway, also nicht das Internet.`, res.hint);
     } else logResult(false, res.error, res.hint);
     NW.logEvent(S.net, { type: 'dhcp', src: d.id, ok: !!res.ok });
     renderAll(); scheduleSave();

@@ -280,3 +280,5 @@ details p { margin-top: 4px; font-size: .93em; }
 .dhcp-btn { width: 100%; margin-bottom: 10px; }
 .chip.suggest { background: #fff8e1; border-color: #f0d68a; }
 .dhcp-info { background: #eef5ff; border-radius: 8px; padding: 7px 9px; font-size: .88em; margin-bottom: 8px; }
+.wlan-badge path { fill: none; stroke: var(--wlan); stroke-width: 2; stroke-linecap: round; }
+.wlan-badge circle { fill: var(--wlan); }

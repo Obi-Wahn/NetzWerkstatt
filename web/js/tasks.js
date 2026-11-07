@@ -54,8 +54,9 @@
       id: 'zwei-pcs',
       title: 'Zwei PCs verbinden',
       level: 1,
+      manual: true,
       intro: 'Das kleinste Netzwerk besteht aus zwei Computern, die direkt mit einem Kabel verbunden sind. Damit sie sich gegenseitig finden, braucht jeder eine eigene IP-Adresse im selben Netz.',
-      tip: 'Mit 255.255.255.0 als Subnetzmaske gehören alle Adressen, die mit 192.168.1. beginnen, zum selben Netz. Nur die letzte Zahl muss unterschiedlich sein (1 bis 254).',
+      tip: 'Ohne Router gibt es keinen DHCP-Server – hier trägst du die Adressen von Hand ein. Mit 255.255.255.0 als Subnetzmaske gehören alle Adressen, die mit 192.168.1. beginnen, zum selben Netz. Nur die letzte Zahl muss unterschiedlich sein (1 bis 254).',
       goals: [
         { text: 'Setze zwei PCs auf die Arbeitsfläche.', check: c => c.byType('pc').length >= 2 },
         { text: 'Verbinde die beiden PCs mit einem Kabel.', check: c => c.byType('pc').some(a => c.byType('pc').some(b => a !== b && c.linked(a, b, 'kabel'))) },
@@ -74,6 +75,7 @@
       id: 'stern',
       title: 'Sternnetz im Computerraum',
       level: 1,
+      manual: true,
       intro: 'Im Computerraum sollen vier PCs miteinander verbunden werden. Ein PC hat aber nur einen Netzwerkanschluss. Baue ein Netz in Sterntopologie: Alle PCs hängen an einem zentralen Verteiler.',
       tip: 'Der zentrale Verteiler ist ein Switch. Er braucht selbst keine IP-Adresse – nur die PCs.',
       think: 'Überlege: Was passiert, wenn ein Kabel zu einem PC kaputtgeht? Und was, wenn der Switch ausfällt? Probiere es aus, indem du eine Verbindung löschst.',
@@ -103,29 +105,27 @@
       id: 'heimnetz',
       title: 'Heimnetz mit WLAN',
       level: 2,
-      intro: 'Familie Yilmaz hat einen Router. Baue das Heimnetz: Der PC im Arbeitszimmer hängt am Kabel, Tablet und Smartphone sind per WLAN verbunden. Der Router ist das Tor zu anderen Netzen – deshalb tragen alle Geräte ihn als Gateway ein.',
-      tip: 'Ein Access Point hat nur einen Kabelanschluss, der Router-Anschluss auch. Mit einem Switch kannst du am Router-Anschluss mehrere Geräte anschließen. Der Router hat im Heimnetz die IP-Adresse 192.168.178.1.',
+      intro: 'Familie Yilmaz hat einen Router mit eingebautem WLAN. Baue das Heimnetz: Der PC im Arbeitszimmer hängt am Kabel, Tablet und Smartphone sind per WLAN verbunden. Der Router ist das Tor zu anderen Netzen – deshalb tragen alle Geräte ihn als Gateway ein.',
+      tip: 'Hier vergibst du die Adressen von Hand (der DHCP-Server des Routers ist aus). Der Router hat im Heimnetz die IP-Adresse 192.168.178.1. Seine drei LAN-Anschlüsse und sein WLAN gehören alle zum selben Heimnetz.',
+      manual: true,
       goals: [
-        { text: 'Schließe einen Access Point per Kabel an (über einen Switch an den Router).', check: c => c.byType('ap').some(ap => c.neighbors(ap.id).some(n => n.kind === 'kabel')) },
-        { text: 'Verbinde ein Tablet und ein Smartphone per WLAN mit dem Access Point.', check: c => ['tablet', 'smartphone'].every(t => c.byType(t).some(d => c.neighbors(d.id).some(n => n.kind === 'wlan' && n.dev.type === 'ap'))) },
+        { text: 'Verbinde ein Tablet und ein Smartphone per WLAN mit dem Router.', check: c => ['tablet', 'smartphone'].every(t => c.byType(t).some(d => c.neighbors(d.id).some(n => n.kind === 'wlan' && (n.dev.type === 'ap' || n.dev.type === 'router')))) },
         { text: 'Schließe einen PC per Kabel im Heimnetz an.', check: c => c.byType('pc').some(p => NW.l2Endpoints(c.net, p.id, 0).some(e => e.dev.type === 'router')) },
         { text: 'Gib allen Endgeräten eine eigene IP-Adresse im Netz 192.168.178.0/24 und trage den Router (192.168.178.1) als Gateway ein.', check: c => { const h = c.hosts; return h.length >= 3 && h.every(d => c.inNet(d, '192.168.178.0', 24) && d.gw.trim() === '192.168.178.1') && c.distinctIPs(h); } },
         { text: 'Teste mit einem Ping vom Smartphone zum PC.', check: c => c.pingOk(isType('smartphone'), isType('pc')) },
       ],
       start: () => build(({ add }) => {
-        const r = add('r', 'router', 140, 280, { name: 'Heimrouter' });
-        r.ports[0].ip = '192.168.178.1';
+        const r = add('r', 'router', 200, 280, { name: 'Heimrouter' });
+        r.ports[1].ip = '192.168.178.1';
       }),
       solution: () => build(({ net, add, link }) => {
-        const r = add('r', 'router', 140, 280, { name: 'Heimrouter' });
-        r.ports[0].ip = '192.168.178.1';
-        add('sw', 'switch', 340, 280, { name: 'Switch 1' });
-        add('ap', 'ap', 540, 170, { name: 'AP 1' });
-        add('pc', 'pc', 540, 420, { name: 'PC Arbeitszimmer', ip: '192.168.178.20', gw: '192.168.178.1' });
-        add('tb', 'tablet', 720, 100, { name: 'Tablet 1', ip: '192.168.178.30', gw: '192.168.178.1' });
-        add('sp', 'smartphone', 740, 250, { name: 'Smartphone 1', ip: '192.168.178.31', gw: '192.168.178.1' });
-        link('r', 'sw'); link('sw', 'ap'); link('sw', 'pc');
-        link('ap', 'tb', 'wlan'); link('ap', 'sp', 'wlan');
+        const r = add('r', 'router', 200, 280, { name: 'Heimrouter' });
+        r.ports[1].ip = '192.168.178.1';
+        add('pc', 'pc', 520, 430, { name: 'PC Arbeitszimmer', ip: '192.168.178.20', gw: '192.168.178.1' });
+        add('tb', 'tablet', 560, 120, { name: 'Tablet 1', ip: '192.168.178.30', gw: '192.168.178.1' });
+        add('sp', 'smartphone', 720, 260, { name: 'Smartphone 1', ip: '192.168.178.31', gw: '192.168.178.1' });
+        link('r', 'pc');
+        link('r', 'tb', 'wlan'); link('r', 'sp', 'wlan');
         evPing(net, 'sp', 'pc');
       }),
     },
@@ -134,7 +134,8 @@
       title: 'Eine Webseite aufrufen',
       level: 2,
       intro: 'Im Internet (rechts) stehen ein Webserver und ein DNS-Server. Schließe einen PC an den Heimrouter an und rufe im Browser die Seite http://www.netzwerkstatt.de auf. Beobachte genau, welche Pakete unterwegs sind!',
-      tip: 'Der Router hat zwei IP-Adressen: eine lokale im Heimnetz (192.168.178.1) und eine externe im Internet (203.0.113.10). Dein PC braucht eine IP-Adresse im Heimnetz, den Router als Gateway und den DNS-Server 203.0.113.53.',
+      manual: true,
+      tip: 'Der Router hat zwei IP-Adressen: eine lokale im Heimnetz (LAN, 192.168.178.1) und eine externe am Internet-Anschluss (WAN, 203.0.113.10). Dein PC braucht eine IP-Adresse im Heimnetz, den Router als Gateway und den DNS-Server 203.0.113.53.',
       think: 'Warum braucht der PC einen DNS-Server, obwohl er doch nur eine Webseite laden will? Was würde passieren, wenn du statt des Namens direkt http://203.0.113.80 eingibst?',
       goals: [
         { text: 'Schließe einen PC per Kabel an den Heimrouter an.', check: c => c.byType('pc').some(p => NW.l2Endpoints(c.net, p.id, 0).some(e => e.dev.id === 'r' && e.port === 1)) },
@@ -157,18 +158,18 @@
       title: 'Automatische Adressen mit DHCP',
       level: 2,
       intro: 'Im Schulcafé wollen viele Gäste ins WLAN. Niemand möchte dort IP-Adressen von Hand eintragen. Das übernimmt ein DHCP-Server im Router: Er verteilt die Adressen automatisch an alle Geräte, die danach fragen.',
-      tip: 'Tippe den Router an und schalte bei Anschluss 1 den DHCP-Server ein. Stelle danach bei Tablet und Smartphone die Netzwerk-Einstellungen auf „Automatisch (DHCP)". Beobachte die vier DHCP-Pakete!',
+      tip: 'Tippe den Router an und schalte im Heimnetz (LAN) den DHCP-Server ein. Stelle danach bei Tablet und Smartphone die Netzwerk-Einstellungen auf „Automatisch (DHCP)". Beobachte die vier DHCP-Pakete!',
       think: 'Warum schickt ein Gerät seine erste DHCP-Nachricht „an alle" und nicht direkt an den Router? Was passiert, wenn der Adressbereich nur zwei Adressen enthält, aber drei Geräte eine wollen? Probiere es aus!',
       goals: [
         { text: 'Schalte beim Router den DHCP-Server für das Netz 192.168.0.0/24 ein.', check: c => c.byType('router').some(r => r.ports.some((p, i) => p.dhcp && p.dhcp.on && NW.ifaceAddr(r, i) && NW.sameNet(NW.ifaceAddr(r, i).ip, NW.parseIP('192.168.0.0'), 24))) },
-        { text: 'Verbinde ein Tablet und ein Smartphone per WLAN mit dem Access Point.', check: c => ['tablet', 'smartphone'].every(t => c.byType(t).some(d => c.neighbors(d.id).some(n => n.kind === 'wlan' && n.dev.type === 'ap'))) },
+        { text: 'Verbinde ein Tablet und ein Smartphone per WLAN (mit dem Access Point oder dem WLAN des Routers).', check: c => ['tablet', 'smartphone'].every(t => c.byType(t).some(d => c.neighbors(d.id).some(n => n.kind === 'wlan' && (n.dev.type === 'ap' || n.dev.type === 'router')))) },
         { text: 'Lass Tablet und Smartphone ihre IP-Adresse automatisch per DHCP beziehen.', check: c => ['tablet', 'smartphone'].every(t => c.byType(t).some(d => d.dhcp && c.inNet(d, '192.168.0.0', 24) && d.gw.trim() === '192.168.0.1')) },
         { text: 'Teste mit einem Ping vom Smartphone zum Tablet.', check: c => c.pingOk(isType('smartphone'), isType('tablet')) },
       ],
       start: () => dhcpStart(),
       solution: () => {
         const net = dhcpStart();
-        NW.dev(net, 'r').ports[0].dhcp.on = true;
+        NW.dev(net, 'r').ports[1].dhcp.on = true;
         NW.addLink(net, 'ap', 'tb', 'wlan');
         NW.addLink(net, 'ap', 'sp', 'wlan');
         for (const id of ['tb', 'sp']) {
@@ -196,10 +197,11 @@
   function dhcpStart() {
     return build(({ add, link }) => {
       const r = add('r', 'router', 160, 280, { name: 'Café-Router' });
-      r.ports[0].ip = '192.168.0.1';
+      r.ports[1].ip = '192.168.0.1';
+      r.ports[1].dhcp.on = false;
       add('ap', 'ap', 400, 280, { name: 'Café-WLAN' });
-      add('tb', 'tablet', 680, 150, { name: 'Tablet 1' });
-      add('sp', 'smartphone', 680, 410, { name: 'Smartphone 1' });
+      add('tb', 'tablet', 680, 150, { name: 'Tablet 1', dhcp: false });
+      add('sp', 'smartphone', 680, 410, { name: 'Smartphone 1', dhcp: false });
       link('r', 'ap');
     });
   }
@@ -220,6 +222,20 @@
     });
   }
 
+  /** In Aufgaben mit „manual" werden Adressen von Hand vergeben: DHCP überall aus. */
+  function manualize(net) {
+    for (const d of net.devices) {
+      if (T[d.type].host) d.dhcp = false;
+      if (T[d.type].router) d.ports.forEach(p => { if (p.dhcp) p.dhcp.on = false; });
+    }
+    return net;
+  }
+  for (const t of TASKS) if (t.manual) {
+    const st = t.start, so = t.solution;
+    t.start = () => manualize(st());
+    if (so) t.solution = () => manualize(so());
+  }
+
   function evaluate(task, net) {
     const c = ctx(net);
     return task.goals.map(g => { try { return !!g.check(c); } catch (e) { return false; } });
@@ -227,7 +243,7 @@
 
   function byId(id) { return TASKS.find(t => t.id === id) || null; }
 
-  const api = { TASKS, evaluate, byId };
+  const api = { TASKS, evaluate, byId, manualize };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.NWTasks = api;
 })(typeof window !== 'undefined' ? window : globalThis);
