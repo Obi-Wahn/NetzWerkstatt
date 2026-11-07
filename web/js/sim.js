@@ -521,8 +521,9 @@
   /** Liefert eine Folge von Schritten zum Animieren und ein Ergebnis. */
   function ping(net, srcId, dstText) {
     const src = dev(net, srcId);
+    if ((dstText || '').includes(':')) return ping6(net, srcId, dstText);
     const dstIP = parseIP(dstText || '');
-    if (dstIP === null) return { ok: false, steps: [], error: `„${dstText || ''}" ist keine gültige IPv4-Adresse.`, hint: 'Eine IPv4-Adresse besteht aus vier Zahlen von 0 bis 255, getrennt durch Punkte.' };
+    if (dstIP === null) return { ok: false, steps: [], error: `„${dstText || ''}" ist keine gültige IP-Adresse.`, hint: 'Eine IPv4-Adresse besteht aus vier Zahlen von 0 bis 255, getrennt durch Punkte. Eine IPv6-Adresse erkennt man an den Doppelpunkten.' };
     const rt = roundTrip(net, srcId, dstIP);
     const steps = [{ kind: 'request', label: 'Ping-Anfrage', proto: 'ICMP', text: `${src.name} → ${ipStr(dstIP)}: „Bist du da?"`, note: natNote(net, rt, 'there'), path: rt.there.path, ok: rt.there.ok }];
     if (rt.back) steps.push({ kind: 'response', label: 'Ping-Antwort', proto: 'ICMP', text: `${rt.target.name} → ${rt.back.ok && rt.there.nat.length ? ipStr(rt.there.seenSrc) : src.name}: „Ja, ich bin da!"`, note: natNote(net, rt, 'back'), path: rt.back.path, ok: rt.back.ok });
@@ -768,6 +769,224 @@
     return out;
   }
 
+  // ------------------------------------------------------------------ IPv6
+  // Bewusst einfach gehalten: Alle Geräte bekommen ihre IPv6-Adressen automatisch.
+  //  - Link-Local (fe80::…): hat jedes Gerät, gilt nur im eigenen Netz, wird nie weitergeleitet.
+  //  - Global (2001:db8:…): Der Internetanbieter hat einen Adressbereich /48. Jeder Router an seiner
+  //    Leitung bekommt daraus ein eigenes Netz /64 für das Heimnetz; die Geräte bilden ihre Adresse
+  //    daraus selbst (SLAAC). Server direkt beim Anbieter liegen in dessen Netz (Subnetz 0).
+  //  Es gibt kein NAT: Jedes Gerät ist mit seiner eigenen Adresse weltweit erreichbar.
+  //  2001:db8::/32 ist der für Beispiele reservierte Bereich – keine echten Adressen.
+  const B16 = 16n, B64 = 64n, M64 = (1n << 64n) - 1n;
+  const LL_NET = 0xfe80n << 112n;
+  const DOC_NET = (0x2001n << 112n) | (0x0db8n << 96n);
+
+  /** IPv6-Adresse als Text → BigInt (oder null). Erlaubt die Kurzschreibweise mit „::". */
+  function parseIP6(s) {
+    if (typeof s !== 'string') return null;
+    s = s.trim().replace(/^\[|\]$/g, '').toLowerCase();
+    if (!/^[0-9a-f:]+$/.test(s) || !s.includes(':')) return null;
+    const parts = s.split('::');
+    if (parts.length > 2) return null;
+    const grp = x => x === '' ? [] : x.split(':');
+    const head = grp(parts[0]), tail = parts.length === 2 ? grp(parts[1]) : [];
+    if (head.concat(tail).some(g => !/^[0-9a-f]{1,4}$/.test(g))) return null;
+    let groups;
+    if (parts.length === 2) {
+      const fill = 8 - head.length - tail.length;
+      if (fill < 1) return null;
+      groups = head.concat(Array(fill).fill('0'), tail);
+    } else groups = head;
+    if (groups.length !== 8) return null;
+    return groups.reduce((n, g) => (n << B16) | BigInt(parseInt(g, 16)), 0n);
+  }
+
+  /** BigInt → IPv6-Adresse in Kurzschreibweise (führende Nullen weg, längste Nullfolge als „::"). */
+  function ip6Str(n) {
+    const g = [];
+    for (let i = 7; i >= 0; i--) g.push(Number((n >> BigInt(i * 16)) & 0xffffn));
+    let bs = -1, bl = 0;
+    for (let i = 0; i < 8;) {
+      if (g[i] !== 0) { i++; continue; }
+      let j = i; while (j < 8 && g[j] === 0) j++;
+      if (j - i > bl && j - i >= 2) { bs = i; bl = j - i; }
+      i = j;
+    }
+    const hex = a => a.map(x => x.toString(16)).join(':');
+    return bs < 0 ? hex(g) : hex(g.slice(0, bs)) + '::' + hex(g.slice(bs + bl));
+  }
+
+  /** Netz /64 einer Adresse als Text, z. B. 2001:db8:1:1::/64 */
+  function net6Str(n, prefix) { return ip6Str(n & ~((1n << BigInt(128 - (prefix || 64))) - 1n)) + '/' + (prefix || 64); }
+
+  function isLinkLocal6(n) { return n !== null && (n >> 118n) === (0xfe80n >> 6n); }
+
+  /** Schnittstellen-Kennung (hintere 64 Bit), gleichbleibend je Gerät und Anschluss. */
+  function ifaceId(d, k) {
+    let h1 = 2166136261, h2 = 5381;
+    const s = d.id + ':' + (k || 0);
+    for (const ch of s) { const c = ch.charCodeAt(0); h1 = Math.imul(h1 ^ c, 16777619) >>> 0; h2 = (Math.imul(h2, 33) + c) >>> 0; }
+    // jede Vierergruppe ungleich 0, damit die Adresse nicht unerwartet abgekürzt wird
+    const grp = x => BigInt((x % 0xefff) + 0x1000);
+    return (grp(h1 >>> 16) << 48n) | (grp(h1 & 0xffff) << 32n) | (grp(h2 >>> 16) << 16n) | grp(h2 & 0xffff);
+  }
+
+  /** Nummer des Adressbereichs je Internetanbieter (1, 2, …), möglichst passend zur IPv4-Reihenfolge. */
+  function ispNumbers(net) {
+    const isps = net.devices.filter(d => TYPES[d.type].isp);
+    const num = new Map(), used = new Set();
+    for (const d of isps) {
+      const k = ISP_NETS.indexOf((d.ip || '').trim().split('.').slice(0, 3).join('.')) + 1;
+      if (k > 0 && !used.has(k)) { num.set(d.id, k); used.add(k); }
+    }
+    let next = 1;
+    for (const d of isps) if (!num.has(d.id)) { while (used.has(next)) next++; num.set(d.id, next); used.add(next); }
+    return num;
+  }
+
+  /**
+   * Alle IPv6-Adressen im Netzwerk. Schlüssel: "Geräte-ID:Schnittstelle" (Endgerät/Anbieter 0, Router WAN 0 / LAN 1).
+   * Wert: {ll, gua, net64, isp, lanNet} – gua/net64 sind null, wenn es keine globale Adresse gibt.
+   * Bei Routern steht am LAN zusätzlich das Netz für das Heimnetz (lanNet).
+   */
+  function ip6Map(net) {
+    const map = new Map();
+    const put = (d, i, extra) => {
+      const key = d.id + ':' + i;
+      if (!map.has(key)) map.set(key, { ll: LL_NET | ifaceId(d, i), gua: null, net64: null, isp: null });
+      return Object.assign(map.get(key), extra || {});
+    };
+    for (const d of net.devices) {
+      const t = TYPES[d.type];
+      if (t.host || t.isp) put(d, 0);
+      if (t.router) IFACES.forEach(i => put(d, i));
+    }
+    const nums = ispNumbers(net);
+    for (const isp of net.devices.filter(d => TYPES[d.type].isp)) {
+      const base = DOC_NET | (BigInt(nums.get(isp.id)) << 80n);
+      put(isp, 0, { gua: base | 1n, net64: base, isp: isp.id, isp48: base });
+      let sub = 0;
+      for (const e of l2Endpoints(net, isp.id, 0)) {
+        const t = TYPES[e.dev.type];
+        if (t.isp) continue;
+        if (t.host) { const x = put(e.dev, 0); if (x.gua === null) Object.assign(x, { gua: base | ifaceId(e.dev, 0), net64: base, isp: isp.id }); }
+        if (t.router && e.port === WAN) {
+          const w = put(e.dev, WAN);
+          if (w.gua !== null) continue;
+          sub++;
+          const lan = base | (BigInt(sub) << B64);
+          Object.assign(w, { gua: base | ifaceId(e.dev, WAN), net64: base, isp: isp.id });
+          put(e.dev, LAN, { gua: lan | 1n, net64: lan, isp: isp.id, lanNet: lan });
+        }
+      }
+    }
+    // Endgeräte im Heimnetz bilden ihre Adresse aus dem Netz, das der Router bekanntgibt (SLAAC)
+    for (const r of net.devices.filter(d => TYPES[d.type].router)) {
+      const L = map.get(r.id + ':' + LAN);
+      if (!L || L.lanNet == null) continue;
+      for (const e of l2Endpoints(net, r.id, LAN)) {
+        if (!TYPES[e.dev.type].host) continue;
+        const x = put(e.dev, 0);
+        if (x.gua === null) Object.assign(x, { gua: L.lanNet | ifaceId(e.dev, 0), net64: L.lanNet, isp: L.isp, router: r.id });
+      }
+    }
+    return map;
+  }
+
+  /** IPv6-Adressen eines Geräts als Text: {ll, gua, net, lanNet, fromRouter} (gua/net leer, wenn es keine globale gibt). */
+  function ip6Of(net, d, port) {
+    const i = TYPES[d.type].router ? iface(port || 0) : 0;
+    const x = ip6Map(net).get(d.id + ':' + i);
+    if (!x) return null;
+    return { ll: ip6Str(x.ll), gua: x.gua === null ? '' : ip6Str(x.gua), net: x.net64 === null ? '' : net6Str(x.net64), lanNet: x.lanNet == null ? '' : net6Str(x.lanNet), fromRouter: !!x.router };
+  }
+
+  /**
+   * Weg eines IPv6-Pakets von einem Endgerät zu einer Adresse. Ohne NAT: Die Adressen bleiben unterwegs gleich.
+   * Ergebnis wie route(): {ok, path, target, error, hint}
+   */
+  function route6(net, srcId, dst, map) {
+    map = map || ip6Map(net);
+    const src = dev(net, srcId);
+    const fail = (path, error, hint) => ({ ok: false, path, error, hint: hint || '' });
+    const done = (path, target) => ({ ok: true, path, target });
+    if (!src || !(TYPES[src.type].host || TYPES[src.type].isp)) return fail([srcId], 'Nur Endgeräte können Pakete senden.');
+    if (!linksOf(net, srcId).length) return fail([srcId], `${src.name} ist mit nichts verbunden.`, TYPES[src.type].wlan && !TYPES[src.type].cable ? 'Verbinde es per WLAN mit einem Access Point.' : 'Verbinde es mit einem Kabel.');
+    const me = map.get(srcId + ':0');
+    if (me.ll === dst || me.gua === dst) return done([srcId], src);
+    const at = (d, i) => map.get(d.id + ':' + i) || {};
+    const owner = () => { for (const [k, v] of map) if (v.ll === dst || v.gua === dst) return dev(net, k.slice(0, k.lastIndexOf(':'))); return null; };
+    const hitIn = (eps, key) => eps.filter(e => at(e.dev, e.port)[key] === dst);
+
+    if (isLinkLocal6(dst)) {
+      const hits = hitIn(l2Endpoints(net, srcId, 0), 'll');
+      if (hits.length) return done(hits[0].path, hits[0].dev);
+      const o = owner();
+      return fail([srcId], `Im Netz von ${src.name} hat niemand die Adresse ${ip6Str(dst)}.`,
+        o ? `Das ist die Link-Local-Adresse von ${o.name}. Link-Local-Adressen (fe80::…) gelten nur im eigenen Netz – Router leiten sie nie weiter. Nimm die globale Adresse.` : 'Link-Local-Adressen (fe80::…) gelten nur im eigenen Netz. Prüfe die Adresse.');
+    }
+    if (me.gua === null) return fail([srcId], `${src.name} hat nur eine Link-Local-Adresse (fe80::…) und erreicht damit nur Geräte im eigenen Netz.`, 'Eine globale IPv6-Adresse bekommt das Gerät automatisch, sobald es mit einem Router verbunden ist, der am Internetanbieter hängt.');
+    if ((dst >> 96n) !== (DOC_NET >> 96n)) return fail([srcId], `Im Internet ist die Adresse ${ip6Str(dst)} nicht bekannt.`, 'Globale IPv6-Adressen in der NetzWerkstatt beginnen mit 2001:db8:.');
+
+    const sameNet6 = (a, b) => a !== null && (a >> B64) === (b >> B64);
+    // Zustellen im Netz eines Anbieters oder Routers
+    const deliver = (d, i, path) => {
+      const hits = hitIn(l2Endpoints(net, d.id, i), 'gua');
+      if (hits.length) return done(path.concat(hits[0].path.slice(1)), hits[0].dev);
+      return fail(path, `Im Netz ${net6Str(dst)} hat niemand die Adresse ${ip6Str(dst)}.`, 'Prüfe die Adresse. Jedes Gerät bildet seine globale Adresse selbst – schau beim Ziel nach, wie sie lautet.');
+    };
+    // Weiterleitung im Internet (ab einem Internetanbieter)
+    const viaIsp = (isp, path) => {
+      const queue = [{ d: isp, path }], seen = new Set([isp.id]);
+      while (queue.length) {
+        const cur = queue.shift();
+        const a = at(cur.d, 0);
+        if (a.gua === dst) return done(cur.path, cur.d);
+        const eps = l2Endpoints(net, cur.d.id, 0);
+        if (a.isp48 !== undefined && (dst >> 80n) === (a.isp48 >> 80n)) {
+          if (sameNet6(a.net64, dst)) return deliver(cur.d, 0, cur.path);
+          const r = eps.find(e => TYPES[e.dev.type].router && e.port === WAN && sameNet6(at(e.dev, LAN).lanNet ?? null, dst));
+          if (!r) return fail(cur.path, `${cur.d.name} hat kein Heimnetz ${net6Str(dst)} vergeben.`, 'Prüfe die Adresse.');
+          if (at(r.dev, LAN).gua === dst) return done(cur.path.concat(r.path.slice(1)), r.dev);
+          return deliver(r.dev, LAN, cur.path.concat(r.path.slice(1)));
+        }
+        for (const e of eps) if (TYPES[e.dev.type].isp && !seen.has(e.dev.id)) { seen.add(e.dev.id); queue.push({ d: e.dev, path: cur.path.concat(e.path.slice(1)) }); }
+      }
+      return fail(path, `Im Internet ist die Adresse ${ip6Str(dst)} nicht bekannt.`, 'Ist das Ziel an einen Internetanbieter angeschlossen? Verschiedene Internetanbieter müssen miteinander verbunden sein.');
+    };
+
+    const eps = l2Endpoints(net, srcId, 0);
+    if (me.router) {
+      if (sameNet6(me.net64, dst)) return deliver(src, 0, [srcId]);
+      // Gateway ist der Router, der das Heimnetz bekanntgibt
+      const gwE = eps.find(e => e.dev.id === me.router && e.port === LAN);
+      const path = gwE.path;
+      if (at(gwE.dev, WAN).gua === dst) return done(path, gwE.dev);
+      const ispE = l2Endpoints(net, me.router, WAN).find(e => e.dev.id === me.isp);
+      if (!ispE) return fail(path, `${gwE.dev.name} ist nicht mehr mit dem Internetanbieter verbunden.`);
+      return viaIsp(ispE.dev, path.concat(ispE.path.slice(1)));
+    }
+    const ispE = eps.find(e => e.dev.id === me.isp);
+    if (ispE) return viaIsp(ispE.dev, ispE.path);
+    return viaIsp(src, [srcId]);
+  }
+
+  /** Ping per IPv6 (ICMPv6). Die Antwort nimmt denselben Weg zurück – ohne Adressübersetzung. */
+  function ping6(net, srcId, dstText) {
+    const src = dev(net, srcId);
+    const dst = parseIP6(dstText || '');
+    if (dst === null) return { ok: false, steps: [], error: `„${dstText || ''}" ist keine gültige IPv6-Adresse.`, hint: 'Eine IPv6-Adresse besteht aus acht Blöcken mit je vier Hexadezimalziffern (0–9, a–f), getrennt durch Doppelpunkte. „::" steht für mehrere Blöcke nur aus Nullen.' };
+    const map = ip6Map(net);
+    const rt = route6(net, srcId, dst, map);
+    const steps = [{ kind: 'request', label: 'Ping-Anfrage', proto: 'ICMPv6 · IPv6', text: `${src.name} → ${ip6Str(dst)}: „Bist du da?"`, path: rt.path, ok: rt.ok }];
+    if (!rt.ok) return { ok: false, steps, error: rt.error, hint: rt.hint, v6: true };
+    const me = map.get(srcId + ':0');
+    const from = isLinkLocal6(dst) ? me.ll : me.gua;
+    steps.push({ kind: 'response', label: 'Ping-Antwort', proto: 'ICMPv6 · IPv6', text: `${rt.target.name} → ${ip6Str(from)}: „Ja, ich bin da!"`, path: rt.path.slice().reverse(), ok: true });
+    const viaRouter = rt.path.some(id => { const d = dev(net, id); return d && TYPES[d.type].router; }) && !isLinkLocal6(dst);
+    return { ok: true, steps, target: rt.target.id, v6: true, linkLocal: isLinkLocal6(dst), seenSrc: ip6Str(from), viaRouter };
+  }
+
   // ------------------------------------------------------------------ Ereignisse
   function logEvent(net, ev) {
     if (!net.events) net.events = [];
@@ -795,6 +1014,7 @@
     TYPES, DESCRIPTIONS, parseIP, ipStr, parseMask, sameNet, netStr, ipProblem, isPrivate,
     emptyNetwork, createDevice, dev, linksOf, portOf, canLink, addLink, removeDevice, removeLink,
     ifaceAddr, l2Endpoints, route, roundTrip, ping, browse, parseURL, logEvent, topology, clone, newId,
+    parseIP6, ip6Str, net6Str, isLinkLocal6, ip6Map, ip6Of, route6, ping6,
     dhcpOf, dhcpRange, dhcpDefaultRange, dhcp, applyLease, refreshDns, suggest, suggestPortIP, iface, ifaceName, replug, WAN, LAN, wlanHub, setRouterWlan, isApipa, setModem, ispOf,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = NW;

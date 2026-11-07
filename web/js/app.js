@@ -17,6 +17,7 @@
     busy: false,
     saveTimer: null,
     drag: null,
+    v6: false,   // Arbeitsfläche zeigt IPv6- statt IPv4-Adressen
   };
 
   // ---------------------------------------------------------------- Bildschirme
@@ -214,11 +215,18 @@
     setTool(b.dataset.tool);
   }));
 
+  // Umschalter: Adressen auf der Arbeitsfläche als IPv4 oder IPv6 anzeigen
+  document.querySelectorAll('[data-addr]').forEach(b => b.addEventListener('click', () => {
+    S.v6 = b.dataset.addr === 'v6';
+    document.querySelectorAll('[data-addr]').forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', String(x === b)); });
+    if (S.net) renderCanvas();
+  }));
+
   function readOnly() { return S.submitted && !S.task.free; }
 
   // ---------------------------------------------------------------- Zeichnen
   function renderCanvas() {
-    NWView.render($('canvas'), S.net, { selected: S.selected, pending: S.pending });
+    NWView.render($('canvas'), S.net, { selected: S.selected, pending: S.pending, v6: S.v6 });
   }
 
   function renderAll() {
@@ -338,6 +346,46 @@
     return chips.length ? `<div class="chips">${chips.join('')}</div>` : '';
   }
 
+  /** Knöpfe zum Übernehmen von IPv6-Zieladressen: im eigenen Netz die Link-Local-, sonst die globale Adresse. */
+  function v6Chips(d) {
+    const mine = NW.ip6Of(S.net, d, 0);
+    const near = new Set(NW.linksOf(S.net, d.id).length ? NW.l2Endpoints(S.net, d.id, 0).map(e => e.dev.id) : []);
+    const chips = [];
+    for (const o of S.net.devices) {
+      if (o === d || !T[o.type].host) continue;
+      const a = NW.ip6Of(S.net, o, 0);
+      if (near.has(o.id)) chips.push(`<button class="chip v6" data-fill="ping" data-val="${esc(a.ll)}">${esc(o.name)} · fe80::</button>`);
+      if (a.gua && mine && mine.gua) chips.push(`<button class="chip v6" data-fill="ping" data-val="${esc(a.gua)}">${esc(o.name)} · global</button>`);
+    }
+    return chips.length ? `<div class="chips"><span class="chips-label">IPv6:</span>${chips.join('')}</div>` : '';
+  }
+
+  /** Vergleich IPv4 und IPv6 (aufklappbar). */
+  function compareHTML() {
+    return `<details class="desc"><summary>IPv4 und IPv6 im Vergleich</summary>
+      <table class="cmp"><colgroup><col class="k"><col><col></colgroup><thead><tr><th></th><th>IPv4</th><th>IPv6</th></tr></thead><tbody>
+        <tr><th>Länge</th><td>32 Bit</td><td>128 Bit (viermal so lang)</td></tr>
+        <tr><th>Schreib&shy;weise</th><td>4 Zahlen von 0 bis 255 mit Punkten, z. B. 192.168.0.10</td><td>8 Blöcke mit je 4 Hexadezimalziffern (0–9, a–f) und Doppelpunkten. Führende Nullen dürfen weg, „::" ersetzt einmal mehrere Null-Blöcke: 2001:db8:0:0:0:0:0:1 = 2001:db8::1</td></tr>
+        <tr><th>Anzahl Adres&shy;sen</th><td>rund 4,3 Milliarden – zu wenig für alle Geräte der Welt</td><td>rund 340 Sextillionen (eine Zahl mit 39 Stellen)</td></tr>
+        <tr><th>Nur im eigenen Netz</th><td>lokale Adressen wie 192.168.…, Notfall-Adresse 169.254.…</td><td>Link-Local-Adresse fe80::… (hat jedes Gerät automatisch)</td></tr>
+        <tr><th>Adresse bekommen</th><td>von Hand oder per DHCP</td><td>automatisch: Der Router gibt das Netz bekannt, das Gerät bildet seine Adresse selbst (SLAAC)</td></tr>
+        <tr><th>NAT</th><td>nötig: Das Heimnetz teilt sich eine externe Adresse</td><td>nicht nötig: Jedes Gerät hat eine eigene weltweite Adresse</td></tr>
+      </tbody></table>
+      <p class="muted small">Adressen, die mit 2001:db8: beginnen, sind für Beispiele reserviert. Echte globale IPv6-Adressen beginnen meist mit 2 oder 3.</p></details>`;
+  }
+
+  /** IPv6-Adressen eines Endgeräts. */
+  function v6HostHTML(d) {
+    const a = NW.ip6Of(S.net, d, 0);
+    if (!a) return '';
+    let h = `<div class="group v6"><h4>IPv6 (automatisch)</h4>
+      <p class="v6-row"><span class="v6-kind">Link-Local</span><code>${esc(a.ll)}</code></p>`;
+    if (a.gua) h += `<p class="v6-row"><span class="v6-kind">Global</span><code>${esc(a.gua)}</code></p>
+      <p class="muted small">Die ersten vier Blöcke (${esc(a.net)}) sind das Netz – es kommt ${a.fromRouter ? 'vom Router' : 'vom Internetanbieter'}. Die letzten vier Blöcke hat ${esc(d.name)} selbst gebildet.</p>`;
+    else h += `<p class="muted small">Noch keine globale Adresse. Mit der Link-Local-Adresse erreicht ${esc(d.name)} nur Geräte im eigenen Netz. Eine globale Adresse gibt es automatisch, sobald ein Router mit Internetanbieter angeschlossen ist.</p>`;
+    return h + compareHTML() + '</div>';
+  }
+
   function urlChips() {
     const names = new Set();
     S.net.devices.forEach(o => o.services && o.services.dns && o.services.dns.on && (o.services.dns.entries || []).forEach(e => e.name && names.add(e.name.trim())));
@@ -400,6 +448,7 @@
       h += field('DNS-Server', 'dns', d.dns, 'dns', { disabled: fdis, placeholder: auto ? 'kommt per DHCP' : 'nur nötig für Namen wie www…' });
       if (sg.dns) h += chip('suggest-dns', `DNS-Server ${sg.dns} übernehmen`);
       h += '</div>';
+      h += v6HostHTML(d);
     }
     if (t.services) {
       const w = d.services.web, n = d.services.dns;
@@ -459,8 +508,16 @@
       const isp = NW.ispOf(S.net, d);
       if (isp && !dis) h += `<button class="btn small" data-act="dhcp">Adresse von ${esc(isp.name)} anfordern</button>`;
       const wa = NW.ifaceAddr(d, NW.WAN);
-      if (wa && wanConns.length) h += `<p class="nat-info"><b>NAT:</b> Alle Geräte im Heimnetz gehen mit der externen Adresse <b>${esc(NW.ipStr(wa.ip))}</b> ins Internet. Ihre lokalen Adressen sieht dort niemand. Antworten verteilt der Router wieder an das richtige Gerät.</p>`;
+      if (wa && wanConns.length) h += `<p class="nat-info"><b>NAT (nur bei IPv4):</b> Alle Geräte im Heimnetz gehen mit der externen Adresse <b>${esc(NW.ipStr(wa.ip))}</b> ins Internet. Ihre lokalen Adressen sieht dort niemand. Antworten verteilt der Router wieder an das richtige Gerät.</p>`;
       h += '</div>';
+      // IPv6
+      const v6l = NW.ip6Of(S.net, d, NW.LAN), v6w = NW.ip6Of(S.net, d, NW.WAN);
+      h += `<div class="group v6"><h4>IPv6 (automatisch)</h4>`;
+      if (v6l.lanNet) h += `<p class="small">Vom Internetanbieter bekommt ${esc(d.name)} ein eigenes Netz für das Heimnetz: <code>${esc(v6l.lanNet)}</code>. Das gibt der Router im Heimnetz bekannt; jedes Gerät bildet daraus selbst seine globale Adresse – ohne DHCP und ohne NAT.</p>
+        <p class="v6-row"><span class="v6-kind">Heimnetz</span><code>${esc(v6l.gua)}</code></p>
+        <p class="v6-row"><span class="v6-kind">Internet</span><code>${esc(v6w.gua)}</code></p>`;
+      else h += '<p class="muted small">Sobald der Internet-Anschluss mit einem Internetanbieter verbunden ist, bekommt der Router von ihm ein IPv6-Netz für das Heimnetz.</p>';
+      h += `<p class="v6-row"><span class="v6-kind">Link-Local</span><code>${esc(v6l.ll)}</code></p>${compareHTML()}</div>`;
     }
     if (t.isp) {
       const a = NW.ifaceAddr(d, 0);
@@ -477,6 +534,8 @@
         const x = NW.ifaceAddr(e.dev, e.port);
         return `<li>${esc(e.dev.name)}${T[e.dev.type].isp ? ' <span class="muted">(anderer Internetanbieter)</span>' : ''} – ${x ? esc(NW.ipStr(x.ip)) : '<span class="muted">noch keine Adresse</span>'}</li>`;
       });
+      const v6 = NW.ip6Of(S.net, d, 0);
+      h += `<h4>IPv6</h4><p class="small">IPv6-Adressbereich: <code>${esc(v6.net.replace('::/64', '::/48'))}</code>. Jeder angeschlossene Router bekommt daraus ein eigenes Netz für sein Heimnetz, Server direkt beim Anbieter liegen in <code>${esc(v6.net)}</code>. Der Anbieter selbst hat <code>${esc(v6.gua)}</code>.</p>`;
       h += `<h4>Angeschlossen</h4>${cust.length ? `<ul class="conn">${cust.join('')}</ul>` : '<p class="muted small">Noch nichts. Verbinde einen Router (Internet-Anschluss) oder einen Server per Kabel.</p>'}</div>`;
     }
     if (t.l2) h += `<p class="muted small">Ein ${esc(t.label)} braucht keine IP-Adresse – er leitet die Pakete nur weiter.</p>`;
@@ -485,9 +544,9 @@
 
     if (t.host) {
       h += `<div class="group test"><h4>Testen</h4>
-        <label class="field">Ping senden an (IP-Adresse)
-          <div class="inline"><input id="ping-target" placeholder="z. B. 192.168.1.2" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn primary" data-act="ping">Ping</button></div></label>
-        ${otherHostChips(d)}
+        <label class="field">Ping senden an (IPv4- oder IPv6-Adresse)
+          <div class="inline"><input id="ping-target" placeholder="z. B. 192.168.1.2 oder fe80::…" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn primary" data-act="ping">Ping</button></div></label>
+        ${otherHostChips(d)}${v6Chips(d)}
         <label class="field">Browser: Adresse (URL)
           <div class="inline"><input id="url-target" placeholder="http://www.beispiel.de" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn primary" data-act="browse">Öffnen</button></div></label>
         ${urlChips()}</div>`;
@@ -709,9 +768,10 @@
     await runSteps(res.steps);
     if (res.ok) {
       const t = NW.dev(S.net, res.target);
-      logResult(true, `Ping erfolgreich: ${t.name} (${target}) hat geantwortet.` + natText(res.nat));
+      if (res.v6) logResult(true, `Ping per IPv6 erfolgreich: ${t.name} (${target}) hat geantwortet.` + (res.linkLocal ? ' Link-Local-Adressen funktionieren nur im eigenen Netz.' : res.viaRouter ? ` Kein NAT: ${t.name} hat die echte Adresse ${res.seenSrc} von ${d.name} gesehen.` : ''));
+      else logResult(true, `Ping erfolgreich: ${t.name} (${target}) hat geantwortet.` + natText(res.nat));
     } else logResult(false, res.error, res.hint);
-    NW.logEvent(S.net, { type: 'ping', src: d.id, target: res.target, ok: !!res.ok });
+    NW.logEvent(S.net, Object.assign({ type: 'ping', src: d.id, target: res.target, ok: !!res.ok }, res.v6 ? { v6: true, ll: !!res.linkLocal } : {}));
     renderGoals(); scheduleSave();
   }
 

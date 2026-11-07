@@ -69,6 +69,10 @@
         <button class="tool" data-tool="delete" title="Gerät oder Verbindung löschen">
           <svg viewBox="0 0 24 24" class="ti"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg><span>Löschen</span></button>
         <div id="tool-hint" class="tool-hint"></div>
+        <div class="seg addr-switch" role="group" aria-label="Adressen auf der Arbeitsfläche">
+          <button class="on" data-addr="v4" aria-pressed="true" title="IPv4-Adressen anzeigen">IPv4</button>
+          <button data-addr="v6" aria-pressed="false" title="IPv6-Adressen anzeigen">IPv6</button>
+        </div>
       </div>
       <div class="canvas-wrap">
         <svg id="canvas" class="canvas" role="img" aria-label="Arbeitsfläche mit dem Netzwerk"></svg>

@@ -21,17 +21,26 @@
     const distinctIPs = list => new Set(list.map(d => NW.parseIP(d.ip))).size === list.length;
     // Gab es einen erfolgreichen Ping (der auch jetzt noch klappen würde)?
     const pingOk = (srcFilter, dstFilter) => (net.events || []).some(e => {
-      if (e.type !== 'ping' || !e.ok) return false;
+      if (e.type !== 'ping' || !e.ok || e.v6) return false;
       const s = NW.dev(net, e.src), t = NW.dev(net, e.target);
       if (!s || !t || s === t || !T[t.type].host || !srcFilter(s) || !dstFilter(t)) return false;
       return NW.roundTrip(net, s.id, NW.parseIP(t.ip)).ok;
     });
+    // Gab es einen erfolgreichen Ping per IPv6 (kind: 'll' = Link-Local, 'gua' = global), der jetzt noch klappen würde?
+    const ping6Ok = (srcFilter, dstFilter, kind) => (net.events || []).some(e => {
+      if (e.type !== 'ping' || !e.ok || !e.v6 || (e.ll ? 'll' : 'gua') !== kind) return false;
+      const s = NW.dev(net, e.src), t = NW.dev(net, e.target);
+      if (!s || !t || s === t || !T[t.type].host || !srcFilter(s) || !dstFilter(t)) return false;
+      const a = NW.ip6Of(net, t, 0);
+      return !!a && !!a[kind] && NW.ping6(net, s.id, a[kind]).ok;
+    });
+    const hasGua = d => { const a = NW.ip6Of(net, d, 0); return !!(a && a.gua); };
     const webOk = host => (net.events || []).some(e => {
       if (e.type !== 'web' || !e.ok || e.host !== host) return false;
       const s = NW.dev(net, e.src);
       return s && NW.browse(net, s.id, 'http://' + host).ok;
     });
-    return { net, byType, hosts, neighbors, linked, inNet, distinctIPs, pingOk, webOk };
+    return { net, byType, hosts, neighbors, linked, inNet, distinctIPs, pingOk, ping6Ok, hasGua, webOk };
   }
 
   const isType = t => d => d.type === t;
@@ -47,6 +56,7 @@
   }
 
   function evPing(net, src, target) { NW.logEvent(net, { type: 'ping', src, target, ok: true }); }
+  function evPing6(net, src, target, ll) { NW.logEvent(net, { type: 'ping', v6: true, ll: !!ll, src, target, ok: true }); }
 
   // ---------------------------------------------------------------- Aufgaben
   const TASKS = [
@@ -182,12 +192,40 @@
       },
     },
     {
+      id: 'ipv6',
+      title: 'IPv6: Eine Adresse für jedes Gerät',
+      level: 3,
+      intro: 'Mit IPv4 gehen alle Geräte im Heimnetz mit derselben externen Adresse ins Internet (NAT). Deshalb kann der Spieleserver im Internet deinen PC nicht direkt erreichen. Mit IPv6 bekommt jedes Gerät eine eigene, weltweit eindeutige Adresse – ganz automatisch. Probiere es aus!',
+      tip: 'IPv6-Adressen musst du nicht eintragen: Tippe ein Gerät an, dann siehst du unter „IPv6" seine Adressen. Beim Ping kannst du sie mit den Knöpfen unter dem Eingabefeld übernehmen. Die Link-Local-Adresse beginnt mit fe80::, die globale Adresse mit 2001:db8:.',
+      think: 'Pinge den PC vom Spieleserver aus auch einmal per IPv4 an. Warum klappt das nicht, mit IPv6 aber schon? Und warum kommt ein Ping an die Link-Local-Adresse des Spieleservers nicht an? Übrigens: In echt schützt eine Firewall im Router das Heimnetz vor unerwünschten Anfragen aus dem Internet.',
+      goals: [
+        { text: 'Schließe einen PC per Kabel an den Heimrouter an. Schau nach: Er hat sofort eine globale IPv6-Adresse.', check: c => c.byType('pc').some(p => NW.l2Endpoints(c.net, p.id, 0).some(e => e.dev.id === 'r' && e.port === NW.LAN) && c.hasGua(p)) },
+        { text: 'Verbinde ein Tablet per WLAN mit dem Router.', check: c => c.byType('tablet').some(d => c.neighbors(d.id).some(n => n.kind === 'wlan' && n.dev.id === 'r')) },
+        { text: 'Pinge vom PC aus die Link-Local-Adresse (fe80::…) des Tablets an.', check: c => c.ping6Ok(isType('pc'), isType('tablet'), 'll') },
+        { text: 'Pinge vom PC aus den Spieleserver über seine globale IPv6-Adresse an.', check: c => c.ping6Ok(isType('pc'), d => d.id === 'game', 'gua') },
+        { text: 'Pinge jetzt umgekehrt vom Spieleserver aus deinen PC per IPv6 an – das geht ohne NAT!', check: c => c.ping6Ok(d => d.id === 'game', isType('pc'), 'gua') },
+      ],
+      start: () => ipv6Start(),
+      solution: () => {
+        const net = ipv6Start();
+        NW.createDevice(net, 'pc', 160, 160, { id: 'pc', name: 'PC 1' });
+        NW.createDevice(net, 'tablet', 160, 420, { id: 'tb', name: 'Tablet 1' });
+        NW.addLink(net, 'pc', 'r', 'kabel');
+        NW.addLink(net, 'r', 'tb', 'wlan');
+        for (const id of ['pc', 'tb']) NW.applyLease(NW.dev(net, id), NW.dhcp(net, id).lease);
+        evPing6(net, 'pc', 'tb', true);
+        evPing6(net, 'pc', 'game');
+        evPing6(net, 'game', 'pc');
+        return net;
+      },
+    },
+    {
       id: 'frei',
       title: 'Freies Bauen',
       level: 0,
       free: true,
       intro: 'Hier kannst du ohne Vorgaben eigene Netzwerke bauen und ausprobieren.',
-      tip: 'Ideen: Schließe deinen Heimrouter an einen Internetanbieter an und stelle beim Anbieter einen Webserver und einen DNS-Server ins Internet. Rufe die Seite dann vom Heimnetz aus auf und achte auf NAT im Protokoll. Was passiert, wenn ein Server im Internet einen PC in deinem Heimnetz anpingen will? Was passiert, wenn zwei Geräte dieselbe IP-Adresse haben?',
+      tip: 'Ideen: Schließe deinen Heimrouter an einen Internetanbieter an und stelle beim Anbieter einen Webserver und einen DNS-Server ins Internet. Rufe die Seite dann vom Heimnetz aus auf und achte auf NAT im Protokoll. Was passiert, wenn ein Server im Internet einen PC in deinem Heimnetz anpingen will? Was passiert, wenn zwei Geräte dieselbe IP-Adresse haben? Vergleiche außerdem einen Ping per IPv4 und per IPv6 zwischen Internet und Heimnetz.',
       goals: [],
       start: () => NW.emptyNetwork(),
       solution: null,
@@ -219,6 +257,18 @@
       link('r', 'inet', 'kabel', { locked: true });
       link('inet', 'dns', 'kabel', { locked: true });
       link('inet', 'web', 'kabel', { locked: true });
+    });
+  }
+
+  function ipv6Start() {
+    return build(({ add, link }) => {
+      const r = add('r', 'router', 360, 280, { name: 'Heimrouter', locked: true });
+      Object.assign(r.ports[0], { ip: '85.17.4.100', gw: '85.17.4.1', dns: '' });
+      r.ports[1].ip = '192.168.178.1';
+      add('inet', 'isp', 560, 280, { name: 'Internetanbieter', locked: true, ip: '85.17.4.1' });
+      add('game', 'server', 760, 280, { name: 'Spieleserver', locked: true, ip: '85.17.4.101', gw: '85.17.4.1', dhcp: false });
+      link('r', 'inet', 'kabel', { locked: true });
+      link('inet', 'game', 'kabel', { locked: true });
     });
   }
 
