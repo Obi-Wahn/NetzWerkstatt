@@ -857,4 +857,101 @@ test('Rechenzentrum: Internetserver mit eigenem öffentlichem Netz, erreichbar �
   assert.ok(r.steps.some(s => s.path.join() === 'pc,r,isp,rz1,web'), 'HTTP geht ins andere Rechenzentrum');
 });
 
+/** Netz wie im Unterricht: PC – Router – Internetanbieter, daran Webserver und DNS-Server direkt. */
+function internetMitNamen() {
+  const net = NW.emptyNetwork();
+  NW.createDevice(net, 'isp', 0, 0, { id: 'isp' });
+  NW.createDevice(net, 'router', 0, 0, { id: 'r' });
+  NW.createDevice(net, 'pc', 0, 0, { id: 'pc' });
+  const web = NW.createDevice(net, 'server', 0, 0, { id: 'web' });
+  const dns = NW.createDevice(net, 'server', 0, 0, { id: 'dns' });
+  web.services.web.on = true; dns.services.dns.on = true;
+  NW.addLink(net, 'r', 'isp', 'kabel'); NW.addLink(net, 'pc', 'r', 'kabel');
+  NW.addLink(net, 'web', 'isp', 'kabel'); NW.addLink(net, 'dns', 'isp', 'kabel');
+  for (const id of ['r', 'web', 'dns']) { const res = NW.dhcp(net, id); assert.ok(res.ok, res.error); NW.applyLease(NW.dev(net, id), res.lease); }
+  NW.dev(net, 'isp').dns = dns.ip;
+  NW.refreshDns(net);
+  const res = NW.dhcp(net, 'pc'); assert.ok(res.ok, res.error); NW.applyLease(NW.dev(net, 'pc'), res.lease);
+  return { net, web, dns };
+}
+
+test('Name beim Webserver: gültige Namen erkennen', () => {
+  for (const h of ['www.meineseite.de', 'mail.schule-xy.de', 'spiel.de']) assert.ok(NW.validHost(h), h);
+  for (const h of ['', 'meineseite', '85.17.4.101', 'www..de', '-a.de', 'www.mei ne.de']) assert.ok(!NW.validHost(h), h);
+});
+
+test('Name beim Webserver im DNS-Server eintragen und per Name aufrufen', () => {
+  const { net, web, dns } = internetMitNamen();
+  web.services.web.host = ' WWW.MeineSeite.de ';
+  let st = NW.nameStatus(net, 'web', 'web');
+  assert.strictEqual(st.host, 'www.meineseite.de');
+  assert.deepStrictEqual(st.servers, ['dns']);
+  assert.deepStrictEqual(st.at, []);
+  assert.ok(!NW.browse(net, 'pc', 'http://www.meineseite.de').ok, 'ohne DNS-Eintrag kein Aufruf per Name');
+  const r = NW.registerName(net, 'web', 'web', 'dns');
+  assert.ok(r.ok, r.error);
+  assert.deepStrictEqual(dns.services.dns.entries, [{ name: 'www.meineseite.de', ip: web.ip }]);
+  st = NW.nameStatus(net, 'web', 'web');
+  assert.deepStrictEqual(st.at, ['dns']);
+  const b = NW.browse(net, 'pc', 'http://www.meineseite.de');
+  assert.ok(b.ok, b.error);
+  assert.ok(b.steps.some(s => s.label === 'HTTP-Request' && /Host: www\.meineseite\.de/.test(s.text)));
+  // Zweimal eintragen legt keinen doppelten Eintrag an
+  NW.registerName(net, 'web', 'web', 'dns');
+  assert.strictEqual(dns.services.dns.entries.length, 1);
+});
+
+test('Name beim Server: veralteter DNS-Eintrag wird erkannt und angepasst', () => {
+  const { net, web, dns } = internetMitNamen();
+  web.services.web.host = 'www.meineseite.de';
+  dns.services.dns.entries.push({ name: 'www.meineseite.de', ip: '85.17.4.250' });
+  let st = NW.nameStatus(net, 'web', 'web');
+  assert.deepStrictEqual(st.stale, ['dns']);
+  const r = NW.registerName(net, 'web', 'web', 'dns');
+  assert.ok(r.ok && r.updated);
+  assert.deepStrictEqual(dns.services.dns.entries, [{ name: 'www.meineseite.de', ip: web.ip }]);
+  st = NW.nameStatus(net, 'web', 'web');
+  assert.deepStrictEqual(st.stale, []);
+  assert.deepStrictEqual(st.at, ['dns']);
+});
+
+test('Name beim Server: ohne gültigen Namen oder IP-Adresse wird nichts eingetragen', () => {
+  const { net, web, dns } = internetMitNamen();
+  web.services.web.host = 'meineseite';
+  assert.ok(!NW.registerName(net, 'web', 'web', 'dns').ok);
+  web.services.web.host = 'www.meineseite.de';
+  const ip = web.ip; web.ip = '';
+  assert.ok(!NW.registerName(net, 'web', 'web', 'dns').ok);
+  web.ip = ip;
+  assert.ok(!NW.registerName(net, 'web', 'web', 'web').ok, 'auf dem Webserver läuft kein DNS');
+  assert.deepStrictEqual(dns.services.dns.entries, []);
+});
+
+test('Webserver mit anderem Namen antwortet mit 404, per IP-Adresse klappt es', () => {
+  const { net, web, dns } = internetMitNamen();
+  web.services.web.host = 'www.meineseite.de';
+  dns.services.dns.entries.push({ name: 'www.andereseite.de', ip: web.ip });
+  const r = NW.browse(net, 'pc', 'http://www.andereseite.de');
+  assert.ok(!r.ok);
+  assert.ok(/404/.test(r.steps[r.steps.length - 1].text));
+  assert.ok(NW.browse(net, 'pc', 'http://' + web.ip).ok, 'Aufruf per IP-Adresse');
+  web.services.web.host = '';
+  assert.ok(NW.browse(net, 'pc', 'http://www.andereseite.de').ok, 'ohne Namen antwortet der Server auf jeden Namen');
+});
+
+test('Name auch für andere Internetdienste (E-Mail, Video, Spiel)', () => {
+  const { net, web, dns } = internetMitNamen();
+  for (const k of ['mail', 'video', 'game']) web.services[k].on = true;
+  web.services.mail.host = 'mail.meineseite.de';
+  web.services.video.host = 'video.meineseite.de';
+  web.services.game.host = 'spiel.meineseite.de';
+  for (const k of ['mail', 'video', 'game']) assert.ok(NW.registerName(net, 'web', k, 'dns').ok);
+  assert.strictEqual(dns.services.dns.entries.length, 3);
+  assert.ok(NW.useService(net, 'pc', 'mail', 'mail.meineseite.de').ok);
+  assert.ok(NW.useService(net, 'pc', 'video', 'video.meineseite.de').ok);
+  assert.ok(NW.useService(net, 'pc', 'game', 'spiel.meineseite.de').ok);
+  // Video läuft über HTTP: falscher Name → 404
+  assert.ok(!NW.useService(net, 'pc', 'video', 'mail.meineseite.de').ok);
+});
+
 console.log(`\n${n} Tests bestanden.`);
