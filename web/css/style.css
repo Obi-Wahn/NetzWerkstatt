@@ -145,6 +145,7 @@ input:disabled { background: var(--chip-bg); color: var(--muted); }
 .workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: 96px minmax(0, 1fr) 330px; }
 .palette { background: var(--panel); border-right: 1px solid var(--line); padding: 8px 6px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
 .palette-title { font-size: .75em; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); text-align: center; font-weight: 700; }
+.palette-title:not(:first-child) { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
 .pal-btn {
   font: inherit; font-size: .74em; display: flex; flex-direction: column; align-items: center; gap: 2px;
   background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 7px 2px; cursor: pointer; color: var(--ink); touch-action: manipulation;
@@ -278,6 +279,15 @@ details p { margin-top: 4px; font-size: .93em; }
 .insp-name { font-weight: 700; font-size: 1.05em; padding: 5px 8px; min-height: 36px; }
 .group { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 10px; }
 .group h4 { font-size: .9em; margin-bottom: 8px; }
+/* Einklappbare Abschnitte im Einstellungsbereich */
+details.sec { margin-top: 10px; padding-top: 2px; }
+details.sec > summary { list-style: none; display: flex; align-items: center; gap: 8px; color: var(--ink); padding: 8px 0; min-height: 40px; -webkit-tap-highlight-color: transparent; }
+details.sec > summary::-webkit-details-marker { display: none; }
+details.sec > summary h4 { margin: 0; flex: 1; font-size: .95em; }
+details.sec > summary::after { content: ""; width: 8px; height: 8px; border: solid var(--muted); border-width: 0 2px 2px 0; transform: rotate(45deg); margin: 0 6px 4px 0; transition: transform .15s; }
+details.sec[open] > summary::after { transform: rotate(-135deg); margin-bottom: -2px; }
+details.sec[open] > summary { margin-bottom: 4px; }
+details.sec > summary:hover h4 { color: var(--brand); }
 .field { display: grid; gap: 4px; font-size: .88em; font-weight: 600; color: var(--muted); margin-bottom: 9px; }
 .field input { font-weight: 400; color: var(--ink); font-family: ui-monospace, Consolas, monospace; }
 .fhint { font-weight: 500; font-size: .92em; min-height: 0; }
