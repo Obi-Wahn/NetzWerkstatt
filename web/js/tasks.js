@@ -755,9 +755,21 @@
     return task.goals.map(g => { try { return !!g.check(c); } catch (e) { return false; } });
   }
 
+  // Themen, nach denen die Aufgaben in der Übersicht gruppiert werden.
+  // Die Reihenfolge der Aufgaben (und damit ihre Nummern) bleibt unverändert.
+  const GROUPS = [
+    { id: 'grundlagen', title: 'Erste Netze und Adressen', tasks: ['zwei-pcs', 'stern', 'heimnetz', 'webseite', 'dhcp', 'ipv6'] },
+    { id: 'topologien', title: 'Topologien', tasks: ['bus', 'ring', 'topologien'] },
+    { id: 'netzarten', title: 'Architekturen und Netzarten', tasks: ['dateien', 'pan', 'man', 'netzarten'] },
+    { id: 'dienste', title: 'Protokolle und Internetdienste', tasks: ['tcp-udp', 'dienste-sortieren', 'dienste'] },
+    { id: 'frei', title: 'Freies Bauen', tasks: ['frei'] },
+  ];
+  TASKS.forEach((t, i) => { t.num = i + 1; });
+  for (const g of GROUPS) for (const id of g.tasks) TASKS.find(t => t.id === id).group = g.id;
+
   function byId(id) { return TASKS.find(t => t.id === id) || null; }
 
-  const api = { TASKS, evaluate, byId, manualize };
+  const api = { TASKS, GROUPS, evaluate, byId, manualize };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.NWTasks = api;
 })(typeof window !== 'undefined' ? window : globalThis);

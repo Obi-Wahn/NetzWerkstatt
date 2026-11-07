@@ -64,11 +64,22 @@
   function render() {
     const d = S.data;
     $('room-code').textContent = d.roomCode;
-    // Reiter
-    $('task-tabs').innerHTML = TASKS.map((t, i) => {
-      const n = d.students.filter(s => s.works && s.works[t.id] && s.works[t.id].submitted).length;
-      return `<button class="task-tab ${t.id === S.task ? 'active' : ''}" data-task="${t.id}">${i + 1}. ${esc(t.title)}<span class="cnt">${n} abgegeben</span></button>`;
+    // Aufgabenliste, nach Themen gruppiert
+    const count = id => d.students.filter(s => s.works && s.works[id] && s.works[id].submitted).length;
+    $('task-tabs').innerHTML = NWTasks.GROUPS.map(g => {
+      const items = TASKS.filter(t => t.group === g.id);
+      if (!items.length) return '';
+      return `<div class="task-group"><h3>${esc(g.title)}</h3>${items.map(t => {
+        const n = count(t.id);
+        return `<button class="task-item ${t.id === S.task ? 'active' : ''}" data-task="${t.id}" ${t.id === S.task ? 'aria-current="true"' : ''}>`
+          + `<span class="num">${t.num}</span><span class="ttl">${esc(t.title)}</span>`
+          + `<span class="cnt ${n ? 'has' : ''}" title="${n} abgegeben">${n}</span></button>`;
+      }).join('')}</div>`;
     }).join('');
+    const cur = taskObj();
+    $('task-heading').textContent = `${cur.num}. ${cur.title}`;
+    const nCur = count(S.task);
+    $('task-count').textContent = `${nCur} von ${d.students.length} abgegeben`;
     $('chk-release').checked = !!d.released[S.task];
 
     const task = taskObj();

@@ -33,7 +33,12 @@
     <button id="btn-logout" class="btn ghost">Abmelden</button>
   </header>
   <main class="dash">
-    <nav id="task-tabs" class="task-tabs" aria-label="Aufgaben"></nav>
+    <nav id="task-tabs" class="task-nav" aria-label="Aufgaben"></nav>
+    <div class="dash-main">
+    <div class="task-head">
+      <h2 id="task-heading"></h2>
+      <span id="task-count" class="muted"></span>
+    </div>
     <div class="dash-tools">
       <button id="btn-show-solution" class="btn">Musterlösung zeigen</button>
       <label class="toggle"><input type="checkbox" id="chk-release"> Musterlösung für Schüler freigeben</label>
@@ -50,6 +55,7 @@
       <p id="empty" class="muted empty" hidden>Noch keine Schülerinnen und Schüler angemeldet. Zeige den Zugang am Beamer, damit sich alle anmelden können.</p>
     </div>
     <p class="muted small">Die Liste aktualisiert sich automatisch alle paar Sekunden.</p>
+    </div>
   </main>
 </section>
 

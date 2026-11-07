@@ -77,16 +77,27 @@
     $('who').textContent = S.me ? S.me.name : '';
     const list = $('task-list');
     list.innerHTML = '';
-    NWTasks.TASKS.forEach((t, i) => {
-      const w = S.me && S.me.works[t.id];
-      const status = w ? (w.submitted ? '<span class="badge ok">abgegeben ✓</span>' : '<span class="badge">angefangen</span>') : '<span class="badge new">neu</span>';
-      const sol = S.me && S.me.released[t.id] ? '<span class="badge sol">Musterlösung da</span>' : '';
-      const b = document.createElement('button');
-      b.className = 'task-tile' + (t.free ? ' free' : '');
-      b.innerHTML = `<div class="tile-num">${t.free ? '∞' : i + 1}</div><div class="tile-body"><h3>${esc(t.title)}</h3><p>${esc(t.intro)}</p><div class="tile-meta">${status}${sol}${t.goals.length ? `<span class="muted small">${t.goals.length} Ziele</span>` : ''}</div></div>`;
-      b.addEventListener('click', () => openTask(t.id));
-      list.appendChild(b);
-    });
+    for (const g of NWTasks.GROUPS) {
+      const items = NWTasks.TASKS.filter(t => t.group === g.id);
+      if (!items.length) continue;
+      const sec = document.createElement('section');
+      sec.className = 'task-group';
+      const graded = items.filter(t => !t.free);
+      const done = graded.filter(t => S.me && S.me.works[t.id] && S.me.works[t.id].submitted).length;
+      sec.innerHTML = `<h3 class="group-title">${esc(g.title)}${graded.length ? `<span class="group-count ${done === graded.length ? 'all' : ''}">${done} von ${graded.length} abgegeben</span>` : ''}</h3><div class="task-grid"></div>`;
+      const grid = sec.querySelector('.task-grid');
+      for (const t of items) {
+        const w = S.me && S.me.works[t.id];
+        const status = w ? (w.submitted ? '<span class="badge ok">abgegeben ✓</span>' : '<span class="badge">angefangen</span>') : '<span class="badge new">neu</span>';
+        const sol = S.me && S.me.released[t.id] ? '<span class="badge sol">Musterlösung da</span>' : '';
+        const b = document.createElement('button');
+        b.className = 'task-tile' + (t.free ? ' free' : '') + (w && w.submitted ? ' done' : '');
+        b.innerHTML = `<div class="tile-num">${t.free ? '∞' : t.num}</div><div class="tile-body"><h4>${esc(t.title)}</h4><p>${esc(t.intro)}</p><div class="tile-meta">${t.free ? '' : status}${sol}${t.goals.length ? `<span class="muted small">${t.goals.length} Ziele</span>` : ''}</div></div>`;
+        b.addEventListener('click', () => openTask(t.id));
+        grid.appendChild(b);
+      }
+      list.appendChild(sec);
+    }
   }
 
   // ---------------------------------------------------------------- Aufgabe öffnen
