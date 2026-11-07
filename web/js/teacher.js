@@ -59,6 +59,7 @@
     NWEigene.install(S.data.customTasks || []);
     if (!graded().some(t => t.id === S.task)) S.task = NWTasks.TASKS[0].id;
     render();
+    refreshAccessTasks();
   }
 
   // ---------------------------------------------------------------- Darstellung
@@ -494,6 +495,21 @@
     draw();
   }
 
+  // Freigeschaltete Aufgaben für die Zugangsseite, nach Themen gruppiert
+  function accessTasksHTML() {
+    const groups = NWTasks.GROUPS.map(g => ({ g, items: NWTasks.all().filter(t => t.group === g.id && isUnlocked(t.id)) })).filter(x => x.items.length);
+    if (!groups.length) return '<p class="muted">Noch keine Aufgaben freigeschaltet.</p>';
+    return '<h3>Freigeschaltete Aufgaben</h3><div class="access-groups">' + groups.map(({ g, items }) =>
+      `<div class="access-group"><div class="access-group-title">${esc(g.title)}</div><ul>${items.map(t => `<li><span class="num">${t.free ? '∞' : esc(t.num)}</span>${esc(t.title)}</li>`).join('')}</ul></div>`).join('') + '</div>';
+  }
+  // Ist die Zugangsseite offen, wird die Liste bei jeder Aktualisierung erneuert
+  function refreshAccessTasks() {
+    const box = document.getElementById('access-tasks');
+    if (!box) return;
+    const html = accessTasksHTML();
+    if (box.innerHTML !== html) box.innerHTML = html;
+  }
+
   // Zugang am Beamer: eine Adresse, Raumcode und QR-Code (wird lokal erzeugt)
   function showAccess() {
     const addrs = S.data.addresses && S.data.addresses.length ? S.data.addresses : [location.origin];
@@ -511,6 +527,7 @@
         </div>
         <div class="access-qr">${NWQR.svg(qrURL, 320)}<p class="muted">QR-Code scannen – der Raumcode ist schon eingetragen.</p></div>
       </div>
+      <div class="access-tasks" id="access-tasks">${accessTasksHTML()}</div>
       ${addrs.length > 1 ? `<button class="btn ghost small" id="btn-other-addr">Adresse funktioniert nicht? Andere wählen (${idx + 1}/${addrs.length})</button>` : ''}
     </div>`, { wide: true, full: true });
     const other = body.querySelector('#btn-other-addr');
