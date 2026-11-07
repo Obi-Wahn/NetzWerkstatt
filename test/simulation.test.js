@@ -395,4 +395,104 @@ test('IPv6-Ping zählt nicht als IPv4-Ping in Aufgaben', () => {
   assert.strictEqual(evaluate(t, net)[3], false);
 });
 
+// ---------------------------------------------------------------- Bus, Ring und Ausfälle
+function ringNet() { return TASKS.find(t => t.id === 'ring').solution(); }
+function busNet() { return TASKS.find(t => t.id === 'bus').solution(); }
+
+test('Ring: wird erkannt, Daten laufen in einer Richtung im Kreis', () => {
+  const net = ringNet();
+  const topo = NW.topologies(net);
+  assert.strictEqual(topo.length, 1);
+  assert.strictEqual(topo[0].kind, 'ring');
+  assert.ok(topo[0].closed && topo[0].ok);
+  const r = NW.ping(net, 'r1', '192.168.30.2');
+  assert.ok(r.ok, r.error);
+  assert.deepStrictEqual(r.steps[0].path, ['r1', 'r2']);
+  assert.deepStrictEqual(r.steps[1].path, ['r2', 'r3', 'r4', 'r1']);
+});
+
+test('Ring: Ein ausgefallener PC unterbricht den ganzen Ring', () => {
+  const net = ringNet();
+  NW.setFault(net, 'r3', true);
+  const r = NW.ping(net, 'r1', '192.168.30.2');
+  assert.ok(!r.ok);
+  assert.strictEqual(r.fault, 'ring');
+  assert.match(r.error, /Ring ist unterbrochen: PC 3 ist ausgefallen/);
+  assert.strictEqual(NW.topologies(net)[0].ok, false);
+});
+
+test('Ring: Kabelbruch und offener Ring', () => {
+  const net = ringNet();
+  const l = net.links.find(x => (x.a === 'r2' && x.b === 'r3') || (x.a === 'r3' && x.b === 'r2'));
+  NW.setFault(net, l.id, true);
+  let r = NW.ping(net, 'r4', '192.168.30.1');
+  assert.ok(!r.ok);
+  assert.match(r.error, /Kabelbruch/);
+  NW.setFault(net, l.id, false);
+  NW.removeLink(net, l.id);
+  r = NW.ping(net, 'r1', '192.168.30.2');
+  assert.ok(!r.ok);
+  assert.strictEqual(NW.topologies(net)[0].closed, false);
+});
+
+test('Ring: höchstens zwei Nachbarn, PC mit Switch nicht zusätzlich im Ring', () => {
+  const net = ringNet();
+  assert.match(NW.addLink(net, 'r1', 'r3', 'kabel').reason, /zwei Nachbarn/);
+  NW.createDevice(net, 'switch', 0, 0, { id: 'sw' });
+  assert.ok(!NW.canLink(net, 'r1', 'sw', 'kabel').ok);
+  NW.createDevice(net, 'pc', 0, 0, { id: 'x' });
+  assert.ok(NW.addLink(net, 'x', 'sw', 'kabel').ok);
+  assert.match(NW.canLink(net, 'x', 'r1', 'kabel').reason, /belegt/);
+});
+
+test('Bus: wird erkannt, alle Geräte am Bus empfangen das Signal', () => {
+  const net = busNet();
+  assert.deepStrictEqual(NW.topologies(net).map(t => t.kind), ['bus']);
+  const r = NW.ping(net, 'b1', '192.168.20.4');
+  assert.ok(r.ok, r.error);
+  assert.strictEqual(r.steps[0].paths.length, 3);
+  assert.match(r.steps[0].note, /alle[n]? Geräte/);
+});
+
+test('Bus: Ausfall eines PCs stört die anderen nicht, Kabelbruch im Bus legt alles lahm', () => {
+  const net = busNet();
+  NW.setFault(net, 'b2', true);
+  assert.ok(NW.ping(net, 'b1', '192.168.20.4').ok);
+  const off = NW.ping(net, 'b1', '192.168.20.2');
+  assert.strictEqual(off.fault, 'off');
+  NW.setFault(net, 'b2', false);
+  NW.setFault(net, 'bus', true);
+  const r = NW.ping(net, 'b1', '192.168.20.4');
+  assert.ok(!r.ok);
+  assert.strictEqual(r.fault, 'bus');
+  assert.deepStrictEqual(NW.activeFaults(net), ['bus:bus']);
+});
+
+test('Stern: Kabelbruch trifft nur einen PC, Switch-Ausfall alle', () => {
+  const net = TASKS.find(t => t.id === 'stern').solution();
+  assert.deepStrictEqual(NW.topologies(net).map(t => t.kind), ['stern']);
+  const l = net.links.find(x => x.a === 's4' || x.b === 's4');
+  NW.setFault(net, l.id, true);
+  assert.ok(NW.ping(net, 's1', '192.168.10.2').ok);
+  const r = NW.ping(net, 's1', '192.168.10.4');
+  assert.strictEqual(r.fault, 'link');
+  assert.deepStrictEqual(r.steps[0].path, ['s1', 'sw']);
+  NW.setFault(net, l.id, false);
+  NW.setFault(net, 'sw', true);
+  const r2 = NW.ping(net, 's1', '192.168.10.2');
+  assert.strictEqual(r2.fault, 'off');
+  assert.match(r2.error, /Switch 1 ist ausgefallen/);
+});
+
+test('Ausgefallener Router: kein DHCP, Gateway nicht erreichbar', () => {
+  const net = TASKS.find(t => t.id === 'webseite').solution();
+  NW.setFault(net, 'r', true);
+  const r = NW.ping(net, 'pc', '203.0.113.80');
+  assert.ok(!r.ok);
+  assert.match(r.error, /Heimrouter ist ausgefallen/);
+  NW.setFault(net, 'pc', true);
+  assert.match(NW.ping(net, 'pc', '192.168.178.1').error, /ausgefallen/);
+  assert.ok(!NW.dhcp(net, 'pc').ok);
+});
+
 console.log(`\n${n} Tests bestanden.`);

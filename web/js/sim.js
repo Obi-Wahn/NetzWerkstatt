@@ -18,16 +18,18 @@
     ap:         { label: 'Access Point', l2: true,    cable: 1, apWlan: 8, icon: 'ap' },
     router:     { label: 'Router',       router: true, cable: 4, icon: 'router' },
     isp:        { label: 'Internetanbieter', isp: true, cable: 8, icon: 'isp' },
+    bus:        { label: 'Bus-Kabel',    l2: true,    bus: true, cable: 8, icon: 'bus' },
   };
 
   const DESCRIPTIONS = {
-    pc: 'Ein Endgerät. Es wird per Kabel angeschlossen und braucht eine IP-Adresse, um im Netz erreichbar zu sein.',
+    pc: 'Ein Endgerät. Es wird per Kabel angeschlossen und braucht eine IP-Adresse, um im Netz erreichbar zu sein. Für ein Ringnetz kann ein PC direkt mit zwei Nachbar-PCs verbunden werden.',
     tablet: 'Ein Endgerät ohne Netzwerkkabel. Es verbindet sich per WLAN mit einem Access Point.',
     smartphone: 'Ein Endgerät ohne Netzwerkkabel. Es verbindet sich per WLAN mit einem Access Point.',
     server: 'Ein Rechner, der Dienste für andere anbietet (Server im Client-Server-Modell), z. B. Webseiten oder die Namensauflösung (DNS).',
     switch: 'Verbindet mehrere Geräte im selben Netz (LAN). Er leitet Pakete gezielt an das Gerät weiter, für das sie bestimmt sind. Er braucht keine IP-Adresse.',
     ap: 'Der Access Point (Zugangspunkt) bringt Geräte per Funk (WLAN) ins Kabelnetz. Er braucht keine IP-Adresse.',
     router: 'Verbindet verschiedene Netze miteinander, z. B. das Heimnetz mit dem Internet. Er hat drei LAN-Anschlüsse für das Heimnetz (wie ein eingebauter Switch) und einen Internet-Anschluss (WAN). In jedem der beiden Netze hat er eine eigene IP-Adresse. Endgeräte tragen ihn als Gateway ein.',
+    bus: 'Ein langes Kabel, an das alle Geräte angeschlossen werden (Bustopologie). Jedes Signal läuft über das ganze Kabel und kommt bei allen Geräten an – nur der Empfänger nimmt es an. Es darf immer nur ein Gerät gleichzeitig senden. Ist das Bus-Kabel an einer Stelle unterbrochen, ist das ganze Netz gestört. Es ist eine passive Komponente und braucht keine IP-Adresse.',
     isp: 'Der Internetanbieter (Provider) verbindet Heimnetze und Server mit dem Internet. Jeder Router, der an seine Leitung angeschlossen wird, bekommt von ihm automatisch eine öffentliche (externe) IP-Adresse. Mehrere Internetanbieter, die per Kabel miteinander verbunden sind, bilden zusammen das Internet.',
   };
 
@@ -238,8 +240,11 @@
       return { ok: false, reason: `${a.name} und ${b.name} sind schon verbunden.` };
     const ta = TYPES[a.type], tb = TYPES[b.type];
     if (kind === 'kabel') {
-      for (const [d, t] of [[a, ta], [b, tb]]) {
+      for (const [d, t, o] of [[a, ta, b], [b, tb, a]]) {
         if (!t.cable) return { ok: false, reason: `${d.name} hat keinen Netzwerkanschluss für ein Kabel. Verbinde es per WLAN mit einem Access Point.` };
+        if (t.host && TYPES[o.type].host && cableCount(net, d.id) === 1 && hostCablesOnlyToHosts(net, d.id)) continue; // Ring: zweiter Nachbar
+        if (t.host && cableCount(net, d.id) >= 2)
+          return { ok: false, reason: `${d.name} ist schon mit zwei Nachbarn verbunden. In einem Ring hat jede Station genau zwei Nachbarn.` };
         if (cableCount(net, d.id) >= t.cable)
           return { ok: false, reason: `Alle Anschlüsse von ${d.name} sind belegt (${t.cable} ${t.cable === 1 ? 'Anschluss' : 'Anschlüsse'}).` + (t.host ? ' Nutze einen Switch, um mehrere Geräte zu verbinden.' : '') };
       }
@@ -266,6 +271,11 @@
       return { ok: true };
     }
     return { ok: false, reason: 'Unbekannte Verbindungsart.' };
+  }
+
+  /** Hängen alle Kabel des Endgeräts an anderen Endgeräten (direkte Verbindung oder Ring)? */
+  function hostCablesOnlyToHosts(net, id) {
+    return linksOf(net, id).filter(l => l.kind === 'kabel').every(l => { const o = dev(net, l.a === id ? l.b : l.a); return o && TYPES[o.type].host; });
   }
 
   function addLink(net, aId, bId, kind) {
@@ -309,12 +319,27 @@
    * Schnittstelle aus ohne Router erreichbar sind (gleiches „Kabelnetz").
    * Switches und Access Points werden durchlaufen.
    */
-  function l2Endpoints(net, startId, startPort) {
+  function l2Endpoints(net, startId, startPort, ignoreFaults) {
     const start = dev(net, startId);
     const out = [];
+    // Ringnetz: Die Daten laufen in einer Richtung von Station zu Station – nur wenn der Ring heil ist
+    const ring = TYPES[start.type].host ? ringOf(net, startId) : null;
+    if (ring) {
+      if (!ignoreFaults && ringFaults(net, ring).length) return out;
+      const n = ring.members.length, i = ring.members.indexOf(startId);
+      const path = [startId];
+      for (let k = 1; k < n; k++) {
+        const id = ring.members[(i + k) % n];
+        path.push(id);
+        out.push({ dev: dev(net, id), port: 0, path: path.slice() });
+      }
+      return out;
+    }
     const seen = new Set([startId]);
     const queue = [];
+    const usable = l => ignoreFaults || !l.broken;
     for (const l of linksOf(net, startId)) {
+      if (!usable(l)) continue;
       if (TYPES[start.type].router && iface(portOf(l, startId)) !== iface(startPort)) continue;
       const other = l.a === startId ? l.b : l.a;
       queue.push({ id: other, port: portOf(l, other), path: [startId, other] });
@@ -325,8 +350,10 @@
       seen.add(cur.id);
       const d = dev(net, cur.id);
       const t = TYPES[d.type];
+      if (!ignoreFaults && (d.off || (t.bus && d.broken))) continue; // ausgefallen oder Kabelbruch im Bus
       if (t.l2) {
         for (const l of linksOf(net, d.id)) {
+          if (!usable(l)) continue;
           const other = l.a === d.id ? l.b : l.a;
           if (!seen.has(other)) queue.push({ id: other, port: portOf(l, other), path: cur.path.concat(other) });
         }
@@ -335,6 +362,7 @@
         out.push({ dev: d, port: i, path: cur.path });
         // Die LAN-Anschlüsse sind wie ein eingebauter Switch miteinander verbunden
         if (i === LAN) for (const l of linksOf(net, d.id)) {
+          if (!usable(l)) continue;
           if (iface(portOf(l, d.id)) !== LAN) continue;
           const other = l.a === d.id ? l.b : l.a;
           if (!seen.has(other)) queue.push({ id: other, port: portOf(l, other), path: cur.path.concat(other) });
@@ -344,6 +372,209 @@
       }
     }
     return out;
+  }
+
+  // ------------------------------------------------------------------ Ring, Bus und Störungen
+  /**
+   * Ringnetz, zu dem ein Endgerät gehört: Endgeräte, die direkt per Kabel miteinander
+   * verbunden sind (mindestens drei). Ergebnis {members (in Laufrichtung), links, closed} oder null.
+   * links[i] verbindet members[i] mit members[i + 1] (beim geschlossenen Ring zuletzt wieder members[0]).
+   */
+  function ringOf(net, hostId) {
+    const hostLinks = id => linksOf(net, id).filter(l => {
+      if (l.kind !== 'kabel') return false;
+      const o = dev(net, l.a === id ? l.b : l.a);
+      return o && TYPES[o.type].host;
+    });
+    const comp = new Set([hostId]);
+    const queue = [hostId];
+    while (queue.length) {
+      const id = queue.shift();
+      for (const l of hostLinks(id)) {
+        const o = l.a === id ? l.b : l.a;
+        if (!comp.has(o)) { comp.add(o); queue.push(o); }
+      }
+    }
+    if (comp.size < 3) return null;
+    // Feste Laufrichtung: beim ersten Gerät (Reihenfolge der Geräte) beginnen, bei einer offenen Kette am Ende
+    const ordered = net.devices.filter(d => comp.has(d.id)).map(d => d.id);
+    const closed = ordered.every(id => hostLinks(id).length === 2);
+    const first = closed ? ordered[0] : ordered.find(id => hostLinks(id).length === 1) || ordered[0];
+    const members = [first], links = [];
+    let cur = first, prevLink = null;
+    while (true) {
+      const next = hostLinks(cur).find(l => l !== prevLink);
+      if (!next) break;
+      const o = next.a === cur ? next.b : next.a;
+      links.push(next);
+      if (o === first) break;
+      if (members.includes(o)) break;
+      members.push(o);
+      prevLink = next; cur = o;
+    }
+    return { members, links, closed };
+  }
+
+  /** Störungen in einem Ring: [{kind:'off'|'link'|'open', dev?, link?}] */
+  function ringFaults(net, ring) {
+    const out = [];
+    if (!ring.closed) out.push({ kind: 'open' });
+    for (const id of ring.members) { const d = dev(net, id); if (d.off) out.push({ kind: 'off', dev: d }); }
+    for (const l of ring.links) if (l.broken) out.push({ kind: 'link', link: l });
+    return out;
+  }
+
+  function linkBetween(net, a, b) { return net.links.find(l => (l.a === a && l.b === b) || (l.a === b && l.b === a)) || null; }
+
+  function faultText(net, f) {
+    if (f.kind === 'off') return `${f.dev.name} ist ausgefallen`;
+    if (f.kind === 'link') return `das Kabel zwischen ${dev(net, f.link.a).name} und ${dev(net, f.link.b).name} hat einen Kabelbruch`;
+    if (f.kind === 'bus') return `${f.dev.name} hat einen Kabelbruch`;
+    return 'der Ring ist nicht geschlossen';
+  }
+
+  /**
+   * Erklärt, warum eine Adresse im eigenen Netz nicht erreichbar ist, falls ein
+   * Ausfall (Gerät aus, Kabelbruch, Ring unterbrochen) schuld ist. Sonst null.
+   * Ergebnis: {path (bis zur Störung), error, hint, fault:'ring'|'bus'|'link'|'off'}
+   */
+  function explainFault(net, startId, startPort, dstIP) {
+    const start = dev(net, startId);
+    const ring = TYPES[start.type].host ? ringOf(net, startId) : null;
+    if (ring) {
+      const fs = ringFaults(net, ring);
+      if (!fs.length) return null;
+      // Paket läuft in Ringrichtung bis zur ersten Störung
+      const n = ring.members.length, i = ring.members.indexOf(startId);
+      const path = [startId];
+      for (let k = 0; k < n - 1; k++) {
+        const j = (i + k) % n;
+        const l = ring.links[j];
+        if (!l || l.broken) break;
+        const nx = ring.members[(j + 1) % n];
+        path.push(nx);
+        if (dev(net, nx).off) break;
+      }
+      const what = fs.filter(f => f.kind !== 'open').map(f => faultText(net, f));
+      const reason = what.length ? what.join(', ') : 'er ist nicht geschlossen';
+      return {
+        path, fault: 'ring',
+        error: `Der Ring ist unterbrochen: ${reason}.`,
+        hint: ring.closed
+          ? 'Im Ring reicht jede Station die Daten an ihre Nachbarin weiter. Fehlt ein Glied, kommen die Daten nicht mehr herum – das ganze Netz fällt aus.'
+          : 'In einem Ring ist jede Station mit genau zwei Nachbarn verbunden. Verbinde die letzte Station wieder mit der ersten.',
+      };
+    }
+    const hit = l2Endpoints(net, startId, startPort, true).find(e => { const a = ifaceAddr(e.dev, e.port); return a && a.ip === dstIP; });
+    if (!hit) return null;
+    const p = hit.path;
+    for (let k = 1; k < p.length; k++) {
+      const l = linkBetween(net, p[k - 1], p[k]);
+      if (l && l.broken) return { path: p.slice(0, k), fault: 'link', error: `Das Paket kommt nicht weiter: ${faultText(net, { kind: 'link', link: l })}.`, hint: 'Ein kaputtes Kabel überträgt keine Signale. Tippe es an und repariere es.' };
+      const d = dev(net, p[k]);
+      if (d.off) {
+        const last = k === p.length - 1;
+        return { path: p.slice(0, k + 1), fault: 'off', error: last ? `${d.name} ist ausgefallen und kann nicht antworten.` : `Das Paket kommt nicht weiter: ${d.name} ist ausgefallen.`, hint: last ? 'Tippe das Gerät an und schalte es wieder ein.' : `Alle Pakete müssen durch ${d.name}. Fällt dieses Gerät aus, sind alle dahinter abgeschnitten.` };
+      }
+      if (TYPES[d.type].bus && d.broken) return { path: p.slice(0, k + 1), fault: 'bus', error: `${d.name} hat einen Kabelbruch – das ganze Busnetz ist gestört.`, hint: 'An der Bruchstelle werden die Signale zurückgeworfen und überlagern sich. Deshalb kommt bei keinem Gerät am Bus mehr etwas an. Tippe das Bus-Kabel an und repariere es.' };
+    }
+    return null;
+  }
+
+  /** Alle Störungen im Netz als kurze Kennungen (für Ereignisse): 'off:ID', 'link:ID', 'bus:ID'. */
+  function activeFaults(net) {
+    const out = [];
+    for (const d of net.devices) { if (d.off) out.push('off:' + d.id); if (TYPES[d.type].bus && d.broken) out.push('bus:' + d.id); }
+    for (const l of net.links) if (l.broken) out.push('link:' + l.id);
+    return out;
+  }
+
+  /** Gerät ausfallen lassen / wieder einschalten (beim Bus-Kabel: Kabelbruch). */
+  function setFault(net, id, on) {
+    const d = dev(net, id);
+    if (d) { if (TYPES[d.type].bus) d.broken = !!on; else d.off = !!on; return true; }
+    const l = net.links.find(x => x.id === id);
+    if (l && l.kind === 'kabel') { l.broken = !!on; return true; }
+    return false;
+  }
+
+  /**
+   * Am Bus kommt jedes Signal bei allen angeschlossenen Geräten an. Für die Animation
+   * bekommt ein Schritt, der über ein Bus-Kabel läuft, zusätzliche Wege zu allen Geräten.
+   */
+  function busSpread(net, step) {
+    if (step.ok === false || step.paths || !step.path) return step;
+    const k = step.path.findIndex(id => { const d = dev(net, id); return d && TYPES[d.type].bus; });
+    if (k < 0) return step;
+    const bus = step.path[k];
+    const extra = linksOf(net, bus).filter(l => !l.broken).map(l => l.a === bus ? l.b : l.a)
+      .filter(id => id !== step.path[k - 1] && id !== step.path[k + 1] && !dev(net, id).off)
+      .map(id => step.path.slice(0, k + 1).concat(id));
+    if (!extra.length) return step;
+    const to = dev(net, step.path[step.path.length - 1]);
+    const note = `Bus: Das Signal kommt bei allen Geräten am Bus an – nur ${to ? to.name : 'der Empfänger'} nimmt es an`;
+    return Object.assign({}, step, { paths: [step.path].concat(extra), note: step.note ? step.note + ' · ' + note : note });
+  }
+
+  // ------------------------------------------------------------------ Topologien
+  const TOPOLOGY_INFO = {
+    stern: {
+      name: 'Sterntopologie',
+      text: 'Alle Geräte hängen einzeln an einem zentralen Verteiler (Switch, Access Point oder Router).',
+      pro: ['Fällt ein Kabel oder ein Gerät aus, funktioniert der Rest weiter.', 'Neue Geräte lassen sich einfach anschließen.', 'Der Switch schickt jedes Paket nur zum Empfänger.'],
+      con: ['Fällt der Verteiler aus, ist das ganze Netz gestört.', 'Man braucht viel Kabel (zu jedem Gerät eins) und einen Verteiler.'],
+      try: 'Tippe ein Kabel an und simuliere einen Kabelbruch. Tippe den Switch an und lass ihn ausfallen.',
+    },
+    bus: {
+      name: 'Bustopologie',
+      text: 'Alle Geräte hängen an einem gemeinsamen Kabel, dem Bus.',
+      pro: ['Wenig Kabel und kein Verteiler nötig.', 'Fällt ein einzelnes Gerät aus, arbeiten die anderen weiter.'],
+      con: ['Ein Kabelbruch im Bus legt das ganze Netz lahm.', 'Jedes Signal kommt bei allen an – jeder kann mithören.', 'Es kann immer nur ein Gerät gleichzeitig senden. Senden zwei gleichzeitig, stören sich die Signale (Kollision).'],
+      try: 'Tippe das Bus-Kabel an und simuliere einen Kabelbruch. Tippe einen PC an und lass ihn ausfallen.',
+    },
+    ring: {
+      name: 'Ringtopologie',
+      text: 'Jedes Gerät ist mit genau zwei Nachbarn verbunden. Die Daten werden in einer Richtung von Station zu Station weitergereicht.',
+      pro: ['Kein Verteiler nötig.', 'Jede Station verstärkt das Signal beim Weiterreichen – so sind große Entfernungen möglich.'],
+      con: ['Fällt eine Station oder ein Kabel aus, ist der ganze Ring unterbrochen.', 'Die Daten müssen oft durch viele Stationen laufen.', 'Neue Geräte einfügen heißt: den Ring auftrennen.'],
+      try: 'Tippe einen PC an und lass ihn ausfallen. Sende dann einen Ping zwischen zwei anderen PCs.',
+    },
+  };
+
+  /**
+   * Erkennt die Topologien im Netzwerk.
+   * Ergebnis: [{kind:'stern'|'bus'|'ring', center?, members:[IDs], ok, closed?, problem?}]
+   * ok = false, wenn ein Ausfall das Teilnetz stört.
+   */
+  function topologies(net) {
+    const out = [];
+    const isHost = id => { const d = dev(net, id); return d && TYPES[d.type].host; };
+    for (const d of net.devices) {
+      const t = TYPES[d.type];
+      if (t.bus) {
+        const members = linksOf(net, d.id).map(l => l.a === d.id ? l.b : l.a);
+        if (members.length >= 2) out.push({ kind: 'bus', center: d.id, members, ok: !d.broken && !d.off, problem: d.broken ? `${d.name}: Kabelbruch` : '' });
+      } else if (t.l2 || t.router) {
+        const members = linksOf(net, d.id).filter(l => !t.router || iface(portOf(l, d.id)) === LAN).map(l => l.a === d.id ? l.b : l.a).filter(isHost);
+        if (members.length >= 3) out.push({ kind: 'stern', center: d.id, members, ok: !d.off, problem: d.off ? `${d.name} ausgefallen` : '' });
+      }
+    }
+    const seen = new Set();
+    for (const d of net.devices) {
+      if (!TYPES[d.type].host || seen.has(d.id)) continue;
+      const r = ringOf(net, d.id);
+      if (!r) continue;
+      r.members.forEach(id => seen.add(id));
+      const fs = ringFaults(net, r);
+      out.push({ kind: 'ring', members: r.members, closed: r.closed, ok: !fs.length, problem: !r.closed ? 'nicht geschlossen' : fs.length ? 'unterbrochen' : '' });
+    }
+    return out;
+  }
+
+  /** Erkennt die Topologie zwischen Endgeräten: 'stern', 'bus', 'ring' oder null (erste gefundene). */
+  function topology(net) {
+    const t = topologies(net);
+    return t.length ? t[0].kind : null;
   }
 
   function devicesWithIP(net, ip) {
@@ -367,6 +598,7 @@
     const nat = [];
     const fail = (path, error, hint) => ({ ok: false, path, error, hint: hint || '', nat });
     if (!src || !TYPES[src.type].host) return fail([srcId], 'Nur Endgeräte können Pakete senden.');
+    if (src.off) return fail([srcId], `${src.name} ist ausgefallen (ausgeschaltet) und kann nichts senden.`, 'Tippe das Gerät an und schalte es wieder ein.');
     if (!linksOf(net, srcId).length) return fail([srcId], `${src.name} ist mit nichts verbunden.`, TYPES[src.type].wlan && !TYPES[src.type].cable ? 'Verbinde es per WLAN mit einem Access Point.' : 'Verbinde es mit einem Kabel.');
     const sa = ifaceAddr(src, 0);
     if (!sa) {
@@ -393,6 +625,8 @@
           const res = ispForward(net, ispE.dev, dstIP, path.concat(ispE.path.slice(1)));
           return res.ok ? done(res.path, res.target) : fail(res.path, res.error, res.hint);
         }
+        const fx = explainFault(net, curId, curPort, dstIP);
+        if (fx) return Object.assign(fail(path.concat(fx.path.slice(1)), fx.error, fx.hint), { fault: fx.fault });
         const elsewhere = devicesWithIP(net, dstIP);
         let hint = `Kein Gerät im Netz ${netStr(ca.ip, ca.prefix)} hat diese Adresse.`;
         if (elsewhere.length) hint = `${elsewhere[0].name} hat die Adresse ${ipStr(dstIP)}, ist aber nicht mit diesem Netz verbunden.`;
@@ -408,6 +642,8 @@
       if (!sameNet(gw, ca.ip, ca.prefix)) return fail(path, `Das Gateway ${ipStr(gw)} von ${cd.name} liegt nicht im eigenen Netz.`, 'Das Gateway muss im selben Netz liegen wie das Gerät selbst.');
       const hop = eps.find(e => { const a = ifaceAddr(e.dev, e.port); return (TYPES[e.dev.type].router || TYPES[e.dev.type].isp) && a && a.ip === gw; });
       if (!hop) {
+        const fx = explainFault(net, curId, curPort, gw);
+        if (fx) return Object.assign(fail(path.concat(fx.path.slice(1)), fx.error, fx.hint), { fault: fx.fault });
         const other = eps.find(e => { const a = ifaceAddr(e.dev, e.port); return a && a.ip === gw; });
         if (other) return fail(path, `Das Gateway ${ipStr(gw)} ist ${other.dev.name} – das ist kein Router.`, 'Als Gateway muss ein Router eingetragen werden.');
         return fail(path, `Das Gateway ${ipStr(gw)} ist von ${cd.name} aus nicht erreichbar.`, 'Ist der Router angeschlossen und hat sein Anschluss genau diese IP-Adresse?');
@@ -477,11 +713,11 @@
   /** Hin- und Rückweg (z. B. Ping oder Anfrage/Antwort). Die Antwort geht an den Absender, den das Ziel sieht. */
   function roundTrip(net, srcId, dstIP) {
     const there = route(net, srcId, dstIP);
-    if (!there.ok) return { ok: false, there, error: there.error, hint: there.hint };
+    if (!there.ok) return { ok: false, there, error: there.error, hint: there.hint, fault: there.fault };
     const target = there.target;
     if (TYPES[target.type].host && target.id !== srcId) {
       const back = route(net, target.id, there.seenSrc);
-      if (!back.ok) return { ok: false, there, back, target, error: `Die Anfrage kommt bei ${target.name} an, aber die Antwort findet nicht zurück: ${back.error}`, hint: back.hint };
+      if (!back.ok) return { ok: false, there, back, target, error: `Die Anfrage kommt bei ${target.name} an, aber die Antwort findet nicht zurück: ${back.error}`, hint: back.hint, fault: back.fault };
       // NAT rückgängig machen: Der Router weiß noch, wem im Heimnetz die Antwort gehört
       back.unnat = [];
       for (let k = there.nat.length - 1; k >= 0; k--) {
@@ -527,7 +763,7 @@
     const rt = roundTrip(net, srcId, dstIP);
     const steps = [{ kind: 'request', label: 'Ping-Anfrage', proto: 'ICMP', text: `${src.name} → ${ipStr(dstIP)}: „Bist du da?"`, note: natNote(net, rt, 'there'), path: rt.there.path, ok: rt.there.ok }];
     if (rt.back) steps.push({ kind: 'response', label: 'Ping-Antwort', proto: 'ICMP', text: `${rt.target.name} → ${rt.back.ok && rt.there.nat.length ? ipStr(rt.there.seenSrc) : src.name}: „Ja, ich bin da!"`, note: natNote(net, rt, 'back'), path: rt.back.path, ok: rt.back.ok });
-    return { ok: rt.ok, steps, error: rt.error, hint: rt.hint, target: rt.target ? rt.target.id : null, nat: natInfo(net, rt) };
+    return { ok: rt.ok, steps: steps.map(st => busSpread(net, st)), error: rt.error, hint: rt.hint, fault: rt.fault || '', target: rt.target ? rt.target.id : null, nat: natInfo(net, rt) };
   }
 
   function parseURL(url) {
@@ -541,7 +777,7 @@
     const src = dev(net, srcId);
     const u = parseURL(url);
     const steps = [];
-    const res = (ok, extra) => Object.assign({ ok, steps }, extra);
+    const res = (ok, extra) => Object.assign({ ok, steps: steps.map(st => busSpread(net, st)) }, extra);
     if (!u) return res(false, { error: `„${url}" ist keine gültige Adresse (URL).`, hint: 'Beispiel: http://www.beispiel.de' });
     let ip = parseIP(u.host);
     if (ip === null) {
@@ -640,6 +876,7 @@
     // Ein Router fragt an seinem Internet-Anschluss (WAN), z. B. beim Internetanbieter
     const isRouter = h && TYPES[h.type].router;
     if (!h || !(TYPES[h.type].host || isRouter)) return res(false, { error: 'Nur Endgeräte und Router können per DHCP eine Adresse anfordern.' });
+    if (h.off) return res(false, { error: `${h.name} ist ausgefallen (ausgeschaltet).`, hint: 'Tippe das Gerät an und schalte es wieder ein.' });
     const myLinks = linksOf(net, hostId).filter(l => !isRouter || iface(portOf(l, hostId)) === WAN);
     if (!myLinks.length) return res(false, { error: isRouter ? `Am Internet-Anschluss (WAN) von ${h.name} ist nichts angeschlossen.` : `${h.name} ist mit nichts verbunden und kann niemanden nach einer Adresse fragen.`, hint: isRouter ? 'Verbinde den Router mit einem Internetanbieter.' : TYPES[h.type].cable ? 'Verbinde es mit einem Kabel.' : 'Verbinde es per WLAN mit einem Access Point.' });
     const eps = l2Endpoints(net, hostId, isRouter ? WAN : 0);
@@ -649,8 +886,11 @@
     if (!servers.length) {
       const router = eps.find(e => TYPES[e.dev.type].router);
       let hint = 'Ein DHCP-Server (meist im Router) muss im selben Netz eingeschaltet sein.';
-      if (isRouter) return res(false, { error: 'Kein DHCP-Server hat geantwortet.', hint: 'Schließe den Internet-Anschluss (WAN) an einen Internetanbieter an oder trage die externe Adresse von Hand ein.' });
-      if (router && router.port === WAN) hint = `Das Gerät hängt am Internet-Anschluss (WAN) von ${router.dev.name}. Adressen per DHCP gibt es im Heimnetz: Stecke das Kabel an einen LAN-Anschluss.`;
+      const blocked = l2Endpoints(net, hostId, isRouter ? WAN : 0, true).find(e => (TYPES[e.dev.type].isp || TYPES[e.dev.type].router) && !eps.some(x => x.dev === e.dev));
+      const fx = blocked && ifaceAddr(blocked.dev, blocked.port) ? explainFault(net, hostId, isRouter ? WAN : 0, ifaceAddr(blocked.dev, blocked.port).ip) : null;
+      if (isRouter) return res(false, { error: 'Kein DHCP-Server hat geantwortet.', hint: fx ? fx.error + ' ' + fx.hint : 'Schließe den Internet-Anschluss (WAN) an einen Internetanbieter an oder trage die externe Adresse von Hand ein.' });
+      if (fx) hint = fx.error + ' ' + fx.hint;
+      else if (router && router.port === WAN) hint = `Das Gerät hängt am Internet-Anschluss (WAN) von ${router.dev.name}. Adressen per DHCP gibt es im Heimnetz: Stecke das Kabel an einen LAN-Anschluss.`;
       else if (router && !ifaceAddr(router.dev, router.port)) hint = `${router.dev.name} braucht im Heimnetz (LAN) zuerst eine eigene IP-Adresse. Danach kannst du dort den DHCP-Server einschalten.`;
       else if (router) hint = `Tippe ${router.dev.name} an und schalte im Heimnetz (LAN) den DHCP-Server ein.`;
       // Wie echte Rechner: ohne DHCP-Server eine Notfall-Adresse (APIPA) aus 169.254.0.0/16 wählen
@@ -911,6 +1151,7 @@
     const fail = (path, error, hint) => ({ ok: false, path, error, hint: hint || '' });
     const done = (path, target) => ({ ok: true, path, target });
     if (!src || !(TYPES[src.type].host || TYPES[src.type].isp)) return fail([srcId], 'Nur Endgeräte können Pakete senden.');
+    if (src.off) return fail([srcId], `${src.name} ist ausgefallen (ausgeschaltet) und kann nichts senden.`, 'Tippe das Gerät an und schalte es wieder ein.');
     if (!linksOf(net, srcId).length) return fail([srcId], `${src.name} ist mit nichts verbunden.`, TYPES[src.type].wlan && !TYPES[src.type].cable ? 'Verbinde es per WLAN mit einem Access Point.' : 'Verbinde es mit einem Kabel.');
     const me = map.get(srcId + ':0');
     if (me.ll === dst || me.gua === dst) return done([srcId], src);
@@ -923,7 +1164,7 @@
       if (hits.length) return done(hits[0].path, hits[0].dev);
       const o = owner();
       return fail([srcId], `Im Netz von ${src.name} hat niemand die Adresse ${ip6Str(dst)}.`,
-        o ? `Das ist die Link-Local-Adresse von ${o.name}. Link-Local-Adressen (fe80::…) gelten nur im eigenen Netz – Router leiten sie nie weiter. Nimm die globale Adresse.` : 'Link-Local-Adressen (fe80::…) gelten nur im eigenen Netz. Prüfe die Adresse.');
+        activeFaults(net).length ? 'Im Netz ist gerade etwas ausgefallen (Gerät ausgeschaltet oder Kabelbruch). Behebe die Störung und versuche es erneut.' : o ? `Das ist die Link-Local-Adresse von ${o.name}. Link-Local-Adressen (fe80::…) gelten nur im eigenen Netz – Router leiten sie nie weiter. Nimm die globale Adresse.` : 'Link-Local-Adressen (fe80::…) gelten nur im eigenen Netz. Prüfe die Adresse.');
     }
     if (me.gua === null) return fail([srcId], `${src.name} hat nur eine Link-Local-Adresse (fe80::…) und erreicht damit nur Geräte im eigenen Netz.`, 'Eine globale IPv6-Adresse bekommt das Gerät automatisch, sobald es mit einem Router verbunden ist, der am Internetanbieter hängt.');
     if ((dst >> 96n) !== (DOC_NET >> 96n)) return fail([srcId], `Im Internet ist die Adresse ${ip6Str(dst)} nicht bekannt.`, 'Globale IPv6-Adressen in der NetzWerkstatt beginnen mit 2001:db8:.');
@@ -960,6 +1201,7 @@
       if (sameNet6(me.net64, dst)) return deliver(src, 0, [srcId]);
       // Gateway ist der Router, der das Heimnetz bekanntgibt
       const gwE = eps.find(e => e.dev.id === me.router && e.port === LAN);
+      if (!gwE) return fail([srcId], `Der Router von ${src.name} ist nicht erreichbar.`, 'Ist ein Kabel kaputt oder der Router ausgefallen?');
       const path = gwE.path;
       if (at(gwE.dev, WAN).gua === dst) return done(path, gwE.dev);
       const ispE = l2Endpoints(net, me.router, WAN).find(e => e.dev.id === me.isp);
@@ -980,6 +1222,7 @@
     const rt = route6(net, srcId, dst, map);
     const steps = [{ kind: 'request', label: 'Ping-Anfrage', proto: 'ICMPv6 · IPv6', text: `${src.name} → ${ip6Str(dst)}: „Bist du da?"`, path: rt.path, ok: rt.ok }];
     if (!rt.ok) return { ok: false, steps, error: rt.error, hint: rt.hint, v6: true };
+    steps[0] = busSpread(net, steps[0]);
     const me = map.get(srcId + ':0');
     const from = isLinkLocal6(dst) ? me.ll : me.gua;
     steps.push({ kind: 'response', label: 'Ping-Antwort', proto: 'ICMPv6 · IPv6', text: `${rt.target.name} → ${ip6Str(from)}: „Ja, ich bin da!"`, path: rt.path.slice().reverse(), ok: true });
@@ -994,26 +1237,12 @@
     if (net.events.length > 40) net.events.splice(0, net.events.length - 40);
   }
 
-  // ------------------------------------------------------------------ Topologie
-  /** Erkennt einfache Topologien zwischen Endgeräten: 'stern', 'bus', 'ring' oder null. */
-  function topology(net) {
-    const hosts = net.devices.filter(d => TYPES[d.type].host);
-    if (hosts.length < 3) return null;
-    const sw = net.devices.filter(d => TYPES[d.type].l2);
-    // Stern: alle Endgeräte hängen direkt an demselben Verteiler
-    for (const s of sw) {
-      const nb = new Set(linksOf(net, s.id).map(l => l.a === s.id ? l.b : l.a));
-      if (hosts.every(h => nb.has(h.id))) return 'stern';
-    }
-    return null;
-  }
-
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
 
   const NW = {
     TYPES, DESCRIPTIONS, parseIP, ipStr, parseMask, sameNet, netStr, ipProblem, isPrivate,
     emptyNetwork, createDevice, dev, linksOf, portOf, canLink, addLink, removeDevice, removeLink,
-    ifaceAddr, l2Endpoints, route, roundTrip, ping, browse, parseURL, logEvent, topology, clone, newId,
+    ifaceAddr, l2Endpoints, route, roundTrip, ping, browse, parseURL, logEvent, topology, topologies, TOPOLOGY_INFO, ringOf, activeFaults, setFault, clone, newId,
     parseIP6, ip6Str, net6Str, isLinkLocal6, ip6Map, ip6Of, route6, ping6,
     dhcpOf, dhcpRange, dhcpDefaultRange, dhcp, applyLease, refreshDns, suggest, suggestPortIP, iface, ifaceName, replug, WAN, LAN, wlanHub, setRouterWlan, isApipa, setModem, ispOf,
   };

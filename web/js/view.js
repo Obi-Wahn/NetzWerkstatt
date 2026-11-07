@@ -5,6 +5,7 @@
   const SVGNS = 'http://www.w3.org/2000/svg';
   const WORLD = { w: 900, h: 560 };
   const BOX = { w: 78, h: 62 };
+  const BUS = { w: 320, h: 26 }; // Das Bus-Kabel wird als lange Leitung gezeichnet
 
   // Einfache Symbole, gezeichnet in einem 40×40-Feld
   const ICONS = {
@@ -16,6 +17,7 @@
     ap: '<rect x="8" y="25" width="24" height="9" rx="2"/><path d="M20 25v-6"/><path d="M14 15a8 8 0 0 1 12 0M10.5 11.5a13 13 0 0 1 19 0"/><circle cx="20" cy="19" r="1.5"/>',
     router: '<circle cx="20" cy="20" r="15"/><path d="M20 8v9M20 32v-9M8 20h9M32 20h-9"/><path d="M17 11l3-3 3 3M17 29l3 3 3-3M11 17l-3 3 3 3M29 17l3 3-3 3"/>',
     isp: '<circle cx="20" cy="20" r="15"/><path d="M5 20h30M20 5a22 22 0 0 1 0 30M20 5a22 22 0 0 0 0 30M8 12h24M8 28h24"/>',
+    bus: '<path d="M3 20h34"/><path d="M3 15v10M37 15v10"/><path d="M11 20v-9M20 20v9M29 20v-9"/><circle cx="11" cy="10" r="2"/><circle cx="20" cy="30" r="2"/><circle cx="29" cy="10" r="2"/>',
     cloud: '<path d="M11 30h19a7 7 0 0 0 0-14 9 9 0 0 0-17-2 7.5 7.5 0 0 0-2 16z"/>',
   };
 
@@ -57,6 +59,32 @@
     return [];
   }
 
+  const isBus = d => d && NW.TYPES[d.type] && NW.TYPES[d.type].bus;
+
+  /** Punkt, an dem eine Verbindung an einem Gerät ankommt (beim Bus-Kabel: senkrecht darüber oder darunter). */
+  function anchor(d, toward) {
+    if (!isBus(d) || !toward) return { x: d.x, y: d.y };
+    const half = BUS.w / 2 - 14;
+    return { x: Math.max(d.x - half, Math.min(d.x + half, toward.x)), y: d.y };
+  }
+
+  /** Kurztext für die erkannten Topologien, z. B. „Stern · Ring (unterbrochen)". */
+  function topoLabel(net) {
+    const list = NW.topologies(net);
+    if (!list.length) return null;
+    const names = { stern: 'Stern', bus: 'Bus', ring: 'Ring' };
+    const parts = [];
+    for (const kind of ['stern', 'bus', 'ring']) {
+      const ts = list.filter(t => t.kind === kind);
+      if (!ts.length) continue;
+      const bad = ts.filter(t => !t.ok);
+      let txt = (ts.length > 1 ? ts.length + ' × ' : '') + names[kind];
+      if (bad.length) txt += ' (' + (bad[0].problem === 'nicht geschlossen' ? 'nicht geschlossen' : 'gestört') + ')';
+      parts.push(txt);
+    }
+    return { text: 'Topologie: ' + parts.join(' · '), bad: list.some(t => !t.ok) };
+  }
+
   /**
    * Zeichnet ein Netzwerk in ein <svg>.
    * opts: { selected, pending, highlight:Set, interactive, v6 }  (v6: IPv6-Adressen statt IPv4 anzeigen)
@@ -77,9 +105,17 @@
     for (const l of net.links) {
       const a = NW.dev(net, l.a), b = NW.dev(net, l.b);
       if (!a || !b) continue;
-      const g = el('g', { class: 'link ' + l.kind + (opts.selected === l.id ? ' selected' : ''), 'data-link': l.id }, gLinks);
-      el('line', { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: 'hit' }, g);
-      el('line', { x1: a.x, y1: a.y, x2: b.x, y2: b.y, class: 'wire' }, g);
+      const g = el('g', { class: 'link ' + l.kind + (opts.selected === l.id ? ' selected' : '') + (l.broken ? ' broken' : ''), 'data-link': l.id }, gLinks);
+      const pa = anchor(a, b), pb = anchor(b, a);
+      el('line', { x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y, class: 'hit' }, g);
+      el('line', { x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y, class: 'wire' }, g);
+      if (l.broken) {
+        // Blitz in der Mitte: Kabelbruch
+        const mx = (pa.x + pb.x) / 2, my = (pa.y + pb.y) / 2;
+        const bm = el('g', { class: 'break-mark', transform: `translate(${mx},${my})` }, g);
+        el('circle', { r: 12 }, bm);
+        el('path', { d: 'M2 -8L-4 1h5l-3 8 7-10h-5l3-7z' }, bm);
+      }
       // Kabel am Internet-Anschluss (WAN) des Routers kennzeichnen; die IP-Adressen stehen unter dem Router
       for (const [d, other, port] of [[a, b, l.aPort], [b, a, l.bPort]]) {
         if (!NW.TYPES[d.type].router || port === undefined || l.kind !== 'kabel' || NW.iface(port) !== NW.WAN) continue;
@@ -102,7 +138,24 @@
       if (opts.highlight && opts.highlight.has(d.id)) cls.push('highlight');
       if (d.locked) cls.push('locked');
       if (d.cloud) cls.push('cloud');
+      if (d.off) cls.push('off');
+      if (isBus(d) && d.broken) cls.push('broken');
       const g = el('g', { class: cls.join(' '), transform: `translate(${d.x},${d.y})`, 'data-dev': d.id }, gDevs);
+      if (isBus(d)) {
+        // Lange Leitung mit Abschlusswiderständen an den Enden; bei Kabelbruch in der Mitte getrennt
+        const hw = BUS.w / 2, hh = BUS.h / 2;
+        el('rect', { x: -hw, y: -hh, width: BUS.w, height: BUS.h, rx: 8, class: 'box bus-hit' }, g);
+        if (d.broken) {
+          el('path', { d: `M${-hw + 8} 0H-14M14 0H${hw - 8}`, class: 'bus-line' }, g);
+          const bm = el('g', { class: 'break-mark' }, g);
+          el('circle', { r: 12 }, bm);
+          el('path', { d: 'M2 -8L-4 1h5l-3 8 7-10h-5l3-7z' }, bm);
+        } else el('path', { d: `M${-hw + 8} 0H${hw - 8}`, class: 'bus-line' }, g);
+        el('rect', { x: -hw + 2, y: -7, width: 6, height: 14, rx: 2, class: 'bus-end' }, g);
+        el('rect', { x: hw - 8, y: -7, width: 6, height: 14, rx: 2, class: 'bus-end' }, g);
+        el('text', { x: 0, y: hh + 17, 'text-anchor': 'middle', class: 'name' }, g).textContent = d.name;
+        continue;
+      }
       if (d.cloud) {
         el('path', { d: 'M-50 22h96a22 22 0 0 0 4-44 30 30 0 0 0-56-10 24 24 0 0 0-44 22 16 16 0 0 0 0 32z', class: 'box' }, g);
       } else {
@@ -112,9 +165,9 @@
       icon.innerHTML = ICONS[d.cloud ? 'cloud' : d.type];
       const name = el('text', { x: 0, y: BOX.h / 2 + 17, 'text-anchor': 'middle', class: 'name' }, g);
       name.textContent = d.name;
-      const subs = opts.v6 ? (v6map ? v6Labels(d, v6map) : []) : NW.TYPES[d.type].router && !d.cloud ? routerLabels(d) : [hostLabel(d)].filter(Boolean);
+      const subs = d.off ? ['✕ ausgefallen'] : opts.v6 ? (v6map ? v6Labels(d, v6map) : []) : NW.TYPES[d.type].router && !d.cloud ? routerLabels(d) : [hostLabel(d)].filter(Boolean);
       subs.forEach((sub, k) => {
-        const s = el('text', { x: 0, y: BOX.h / 2 + 33 + k * 15, 'text-anchor': 'middle', class: 'ip' + (/keine IP/.test(sub) ? ' missing' : '') }, g);
+        const s = el('text', { x: 0, y: BOX.h / 2 + 33 + k * 15, 'text-anchor': 'middle', class: 'ip' + (/keine IP|ausgefallen/.test(sub) ? ' missing' : '') }, g);
         s.textContent = sub;
       });
       if (NW.TYPES[d.type].router && d.wlan) {
@@ -129,6 +182,19 @@
         el('path', { d: 'M3 6h6v5H3zM4 6V4a2 2 0 0 1 4 0v2' }, lk);
       }
     }
+    if (opts.topo !== false) drawTopo(svg, net);
+  }
+
+  /** Erkannte Topologie oben links anzeigen (antippbar für eine Erklärung). */
+  function drawTopo(svg, net) {
+    const t = topoLabel(net);
+    if (!t) return;
+    const g = el('g', { class: 'topo-badge' + (t.bad ? ' bad' : ''), 'data-topo': '1', transform: 'translate(12,12)' });
+    svg.insertBefore(g, svg.querySelector('g.overlay'));
+    const w = t.text.length * 7.4 + 38;
+    el('rect', { x: 0, y: 0, width: w, height: 28, rx: 14 }, g);
+    el('text', { x: 14, y: 19 }, g).textContent = t.text;
+    el('text', { x: w - 18, y: 19, class: 'topo-info' }, g).textContent = 'ⓘ';
   }
 
   /** Punkt in Weltkoordinaten aus einem Pointer-Ereignis. */
@@ -141,20 +207,23 @@
     return { x: p.x, y: p.y };
   }
 
-  function clampPos(x, y) {
+  function clampPos(x, y, type) {
+    const hw = type && NW.TYPES[type] && NW.TYPES[type].bus ? BUS.w / 2 : BOX.w / 2;
     return {
-      x: Math.max(BOX.w / 2 + 6, Math.min(WORLD.w - BOX.w / 2 - 6, x)),
+      x: Math.max(hw + 6, Math.min(WORLD.w - hw - 6, x)),
       y: Math.max(BOX.h / 2 + 6, Math.min(WORLD.h - BOX.h / 2 - 40, y)),
     };
   }
 
   /** Freie Stelle für ein neues Gerät suchen (spiralförmig um die Mitte). */
-  function freeSpot(net) {
+  function freeSpot(net, type) {
     const cx = WORLD.w / 2, cy = WORLD.h / 2 - 20;
+    const width = d => (isBus(d) ? BUS.w : BOX.w);
+    const wNew = type && NW.TYPES[type] && NW.TYPES[type].bus ? BUS.w : BOX.w;
     for (let r = 0; r < 500; r += 30) {
       for (let a = 0; a < 360; a += 30) {
-        const p = clampPos(cx + r * Math.cos(a * Math.PI / 180) * 1.4, cy + r * Math.sin(a * Math.PI / 180));
-        if (net.devices.every(d => Math.abs(d.x - p.x) > BOX.w + 70 || Math.abs(d.y - p.y) > BOX.h + 70)) return p;
+        const p = clampPos(cx + r * Math.cos(a * Math.PI / 180) * 1.4, cy + r * Math.sin(a * Math.PI / 180), type);
+        if (net.devices.every(d => Math.abs(d.x - p.x) > (width(d) + wNew) / 2 + 70 || Math.abs(d.y - p.y) > BOX.h + 70)) return p;
       }
     }
     return { x: cx, y: cy };
@@ -171,7 +240,15 @@
     const hop = speed || 420;
     // Ein Schritt kann mehrere Wege gleichzeitig haben (Broadcast „an alle")
     const one = (step, path, withLabel) => new Promise(resolve => {
-      const pts = path.map(id => NW.dev(net, id)).filter(Boolean).map(d => ({ x: d.x, y: d.y }));
+      const devs = path.map(id => NW.dev(net, id)).filter(Boolean);
+      const pts = [];
+      devs.forEach((d, k) => {
+        if (!isBus(d)) { pts.push({ x: d.x, y: d.y }); return; }
+        // Am Bus-Kabel läuft das Paket an der Leitung entlang vom Abzweig des Absenders zum Abzweig des Empfängers
+        if (devs[k - 1]) pts.push(anchor(d, devs[k - 1]));
+        if (devs[k + 1]) pts.push(anchor(d, devs[k + 1]));
+        if (!devs[k - 1] && !devs[k + 1]) pts.push({ x: d.x, y: d.y });
+      });
       const g = el('g', { class: 'packet ' + (step.kind || 'request') }, overlay);
       el('circle', { r: 13 }, g);
       if (withLabel) {
@@ -219,5 +296,5 @@
     }), Promise.resolve());
   }
 
-  root.NWView = { render, toWorld, clampPos, freeSpot, animate, iconSVG, WORLD, BOX };
+  root.NWView = { render, toWorld, clampPos, freeSpot, animate, iconSVG, topoLabel, WORLD, BOX };
 })(window);

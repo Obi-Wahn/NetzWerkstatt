@@ -40,7 +40,9 @@
       const s = NW.dev(net, e.src);
       return s && NW.browse(net, s.id, 'http://' + host).ok;
     });
-    return { net, byType, hosts, neighbors, linked, inNet, distinctIPs, pingOk, ping6Ok, hasGua, webOk };
+    const pings = () => (net.events || []).filter(e => e.type === 'ping');
+    const topos = kind => NW.topologies(net).filter(t => t.kind === kind);
+    return { net, byType, hosts, neighbors, linked, inNet, distinctIPs, pingOk, ping6Ok, hasGua, webOk, pings, topos };
   }
 
   const isType = t => d => d.type === t;
@@ -88,7 +90,7 @@
       manual: true,
       intro: 'Im Computerraum sollen vier PCs miteinander verbunden werden. Ein PC hat aber nur einen Netzwerkanschluss. Baue ein Netz in Sterntopologie: Alle PCs hängen an einem zentralen Verteiler.',
       tip: 'Der zentrale Verteiler ist ein Switch. Er braucht selbst keine IP-Adresse – nur die PCs.',
-      think: 'Überlege: Was passiert, wenn ein Kabel zu einem PC kaputtgeht? Und was, wenn der Switch ausfällt? Probiere es aus, indem du eine Verbindung löschst.',
+      think: 'Überlege: Was passiert, wenn ein Kabel zu einem PC kaputtgeht? Und was, wenn der Switch ausfällt? Probiere es aus: Tippe ein Kabel oder den Switch an und simuliere einen Ausfall.',
       goals: [
         { text: 'Setze einen Switch auf die Arbeitsfläche.', check: c => c.byType('switch').length >= 1 },
         { text: 'Verbinde alle vier PCs per Kabel mit dem Switch (Sterntopologie).', check: c => { const pcs = c.byType('pc'); return pcs.length >= 4 && c.byType('switch').some(s => pcs.every(p => c.linked(p, s, 'kabel'))); } },
@@ -220,6 +222,95 @@
       },
     },
     {
+      id: 'bus',
+      title: 'Busnetz',
+      level: 1,
+      manual: true,
+      intro: 'Früher wurden viele Netze als Bus gebaut: Ein langes Kabel führt durch den Raum, und alle Rechner werden daran angeschlossen. Baue ein Busnetz mit vier PCs und finde heraus, was bei einem Kabelbruch passiert.',
+      tip: 'Das Bus-Kabel findest du links bei den Geräten. Verbinde jeden PC mit einem Kabel mit dem Bus-Kabel. Adressen: 192.168.20.1 bis 192.168.20.4, Subnetzmaske 255.255.255.0. Einen Kabelbruch simulierst du, indem du das Bus-Kabel antippst.',
+      think: 'Beim Ping siehst du: Das Signal kommt bei allen PCs am Bus an. Was bedeutet das für den Datenschutz? Was passiert, wenn zwei PCs gleichzeitig senden? Und was, wenn nur ein einzelner PC ausfällt?',
+      goals: [
+        { text: 'Setze ein Bus-Kabel auf die Arbeitsfläche.', check: c => c.byType('bus').length >= 1 },
+        { text: 'Schließe alle vier PCs per Kabel an das Bus-Kabel an (Bustopologie).', check: c => { const pcs = c.byType('pc'); return pcs.length >= 4 && c.byType('bus').some(b => pcs.every(p => c.linked(p, b, 'kabel'))); } },
+        { text: 'Gib jedem PC eine eigene IP-Adresse im Netz 192.168.20.0/24.', check: c => { const pcs = c.byType('pc'); return pcs.length >= 4 && pcs.every(d => c.inNet(d, '192.168.20.0', 24)) && c.distinctIPs(pcs); } },
+        { text: 'Teste mit einem Ping, ob ein PC einen anderen über den Bus erreicht.', check: c => c.pingOk(isType('pc'), isType('pc')) },
+        { text: 'Simuliere einen Kabelbruch im Bus-Kabel und sende einen Ping. Repariere das Kabel danach wieder.', check: c => c.pings().some(e => !e.ok && e.fault === 'bus') && c.byType('bus').length >= 1 && c.byType('bus').every(b => !b.broken) },
+      ],
+      start: () => build(({ add }) => {
+        add('b1', 'pc', 250, 120, { name: 'PC 1' });
+        add('b2', 'pc', 650, 120, { name: 'PC 2' });
+        add('b3', 'pc', 250, 430, { name: 'PC 3' });
+        add('b4', 'pc', 650, 430, { name: 'PC 4' });
+      }),
+      solution: () => build(({ net, add, link }) => {
+        add('b1', 'pc', 250, 120, { name: 'PC 1', ip: '192.168.20.1' });
+        add('b2', 'pc', 650, 120, { name: 'PC 2', ip: '192.168.20.2' });
+        add('b3', 'pc', 250, 430, { name: 'PC 3', ip: '192.168.20.3' });
+        add('b4', 'pc', 650, 430, { name: 'PC 4', ip: '192.168.20.4' });
+        add('bus', 'bus', 450, 280, { name: 'Bus-Kabel 1' });
+        ['b1', 'b2', 'b3', 'b4'].forEach(p => link(p, 'bus'));
+        evPing(net, 'b1', 'b4');
+        NW.logEvent(net, { type: 'ping', src: 'b1', target: null, ok: false, fault: 'bus', faults: ['bus:bus'] });
+      }),
+    },
+    {
+      id: 'ring',
+      title: 'Ringnetz',
+      level: 1,
+      manual: true,
+      intro: 'In einem Ringnetz ist jeder Rechner mit genau zwei Nachbarn verbunden – ganz ohne Switch. Die Daten werden immer in dieselbe Richtung von Station zu Station weitergereicht, bis sie beim Empfänger ankommen. Baue einen Ring aus vier PCs.',
+      tip: 'Verbinde PC 1 mit PC 2, PC 2 mit PC 3, PC 3 mit PC 4 und zum Schluss PC 4 wieder mit PC 1. Adressen: 192.168.30.1 bis 192.168.30.4, Subnetzmaske 255.255.255.0. Einen Ausfall simulierst du, indem du einen PC oder ein Kabel antippst.',
+      think: 'Schau dir beim Ping genau an, welchen Weg die Antwort nimmt. Warum fällt das ganze Netz aus, wenn nur ein PC ausgeschaltet wird? Vergleiche mit dem Sternnetz.',
+      goals: [
+        { text: 'Verbinde die vier PCs per Kabel zu einem geschlossenen Ring.', check: c => { const pcs = c.byType('pc'); return pcs.length >= 4 && c.topos('ring').some(t => t.closed && pcs.every(p => t.members.includes(p.id))); } },
+        { text: 'Gib jedem PC eine eigene IP-Adresse im Netz 192.168.30.0/24.', check: c => { const pcs = c.byType('pc'); return pcs.length >= 4 && pcs.every(d => c.inNet(d, '192.168.30.0', 24)) && c.distinctIPs(pcs); } },
+        { text: 'Teste mit einem Ping, ob die Daten durch den Ring laufen.', check: c => c.pingOk(isType('pc'), isType('pc')) },
+        { text: 'Schalte einen PC aus oder simuliere einen Kabelbruch und sende dann einen Ping. Behebe den Fehler danach wieder.', check: c => c.pings().some(e => !e.ok && e.fault === 'ring') && c.topos('ring').length >= 1 && c.topos('ring').every(t => t.ok) },
+      ],
+      start: () => build(({ add }) => {
+        add('r1', 'pc', 250, 120, { name: 'PC 1' });
+        add('r2', 'pc', 650, 120, { name: 'PC 2' });
+        add('r3', 'pc', 650, 420, { name: 'PC 3' });
+        add('r4', 'pc', 250, 420, { name: 'PC 4' });
+      }),
+      solution: () => build(({ net, add, link }) => {
+        add('r1', 'pc', 250, 120, { name: 'PC 1', ip: '192.168.30.1' });
+        add('r2', 'pc', 650, 120, { name: 'PC 2', ip: '192.168.30.2' });
+        add('r3', 'pc', 650, 420, { name: 'PC 3', ip: '192.168.30.3' });
+        add('r4', 'pc', 250, 420, { name: 'PC 4', ip: '192.168.30.4' });
+        link('r1', 'r2'); link('r2', 'r3'); link('r3', 'r4'); link('r4', 'r1');
+        evPing(net, 'r1', 'r3');
+        NW.logEvent(net, { type: 'ping', src: 'r1', target: null, ok: false, fault: 'ring', faults: ['off:r2'] });
+      }),
+    },
+    {
+      id: 'topologien',
+      title: 'Topologien im Ausfalltest',
+      level: 2,
+      manual: true,
+      intro: 'Hier sind drei kleine Netze schon fertig aufgebaut: ein Stern, ein Bus und ein Ring. Teste, wie gut sie Ausfälle verkraften. Tippe dafür Kabel und Geräte an und simuliere einen Kabelbruch oder einen Ausfall. Sende danach jeweils einen Ping.',
+      tip: 'Oben links siehst du, welche Topologien erkannt wurden. Tippe darauf, um Vor- und Nachteile nachzulesen. Nach jedem Test kannst du das Kabel reparieren oder das Gerät wieder einschalten.',
+      think: 'Welche Topologie verkraftet Ausfälle am besten? Wo ist die Schwachstelle beim Stern? Warum werden heute fast nur noch Sternnetze mit Switches gebaut?',
+      goals: [
+        { text: 'Stern: Simuliere einen Kabelbruch zu einem PC. Zeige mit einem Ping, dass sich die anderen beiden PCs trotzdem erreichen.', check: c => c.pings().some(e => e.ok && TOPO_TEST.stern.includes(e.src) && TOPO_TEST.stern.includes(e.target) && (e.faults || []).some(f => TOPO_TEST.starLink(c.net, f))) },
+        { text: 'Stern: Lass den Switch ausfallen und sende einen Ping. Was passiert?', check: c => c.pings().some(e => !e.ok && TOPO_TEST.stern.includes(e.src) && (e.faults || []).includes('off:ts')) },
+        { text: 'Bus: Lass einen PC ausfallen. Zeige mit einem Ping, dass die beiden anderen trotzdem weiterarbeiten.', check: c => c.pings().some(e => e.ok && TOPO_TEST.bus.includes(e.src) && TOPO_TEST.bus.includes(e.target) && (e.faults || []).some(f => TOPO_TEST.bus.some(id => f === 'off:' + id))) },
+        { text: 'Bus: Simuliere einen Kabelbruch im Bus-Kabel und sende einen Ping.', check: c => c.pings().some(e => !e.ok && e.fault === 'bus' && TOPO_TEST.bus.includes(e.src)) },
+        { text: 'Ring: Lass einen PC ausfallen und sende einen Ping zwischen den beiden anderen.', check: c => c.pings().some(e => !e.ok && e.fault === 'ring' && TOPO_TEST.ring.includes(e.src) && (e.faults || []).some(f => TOPO_TEST.ring.some(id => f === 'off:' + id && id !== e.src))) },
+      ],
+      start: () => topoStart(),
+      solution: () => {
+        const net = topoStart();
+        const starLink = net.links.find(l => l.a === 'k3' || l.b === 'k3');
+        NW.logEvent(net, { type: 'ping', src: 'k1', target: 'k2', ok: true, faults: ['link:' + starLink.id] });
+        NW.logEvent(net, { type: 'ping', src: 'k1', target: null, ok: false, fault: 'off', faults: ['off:ts'] });
+        NW.logEvent(net, { type: 'ping', src: 'u1', target: 'u3', ok: true, faults: ['off:u2'] });
+        NW.logEvent(net, { type: 'ping', src: 'u1', target: null, ok: false, fault: 'bus', faults: ['bus:tb'] });
+        NW.logEvent(net, { type: 'ping', src: 'g1', target: null, ok: false, fault: 'ring', faults: ['off:g2'] });
+        return net;
+      },
+    },
+    {
       id: 'frei',
       title: 'Freies Bauen',
       level: 0,
@@ -231,6 +322,35 @@
       solution: null,
     },
   ];
+
+  /** Geräte-IDs im Ausfalltest (die Geräte sind gesperrt, die IDs bleiben also gleich). */
+  const TOPO_TEST = {
+    stern: ['k1', 'k2', 'k3'], bus: ['u1', 'u2', 'u3'], ring: ['g1', 'g2', 'g3'],
+    starLink: (net, f) => { const l = f.startsWith('link:') && net.links.find(x => 'link:' + x.id === f); return !!l && (l.a === 'ts' || l.b === 'ts'); },
+  };
+
+  function topoStart() {
+    return build(({ add, link }) => {
+      const L = { locked: true };
+      // Stern (links)
+      add('ts', 'switch', 150, 300, Object.assign({ name: 'Switch' }, L));
+      add('k1', 'pc', 70, 110, Object.assign({ name: 'Stern 1', ip: '192.168.1.1' }, L));
+      add('k2', 'pc', 230, 110, Object.assign({ name: 'Stern 2', ip: '192.168.1.2' }, L));
+      add('k3', 'pc', 150, 470, Object.assign({ name: 'Stern 3', ip: '192.168.1.3' }, L));
+      ['k1', 'k2', 'k3'].forEach(p => link(p, 'ts', 'kabel', L));
+      // Bus (Mitte)
+      add('tb', 'bus', 450, 300, Object.assign({ name: 'Bus-Kabel' }, L));
+      add('u1', 'pc', 360, 110, Object.assign({ name: 'Bus 1', ip: '192.168.2.1' }, L));
+      add('u2', 'pc', 540, 110, Object.assign({ name: 'Bus 2', ip: '192.168.2.2' }, L));
+      add('u3', 'pc', 450, 470, Object.assign({ name: 'Bus 3', ip: '192.168.2.3' }, L));
+      ['u1', 'u2', 'u3'].forEach(p => link(p, 'tb', 'kabel', L));
+      // Ring (rechts)
+      add('g1', 'pc', 750, 110, Object.assign({ name: 'Ring 1', ip: '192.168.3.1' }, L));
+      add('g2', 'pc', 840, 300, Object.assign({ name: 'Ring 2', ip: '192.168.3.2' }, L));
+      add('g3', 'pc', 670, 300, Object.assign({ name: 'Ring 3', ip: '192.168.3.3' }, L));
+      link('g1', 'g2', 'kabel', L); link('g2', 'g3', 'kabel', L); link('g3', 'g1', 'kabel', L);
+    });
+  }
 
   function dhcpStart() {
     return build(({ add, link }) => {
