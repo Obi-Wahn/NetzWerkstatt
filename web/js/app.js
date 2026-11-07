@@ -243,7 +243,8 @@
     document.querySelector('[data-tool="bluetooth"]').hidden = !has('pan');
     document.querySelector('.addr-switch').hidden = !has('v6');
     if (!has('v6') && S.v6) document.querySelector('[data-addr="v4"]').click();
-    if ((S.tool === 'wlan' && !has('wlan')) || (S.tool === 'bluetooth' && !has('pan'))) setTool('move');
+    document.querySelector('[data-tool="glasfaser"]').hidden = !has('netzarten');
+    if ((S.tool === 'glasfaser' && !has('netzarten')) || (S.tool === 'wlan' && !has('wlan')) || (S.tool === 'bluetooth' && !has('pan'))) setTool('move');
     $('netkinds').hidden = !has('netzarten');
   }
   palette.addEventListener('click', ev => {
@@ -268,8 +269,9 @@
   });
 
   const HINTS = {
-    move: 'Tippe ein Gerät oder eine Verbindung an, um es einzustellen und zu testen.',
+    move: 'Tippe ein Gerät oder eine Verbindung (Kabel, WLAN) an, um es einzustellen und zu testen. Geräte kannst du auch verschieben.',
     kabel: 'Tippe nacheinander auf die zwei Geräte, die du mit einem Kabel verbinden willst.',
+    glasfaser: 'Tippe nacheinander auf die zwei Geräte (z. B. Switches in verschiedenen Gebäuden), die eine Glasfaserleitung quer durch die Stadt verbinden soll.',
     wlan: 'Tippe auf einen Access Point oder Router und dann auf ein Tablet oder Smartphone.',
     bluetooth: 'Tippe auf ein Smartphone, Tablet oder einen PC und dann auf die Kopfhörer.',
     delete: 'Tippe auf ein Gerät oder eine Verbindung, um es zu löschen.',
@@ -401,18 +403,31 @@
       }
       return;
     }
-    if (S.tool === 'kabel' || S.tool === 'wlan' || S.tool === 'bluetooth') {
+    if (S.tool === 'kabel' || S.tool === 'glasfaser' || S.tool === 'wlan' || S.tool === 'bluetooth') {
+      // Eine vorhandene Verbindung antippen: direkt einstellen, ohne erst „Auswählen“ zu wählen
+      if (!devEl && linkEl && !S.pending) {
+        setTool('move');
+        S.selected = linkEl.dataset.link; renderCanvas(); renderInspector();
+        return;
+      }
       if (!devEl) { S.pending = null; $('tool-hint').textContent = HINTS[S.tool]; renderCanvas(); return; }
       const id = devEl.dataset.dev;
       if (!S.pending) {
         S.pending = id;
-        $('tool-hint').textContent = `${NW.dev(S.net, id).name} gewählt – tippe jetzt auf das zweite Gerät.`;
+        $('tool-hint').textContent = `${NW.dev(S.net, id).name} gewählt – tippe jetzt auf das zweite Gerät. Noch einmal antippen öffnet die Einstellungen.`;
       } else if (S.pending === id) {
-        S.pending = null; $('tool-hint').textContent = HINTS[S.tool];
+        // Zweimal dasselbe Gerät: Schüler will es einstellen, nicht verbinden
+        setTool('move');
+        S.selected = id; renderCanvas(); renderInspector();
+        return;
       } else {
-        const r = NW.addLink(S.net, S.pending, id, S.tool);
+        const r = NW.addLink(S.net, S.pending, id, S.tool === 'glasfaser' ? 'kabel' : S.tool);
+        if (r.ok && S.tool === 'glasfaser') r.link.stadt = true;
         if (!r.ok) toast(r.reason, 'error');
-        else { toast({ kabel: 'Kabel verbunden.', wlan: 'WLAN verbunden.', bluetooth: 'Per Bluetooth gekoppelt.' }[S.tool], 'ok'); scheduleSave(); }
+        else {
+          const fiberHint = S.tool === 'kabel' && has('netzarten') ? ' Für eine Glasfaserleitung tippe das Kabel an – oder nimm gleich das Werkzeug „Glasfaser“.' : '';
+          toast({ kabel: 'Kabel verbunden.', glasfaser: 'Glasfaserleitung quer durch die Stadt verlegt.', wlan: 'WLAN verbunden.', bluetooth: 'Per Bluetooth gekoppelt.' }[S.tool] + fiberHint, 'ok'); scheduleSave();
+        }
         S.pending = null; $('tool-hint').textContent = HINTS[S.tool];
         renderGoals(); renderInspector();
         if (r.ok) { renderCanvas(); autoDhcp(); return; }
@@ -690,7 +705,10 @@
         bluetooth: 'Bluetooth ist Funk für kurze Strecken (etwa 10 Meter). Damit verbinden sich die Geräte einer Person, z. B. Smartphone und Kopfhörer, zu einem persönlichen Netz (PAN). Über Bluetooth laufen hier keine IP-Pakete.',
       }[link.kind];
       const fiber = link.kind === 'kabel' && has('netzarten')
-        ? `<label class="toggle"><input type="checkbox" data-act="stadt" ${link.stadt ? 'checked' : ''} ${ro || link.locked ? 'disabled' : ''}> Glasfaserleitung quer durch die Stadt (mehrere Kilometer)</label>`
+        ? `<div class="group"><h4>Art der Leitung</h4><div class="seg" role="group" aria-label="Art der Leitung">
+            <button class="${link.stadt ? '' : 'on'}" data-act="stadt" data-val="0" ${ro || link.locked ? 'disabled' : ''} aria-pressed="${!link.stadt}">Netzwerkkabel<br><span class="seg-sub">im Gebäude</span></button>
+            <button class="${link.stadt ? 'on' : ''}" data-act="stadt" data-val="1" ${ro || link.locked ? 'disabled' : ''} aria-pressed="${!!link.stadt}">Glasfaser<br><span class="seg-sub">quer durch die Stadt</span></button>
+          </div></div>`
         : '';
       insp.innerHTML = `<h3>${title}</h3>
         <p>zwischen <b>${esc(a.name)}</b> und <b>${esc(b.name)}</b></p>${plug}${fiber}
@@ -1086,7 +1104,10 @@
     if (b.dataset.act === 'stadt') {
       const l = S.net.links.find(x => x.id === S.selected);
       if (!l || l.locked || readOnly()) return;
-      l.stadt = !!b.checked;
+      const want = b.dataset.val === '1';
+      if (!!l.stadt === want) return;
+      if (want) l.stadt = true; else delete l.stadt;
+      toast(want ? 'Aus dem Kabel ist eine Glasfaserleitung quer durch die Stadt geworden.' : 'Die Leitung ist wieder ein normales Netzwerkkabel.', 'ok');
       renderAll(); scheduleSave();
       return;
     }

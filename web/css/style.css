@@ -395,6 +395,7 @@ select { font: inherit; width: 100%; padding: 8px; border: 1px solid var(--line)
 .seg button + button { border-left: 1px solid var(--line); }
 .seg button.on { background: var(--brand); color: var(--on-color); }
 .seg button:disabled { cursor: default; }
+.seg-sub { font-weight: 400; font-size: .9em; opacity: .85; }
 .dhcp-btn { width: 100%; margin-bottom: 10px; }
 .chip.suggest { background: var(--suggest-bg); border-color: var(--suggest-line); }
 .dhcp-info { background: var(--info-soft); border-radius: 8px; padding: 7px 9px; font-size: .88em; margin-bottom: 8px; }
