@@ -1,0 +1,26 @@
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Simulation und Aufgaben testen
+        run: node test/simulation.test.js
+      - name: Go prüfen
+        run: |
+          test -z "$(gofmt -l .)"
+          go vet ./...
+      - name: Pakete bauen
+        run: ./build.sh

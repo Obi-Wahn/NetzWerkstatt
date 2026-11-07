@@ -1,0 +1,42 @@
+name: Neue Version veröffentlichen
+
+# Startet, sobald eine Versionsmarke wie v0.2.0 angelegt wird
+# (auf GitHub: Releases → „Draft a new release“ → neuen Tag eingeben → veröffentlichen),
+# oder von Hand unter Actions → „Neue Version veröffentlichen“ → „Run workflow“.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versionsnummer, z. B. v0.2.0'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Version bestimmen
+        id: v
+        run: echo "version=${{ github.event.inputs.version || github.ref_name }}" >> "$GITHUB_OUTPUT"
+      - name: Pakete bauen
+        run: ./build.sh "${{ steps.v.outputs.version }}"
+      - name: Release anlegen oder ergänzen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release upload "$VERSION" dist/NetzWerkstatt-Windows.zip dist/NetzWerkstatt-Linux.tar.gz --clobber
+          else
+            gh release create "$VERSION" dist/NetzWerkstatt-Windows.zip dist/NetzWerkstatt-Linux.tar.gz \
+              --title "NetzWerkstatt $VERSION" \
+              --notes "Zum Herunterladen: **NetzWerkstatt-Windows.zip** für Windows oder **NetzWerkstatt-Linux.tar.gz** für Linux. Entpacken, Programm starten, fertig – keine Installation nötig. Eine Anleitung liegt als LIESMICH.txt bei."
+          fi

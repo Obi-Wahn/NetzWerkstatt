@@ -5,6 +5,13 @@
   const $ = id => document.getElementById(id);
   const TASKS = NWTasks.TASKS.filter(t => !t.free);
 
+  // Automatische Anmeldung, wenn das Programm die Ansicht selbst geöffnet hat
+  const m = location.hash.match(/token=([0-9a-f]+)/);
+  if (m) {
+    store.set('nw_teacher', m[1]);
+    history.replaceState(null, '', location.pathname);
+  }
+
   const S = {
     token: store.get('nw_teacher'),
     data: null,
