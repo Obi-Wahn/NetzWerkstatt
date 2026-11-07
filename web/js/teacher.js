@@ -215,7 +215,7 @@
     }
     if (del) {
       const s = student(del.dataset.del);
-      if (!(await confirmBox(`${s.name} mit allen Arbeiten löschen? Das kann nicht rückgängig gemacht werden.`, 'Löschen'))) return;
+      if (!(await confirmBox(`${s.name} mit allen Arbeiten löschen? Das kann nicht rückgängig gemacht werden.`, 'Löschen', true))) return;
       try { await api('POST', '/api/teacher/delete-student', { student: s.id }, S.token); await load(); }
       catch (e) { toast(e.message, 'error'); }
     }
@@ -260,7 +260,7 @@
 
   $('btn-delete-task').addEventListener('click', async () => {
     const t = taskObj();
-    if (!(await confirmBox(`Die eigene Aufgabe „${t.title}“ löschen? Die Arbeiten der Schüler zu dieser Aufgabe werden ebenfalls gelöscht. Exportiere sie vorher, wenn du sie behalten willst.`, 'Löschen'))) return;
+    if (!(await confirmBox(`Die eigene Aufgabe „${t.title}“ löschen? Die Arbeiten der Schüler zu dieser Aufgabe werden ebenfalls gelöscht. Exportiere sie vorher, wenn du sie behalten willst.`, 'Löschen', true))) return;
     try { await api('POST', '/api/teacher/custom-delete', { id: t.id }, S.token); toast('Aufgabe gelöscht.', 'ok'); await load(); }
     catch (e) { toast(e.message, 'error'); }
   });

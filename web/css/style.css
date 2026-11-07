@@ -88,6 +88,14 @@ p { margin: 0 0 .7em; }
 .btn.ghost:hover { background: var(--hover); }
 .btn.danger { color: var(--bad); border-color: var(--bad-line); background: var(--panel); margin-top: 8px; }
 .btn.small { padding: 4px 10px; min-height: 32px; font-size: .9em; }
+.btn.danger-fill { background: var(--bad); color: var(--on-color); border-color: var(--bad); font-weight: 600; }
+.btn.danger-fill:hover { filter: brightness(1.08); }
+/* Aktionsknöpfe, die etwas losschicken (Ping, Öffnen, Datei senden …): immer hervorgehoben und mit Symbol */
+.btn.act { display: inline-flex; align-items: center; justify-content: center; gap: 7px; font-weight: 600; }
+.btn.act .act-ico { flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.act-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+.act-row .btn.act { flex: 1 1 140px; }
+.btn.act.wide { width: 100%; margin-bottom: 10px; }
 .btn.big { width: 100%; padding: 13px; font-size: 1.1em; }
 input {
   font: inherit; width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px;
@@ -322,6 +330,10 @@ details.sec > summary:hover h4 { color: var(--brand); }
 .port-head { font-weight: 700; margin-bottom: 6px; }
 .port .field { margin-bottom: 4px; }
 .conn { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
+.router-conn { margin: 0 0 10px; }
+.router-conn li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: .9em; }
+.router-conn .replug-btn { margin-left: auto; }
+.btn.act.match { box-shadow: 0 0 0 3px var(--brand-soft), 0 0 0 5px var(--brand); }
 .kind { font-size: .75em; font-weight: 700; padding: 1px 7px; border-radius: 6px; background: var(--chip-bg); color: var(--cable); }
 .kind.bluetooth { background: var(--bt-soft); color: var(--bt); }
 .kind.stadt { background: var(--fiber-soft); color: var(--fiber); }
@@ -367,6 +379,8 @@ select { font: inherit; width: 100%; padding: 8px; border: 1px solid var(--line)
 .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 11px 18px; border-radius: 12px; z-index: 60; max-width: min(560px, calc(100% - 32px)); box-shadow: 0 8px 30px rgba(0, 0, 0, .2); font-weight: 600; }
 .toast.error { background: var(--bad); color: var(--on-color); }
 .toast.ok { background: var(--ok); color: var(--on-color); }
+.toast.has-act { display: flex; align-items: center; gap: 14px; }
+.toast-act { font: inherit; font-weight: 700; padding: 6px 12px; min-height: 36px; border-radius: 8px; border: 2px solid currentColor; background: transparent; color: inherit; cursor: pointer; flex: none; }
 
 /* ---------------------------------------------------------------- Tablet hochkant / schmale Fenster */
 /* Einstellungsfenster direkt am Gerät (große Bildschirme) */
