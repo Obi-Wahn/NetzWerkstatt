@@ -33,11 +33,16 @@
     history.replaceState(null, '', location.pathname);
   }
 
+  // Lehrkraft springt aus ihrer Ansicht direkt ins freie Bauen (…/?frei=1)
+  const freeParam = new URLSearchParams(location.search).has('frei');
+  if (freeParam) history.replaceState(null, '', location.pathname);
+
   async function start() {
     if (!S.token) { show('login'); if (roomParam) setTimeout(() => $('login-name').focus(), 50); return; }
     try {
       setMe(await api('GET', '/api/me', undefined, S.token));
-      showTasks();
+      const free = NWTasks.all().find(t => t.free);
+      if (freeParam && free && visible(free)) openTask(free.id); else showTasks();
     } catch (e) {
       if (e.status === 401) { store.del('nw_token'); S.token = null; }
       show('login');
@@ -75,6 +80,8 @@
   /** Eigenen Stand übernehmen: freigeschaltete und eigene Aufgaben der Lehrkraft. */
   function setMe(me) {
     S.me = me;
+    // Im Baukasten der Lehrkraft führt ein Knopf zurück zur Lehreransicht
+    $('btn-teacher').hidden = $('btn-teacher-tasks').hidden = !(me && me.preview);
     NWEigene.install(me.customTasks || []);
   }
   // Nur Aufgaben, die die Lehrkraft freigeschaltet hat (im Baukasten der Lehrkraft alle)
@@ -150,6 +157,13 @@
     updateSolutionButton();
     renderAll();
   }
+
+  $('btn-teacher').addEventListener('click', async ev => {
+    // Erst speichern, dann zur Lehreransicht wechseln
+    ev.preventDefault();
+    await flushSave();
+    location.href = 'lehrer.html';
+  });
 
   $('btn-back').addEventListener('click', async () => {
     await flushSave();
