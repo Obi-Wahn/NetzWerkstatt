@@ -539,3 +539,8 @@ table.cmp col.k { width: 26%; }
 @media (max-width: 600px) { .topbar .theme-btn span { display: none; } }
 .preview-note { background: var(--brand-soft); color: var(--ink); border-left: 4px solid var(--brand); border-radius: 8px; padding: 10px 14px; margin: 0 0 14px; }
 .task-tile.custom .tile-num { font-size: .85em; }
+/* Name eines Dienstes im Internet (unter dem Schalter des Dienstes) */
+.svc-name { margin: 0 0 10px 30px; }
+.svc-name .field { margin-bottom: 4px; }
+.name-dns p { margin: 0 0 6px; }
+.name-dns .chips { margin: 0 0 6px; }

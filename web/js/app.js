@@ -642,6 +642,32 @@
     return list.length ? `<div class="chips">${list.map(([ip, who]) => `<button class="chip suggest" data-act="dns-forward" data-val="${esc(ip)}">💡 ${esc(who)} (${esc(ip)}) fragen</button>`).join('')}</div>` : '';
   }
 
+  // Beispielnamen für die Dienste eines Servers
+  const HOST_EXAMPLE = { web: 'www.meineseite.de', mail: 'mail.meineseite.de', video: 'video.meineseite.de', call: 'call.meineseite.de', game: 'spiel.meineseite.de' };
+
+  /** Stand des Namens im DNS mit Knöpfen zum Eintragen (wird beim Tippen neu gezeichnet). */
+  function nameStatusHTML(d, k, dis) {
+    const st = NW.nameStatus(S.net, d.id, k);
+    if (!st.host) return `<p class="muted small">Unter diesem Namen können Geräte den Dienst aufrufen, sobald er bei einem DNS-Server eingetragen ist.</p>`;
+    if (!st.valid) return `<p class="fhint bad">Kein gültiger Name. Ein Name besteht aus Teilen mit Buchstaben, Ziffern oder Bindestrichen, getrennt durch Punkte, z. B. ${esc(HOST_EXAMPLE[k])}.</p>`;
+    if (st.ip === null) return `<p class="fhint warn">${esc(d.name)} hat noch keine IP-Adresse. Erst dann kann ein DNS-Server den Namen in eine Adresse übersetzen.</p>`;
+    const nm = id => esc(NW.dev(S.net, id).name);
+    let h = '';
+    if (st.at.length) h += `<p class="fhint ok">✓ Eingetragen bei ${st.at.map(nm).join(', ')}: ${esc(st.host)} → ${esc(NW.ipStr(st.ip))}</p>`;
+    if (st.stale.length) h += `<p class="fhint warn">Bei ${st.stale.map(nm).join(', ')} zeigt ${esc(st.host)} auf eine andere IP-Adresse.</p>`;
+    if (!st.servers.length) return h + `<p class="fhint warn">Noch gibt es keinen DNS-Server, der den Namen kennt. Stelle einen DNS-Server ins Netz und trage den Namen dort ein.</p>`;
+    if (!st.at.length && !st.stale.length) h += `<p class="fhint warn">Noch kennt kein DNS-Server diesen Namen. Ohne DNS-Eintrag finden die Geräte ${esc(d.name)} nur über die IP-Adresse.</p>`;
+    const todo = st.servers.filter(id => !st.at.includes(id));
+    if (!dis && todo.length) h += `<div class="chips">${todo.slice(0, 4).map(id => `<button class="chip suggest" data-act="name-dns" data-svc="${k}" data-dns="${id}">💡 ${st.stale.includes(id) ? 'Eintrag bei ' + nm(id) + ' anpassen' : 'Bei ' + nm(id) + ' eintragen'}</button>`).join('')}</div>`;
+    return h;
+  }
+  /** Feld „Name im Internet“ für einen Dienst des Servers. */
+  function nameBlock(d, k, dis) {
+    if (!has('web') || (dis && !NW.svcHost(d, k))) return '';
+    return `<div class="svc-name">${field('Name im Internet', `services.${k}.host`, d.services[k].host || '', '', { disabled: dis, placeholder: 'z. B. ' + HOST_EXAMPLE[k] })}
+      <div class="name-dns" data-svc="${k}">${nameStatusHTML(d, k, dis)}</div></div>`;
+  }
+
   function sec(key, title, body, feat, cls) {
     if (!body) return '';
     let open = feat ? !S.task.free && NWTasks.showOf(S.task).includes(feat) : true;
@@ -813,6 +839,7 @@
       if (has('web')) {
         b += toggle('web', 'Webserver (HTTP)');
         if (w.on) {
+          b += nameBlock(d, 'web', dis);
           b += field('Titel der Webseite', 'services.web.title', w.title, '', { disabled: dis });
           b += field('Text der Webseite', 'services.web.text', w.text, '', { disabled: dis });
         }
@@ -845,10 +872,14 @@
         if (d.services.mail.on) {
           const nb = (d.services.mail.box || []).length;
           b += `<p class="svc-info">Postfach: <b>${nb === 1 ? '1 E-Mail' : nb + ' E-Mails'}</b></p>`;
+          b += nameBlock(d, 'mail', dis);
         }
         b += toggle('video', 'Video-Streaming');
+        if (d.services.video.on) b += nameBlock(d, 'video', dis);
         b += toggle('call', 'Video- und Audio-Telefonie');
+        if (d.services.call.on) b += nameBlock(d, 'call', dis);
         b += toggle('game', 'Spiele-Server (Online-Spiel)');
+        if (d.services.game.on) b += nameBlock(d, 'game', dis);
       }
       if (has('web') || has('dateien') || has('dienste')) {
         const feat = ['dienste', 'web', 'dateien'].find(k => NWTasks.showOf(S.task).includes(k)) || 'dienste';
@@ -1097,9 +1128,16 @@
       if (n) toast(`${n === 1 ? 'Ein Gerät hat' : n + ' Geräte haben'} den neuen DNS-Server per DHCP übernommen.`, 'ok');
     }
     if (inp.type === 'checkbox') renderInspector(); else updateHints();
+    refreshNameStatus(d);
     renderCanvas(); renderGoals(); scheduleSave();
     if (dm && val) autoDhcp();
   });
+
+  /** Namen der Dienste: Stand im DNS neu anzeigen (z. B. nach Tippen des Namens oder einer neuen IP-Adresse). */
+  function refreshNameStatus(d) {
+    const dis = readOnly() || d.locked;
+    insp.querySelectorAll('.name-dns[data-svc]').forEach(el => { el.innerHTML = nameStatusHTML(d, el.dataset.svc, dis); });
+  }
 
   function setPortAuto(d, i) {
     const sg = NW.suggestPortIP(S.net, d, i);
@@ -1227,6 +1265,13 @@
         renderAll(); scheduleSave(); break;
       case 'dns-forward':
         d.services.dns.forward = b.dataset.val; renderInspector(); renderGoals(); scheduleSave(); break;
+      case 'name-dns': {
+        if (readOnly() || d.locked) break;
+        const r = NW.registerName(S.net, d.id, b.dataset.svc, b.dataset.dns);
+        if (r.ok) toast(`${NW.dev(S.net, b.dataset.dns).name} übersetzt jetzt ${r.host} in ${r.ip}.`, 'ok');
+        else toast(r.error, 'error');
+        renderInspector(); renderGoals(); scheduleSave(); break;
+      }
       case 'dns-add':
         d.services.dns.entries.push({ name: '', ip: '' }); renderInspector(); scheduleSave(); break;
       case 'dns-del':

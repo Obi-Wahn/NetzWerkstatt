@@ -837,17 +837,78 @@
 
   function defaultServices() {
     return {
-      web: { on: false, title: 'Willkommen!', text: 'Das ist meine erste Webseite.' },
+      web: { on: false, title: 'Willkommen!', text: 'Das ist meine erste Webseite.', host: '' },
       dns: { on: false, entries: [], forward: '' },
-      mail: { on: false, box: [] },
-      video: { on: false },
-      call: { on: false },
-      game: { on: false },
+      mail: { on: false, box: [], host: '' },
+      video: { on: false, host: '' },
+      call: { on: false, host: '' },
+      game: { on: false, host: '' },
       files: { on: false, files: [] },
     };
   }
 
   function svcOn(d, k) { return !!(d && d.services && d.services[k] && d.services[k].on); }
+
+  // ------------------------------------------------------------------ Namen der Dienste (z. B. www.meineseite.de)
+  /** Dienste, für die man beim Server einen Namen im Internet eintragen kann. */
+  const NAMED_SERVICES = ['web', 'mail', 'video', 'call', 'game'];
+
+  /** Ein Name wie www.meineseite.de (Buchstaben, Ziffern, Bindestriche, mindestens ein Punkt)? */
+  function validHost(h) {
+    h = (h || '').trim().toLowerCase();
+    return h.length <= 253 && parseIP(h) === null && /^[a-z0-9äöüß]([a-z0-9äöüß-]*[a-z0-9äöüß])?(\.[a-z0-9äöüß]([a-z0-9äöüß-]*[a-z0-9äöüß])?)+$/.test(h);
+  }
+
+  /** Eingetragener Name eines Dienstes (klein geschrieben, ohne Leerzeichen) oder ''. */
+  function svcHost(d, k) {
+    const s = d && d.services && d.services[k];
+    return s ? (s.host || '').trim().toLowerCase() : '';
+  }
+
+  /**
+   * Wo steht der Name eines Dienstes im DNS?
+   * Ergebnis: {host, ip, valid, servers: alle DNS-Server (IDs), at: DNS-Server mit passendem Eintrag,
+   * stale: DNS-Server, bei denen der Name auf eine andere IP-Adresse zeigt}
+   */
+  function nameStatus(net, srvId, k) {
+    const d = dev(net, srvId);
+    const host = svcHost(d, k);
+    const ip = d ? parseIP(d.ip || '') : null;
+    const out = { host, ip, valid: validHost(host), servers: [], at: [], stale: [] };
+    for (const o of net.devices) {
+      if (!svcOn(o, 'dns')) continue;
+      out.servers.push(o.id);
+      if (!host) continue;
+      const es = (o.services.dns.entries || []).filter(e => (e.name || '').trim().toLowerCase() === host);
+      if (!es.length) continue;
+      if (ip !== null && es.some(e => parseIP(e.ip) === ip)) out.at.push(o.id);
+      else out.stale.push(o.id);
+    }
+    return out;
+  }
+
+  /**
+   * Trägt den Namen eines Dienstes beim DNS-Server dnsId ein (Name → IP-Adresse des Servers),
+   * wie wenn man eine Domain anmeldet. Ein vorhandener Eintrag mit dem Namen wird angepasst.
+   */
+  function registerName(net, srvId, k, dnsId) {
+    const d = dev(net, srvId), ds = dev(net, dnsId);
+    const host = svcHost(d, k);
+    if (!validHost(host)) return { ok: false, error: 'Trage zuerst einen gültigen Namen ein, z. B. www.meineseite.de.' };
+    const ip = parseIP(d.ip || '');
+    if (ip === null) return { ok: false, error: `${d.name} hat noch keine IP-Adresse.` };
+    if (!svcOn(ds, 'dns')) return { ok: false, error: `Auf ${ds ? ds.name : 'diesem Gerät'} läuft kein DNS-Server.` };
+    const entries = ds.services.dns.entries || (ds.services.dns.entries = []);
+    const same = entries.filter(e => (e.name || '').trim().toLowerCase() === host);
+    if (same.length) {
+      same[0].name = host; same[0].ip = ipStr(ip);
+      for (const e of same.slice(1)) entries.splice(entries.indexOf(e), 1);
+      return { ok: true, updated: true, host, ip: ipStr(ip) };
+    }
+    const empty = entries.find(e => !(e.name || '').trim() && !(e.ip || '').trim());
+    if (empty) { empty.name = host; empty.ip = ipStr(ip); } else entries.push({ name: host, ip: ipStr(ip) });
+    return { ok: true, updated: false, host, ip: ipStr(ip) };
+  }
 
   function linkBetween(net, a, b) {
     return net.links.find(l => (l.a === a && l.b === b) || (l.a === b && l.b === a)) || null;
@@ -944,7 +1005,7 @@
   /** Die Nachrichten eines Dienstes (ohne TCP-Verwaltungspakete). dir: 'up' = zum Server, 'down' = zurück. */
   const MESSAGES = {
     web: (src, srv, u) => [
-      { dir: 'up', label: 'HTTP-Request', short: 'Die Anfrage', text: `GET ${u.path} – „Schick mir bitte die Webseite ${u.host}"` },
+      { dir: 'up', label: 'HTTP-Request', short: 'Die Anfrage', text: `GET ${u.path} · Host: ${u.host} – „Schick mir bitte die Webseite ${u.host}"` },
       { dir: 'down', label: 'HTTP-Response', short: 'Die Webseite', text: '200 OK – hier ist die Webseite' },
     ],
     mail: (src, srv) => [
@@ -958,8 +1019,8 @@
         { dir: 'down', label: 'IMAP: E-Mails', short: 'Die Antwort', text: n ? `${srv.name}: „Hier sind ${plural(n, 'E-Mail', 'E-Mails')}."` : `${srv.name}: „Das Postfach ist leer."` },
       ];
     },
-    video: () => [
-      { dir: 'up', label: 'Video-Anfrage', short: 'Die Anfrage', text: 'GET /video – „Schick mir bitte das Video."' },
+    video: (src, srv, u) => [
+      { dir: 'up', label: 'Video-Anfrage', short: 'Die Anfrage', text: `GET /video · Host: ${u.host} – „Schick mir bitte das Video."` },
       { dir: 'down', label: 'Videodaten 1/3', short: 'Teil 1', text: 'Teil 1 des Videos – kommt in den Puffer' },
       { dir: 'down', label: 'Videodaten 2/3', short: 'Teil 2', text: 'Teil 2 des Videos – kommt in den Puffer' },
       { dir: 'down', label: 'Videodaten 3/3', short: 'Teil 3', text: 'Teil 3 des Videos – kommt in den Puffer' },
@@ -1094,6 +1155,14 @@
         steps.push({ kind: 'request', label: m.label, proto, text: m.text, note: natNote(net, rt, 'there'), path: rt.there.path, ok: true });
       }
       return res(false, { error: `Unter ${ipStr(ip)} (${srv.name}) läuft kein ${S.server}.`, hint: TYPES[srv.type].services ? `Schalte beim Server den Dienst „${S.label}" ein.` : `${srv.name} ist kein Server. Dienste wie ${S.label} bieten nur Server an.` });
+    }
+    // HTTP (Webseite, Video): Der Browser schickt den Namen mit (Host). Hat der Server einen anderen Namen, kennt er die Seite nicht.
+    const own = svcHost(srv, A.svc);
+    if ((action === 'web' || action === 'video') && own && parseIP(u.host) === null && u.host !== own) {
+      const m = MESSAGES[action](src, srv, u)[0];
+      steps.push({ kind: 'request', label: m.label, proto, text: m.text, note: natNote(net, rt, 'there'), path: rt.there.path, ok: true });
+      steps.push({ kind: 'response', label: 'HTTP-Response', proto, text: `404 Not Found – „${u.host} gibt es bei mir nicht. Ich bin ${own}."`, note: natNote(net, rt, 'back'), path: rt.back.path, ok: true, bad: true });
+      return res(false, { error: `${srv.name} ist für ${own} zuständig, nicht für ${u.host}. Er antwortet mit „404 Not Found“.`, hint: `Der DNS-Server hat ${u.host} in die IP-Adresse von ${srv.name} übersetzt. Prüfe den DNS-Eintrag oder den Namen beim Server.`, dns: r.dns, target: srv.id });
     }
     const msgs = MESSAGES[action](src, srv, u);
     const ex = exchange(net, rt, src, srv, msgs, proto, details);
@@ -1755,7 +1824,7 @@
     emptyNetwork, createDevice, dev, linksOf, portOf, canLink, addLink, removeDevice, removeLink,
     allLinksOf, filesOf, fileStore, newFile, sendFile, getFiles, btPartners, playMusic, NET_KINDS, netKinds,
     ifaceAddr, l2Endpoints, route, roundTrip, ping, browse, parseURL, logEvent, topology, topologies, TOPOLOGY_INFO, ringOf, activeFaults, setFault, clone, newId,
-    useService, SERVICES, ACTIONS, defaultServices, svcOn, linkBetween, isDnsServer, dnsUpstream,
+    useService, SERVICES, ACTIONS, defaultServices, svcOn, NAMED_SERVICES, validHost, svcHost, nameStatus, registerName, linkBetween, isDnsServer, dnsUpstream,
     parseIP6, ip6Str, net6Str, isLinkLocal6, ip6Map, ip6Of, route6, ping6,
     dhcpOf, dhcpRange, dhcpDefaultRange, dhcp, applyLease, refreshDns, suggest, suggestPortIP, iface, ifaceName, replug, WAN, LAN, wlanHub, setRouterWlan, isApipa, setModem, ispOf,
   };
