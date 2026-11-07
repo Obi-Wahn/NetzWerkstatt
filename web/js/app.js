@@ -24,8 +24,15 @@
     for (const s of document.querySelectorAll('.screen')) s.hidden = s.id !== 'screen-' + name;
   }
 
+  // Raumcode aus dem QR-Code übernehmen (…/?raum=1234)
+  const roomParam = new URLSearchParams(location.search).get('raum');
+  if (roomParam) {
+    $('login-room').value = roomParam;
+    history.replaceState(null, '', location.pathname);
+  }
+
   async function start() {
-    if (!S.token) { show('login'); return; }
+    if (!S.token) { show('login'); if (roomParam) setTimeout(() => $('login-name').focus(), 50); return; }
     try {
       S.me = await api('GET', '/api/me', undefined, S.token);
       showTasks();

@@ -18,20 +18,25 @@ Die NetzWerkstatt ist für den Informatikunterricht der Sekundarstufe I gedacht.
   5. Freies Bauen
 - **Lehrkraft-Ansicht:** Live-Übersicht über alle Schülerinnen und Schüler, Abgaben am Beamer zeigen (auf Wunsch ohne Namen), zwei Lösungen nebeneinander vergleichen, Musterlösungen zeigen oder für die Klasse freigeben, Abgaben zurückgeben.
 
-## Start im Unterricht
+## Start im Unterricht (für Lehrkräfte)
 
-1. Die passende Programmdatei auf den Lehrer-Rechner kopieren:
-   - Windows: `netzwerkstatt-windows.exe`
-   - Linux: `netzwerkstatt-linux` (bei Bedarf vorher `chmod +x netzwerkstatt-linux`)
-2. Per Doppelklick starten. Es ist keine Installation nötig. Beim ersten Start fragt Windows eventuell, ob das Programm im Netzwerk erreichbar sein darf – das bitte für das private bzw. Schulnetz erlauben.
-3. Das Fenster zeigt die **Adresse für die Schülerinnen und Schüler**, den **Raumcode** und das **Lehrer-Passwort** an. Das Fenster während der Stunde offen lassen.
-4. Die Lehrkraft-Ansicht im Browser öffnen: `http://localhost:8080/lehrer`. Mit „Zugang am Beamer zeigen“ erscheinen Adresse und Raumcode groß für alle.
-5. Die Schülerinnen und Schüler öffnen die Adresse im Browser (Edge, Chrome, Firefox oder Safari auf dem iPad) und melden sich mit Vornamen oder Kürzel und dem Raumcode an.
+Es muss nichts installiert werden.
 
-Optionen beim Start über die Kommandozeile:
+1. Unter [**Releases**](https://github.com/Obi-Wahn/NetzWerkstatt/releases/latest) das passende Paket herunterladen:
+   - Windows: `NetzWerkstatt-Windows.zip`
+   - Linux: `NetzWerkstatt-Linux.tar.gz`
+2. Das Paket entpacken und den Ordner an einen festen Ort legen (z. B. „Dokumente“ oder USB-Stick).
+3. Starten: unter Windows Doppelklick auf `NetzWerkstatt.exe`, unter Linux `start.sh`.
+   - Windows zeigt beim ersten Start evtl. „Der Computer wurde durch Windows geschützt“ → „Weitere Informationen“ → „Trotzdem ausführen“. Die Frage nach dem Netzwerkzugriff mit „Zugriff zulassen“ beantworten.
+4. Das Programm prüft Speicherort, Port und Netzwerkverbindung selbst, meldet Probleme verständlich und öffnet danach die **Lehrkraft-Ansicht** im Browser – bereits angemeldet.
+5. In der Lehrkraft-Ansicht „Zugang am Beamer zeigen“ wählen. Die Schülerinnen und Schüler öffnen die angezeigte Adresse im Browser (Edge, Chrome, Firefox oder Safari auf dem iPad) und melden sich mit Vornamen oder Kürzel und dem Raumcode an.
+
+Das Fenster mit den Startmeldungen während der Stunde offen lassen. Wird das Programm ein zweites Mal gestartet, öffnet es nur die Lehrkraft-Ansicht der bereits laufenden NetzWerkstatt.
+
+Optionen für Fortgeschrittene (Kommandozeile):
 
 ```
-netzwerkstatt -port 8080 -raumcode 1234 -passwort geheim -daten pfad/zur/datei.json
+NetzWerkstatt.exe -port 8080 -raumcode 1234 -passwort geheim -daten pfad/zur/datei.json -kein-browser
 ```
 
 Raumcode und Passwort bleiben gespeichert, bis sie geändert werden.
@@ -50,14 +55,18 @@ Voraussetzung: [Go](https://go.dev) ab Version 1.22 und für die Tests [Node.js]
 ```
 go run .                      # Server lokal starten
 node test/simulation.test.js  # Tests für Simulation und Aufgaben
-./build.sh                    # Programmdateien für Windows und Linux in dist/ erzeugen
+./build.sh v0.2.0             # Download-Pakete für Windows und Linux in dist/ erzeugen
 ```
+
+**Neue Version veröffentlichen:** Auf GitHub unter Releases → „Draft a new release“ einen neuen Tag wie `v0.2.0` anlegen und veröffentlichen. GitHub baut die Pakete dann automatisch und hängt sie an das Release an. Auf einem Windows-Rechner genügt zum Bauen auch `go build -o NetzWerkstatt.exe .`
 
 Aufbau:
 
 | Datei | Inhalt |
 | --- | --- |
+| `start.go` | Start: Prüfungen, Meldungen, Browser öffnen |
 | `main.go` | Server: Anmeldung, Speichern, Lehrkraft-Schnittstelle, Auslieferung der Webseiten |
+| `paket/` | Anleitungen und Startskript für die Download-Pakete |
 | `web/js/sim.js` | Netzwerkmodell und Simulation (Weg der Pakete, DNS, HTTP) |
 | `web/js/tasks.js` | Aufgaben, Teilziele und Musterlösungen |
 | `web/js/view.js` | Darstellung des Netzwerks und Paketanimation |

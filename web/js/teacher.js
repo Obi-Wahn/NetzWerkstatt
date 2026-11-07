@@ -5,6 +5,13 @@
   const $ = id => document.getElementById(id);
   const TASKS = NWTasks.TASKS.filter(t => !t.free);
 
+  // Automatische Anmeldung, wenn das Programm die Ansicht selbst geöffnet hat
+  const m = location.hash.match(/token=([0-9a-f]+)/);
+  if (m) {
+    store.set('nw_teacher', m[1]);
+    history.replaceState(null, '', location.pathname);
+  }
+
   const S = {
     token: store.get('nw_teacher'),
     data: null,
@@ -165,11 +172,29 @@
     NWView.render(svgs[1], b.works[S.task].network, {});
   });
 
-  $('btn-beamer-code').addEventListener('click', () => {
+  // Zugang am Beamer: eine Adresse, Raumcode und QR-Code (wird lokal erzeugt)
+  function showAccess() {
     const addrs = S.data.addresses && S.data.addresses.length ? S.data.addresses : [location.origin];
-    openModal(`<div class="access"><p class="muted">Öffne im Browser:</p>${addrs.map(a => `<div class="big-url">${esc(a)}</div>`).join('')}
-      <p class="muted">Raumcode</p><div class="big-code">${esc(S.data.roomCode)}</div></div>`, { wide: true, full: true });
-  });
+    let idx = Number(store.get('nw_addr_idx') || 0);
+    if (!(idx >= 0 && idx < addrs.length)) idx = 0;
+    const addr = addrs[idx];
+    const qrURL = `${addr}/?raum=${encodeURIComponent(S.data.roomCode)}`;
+    const body = openModal(`<div class="access">
+      <div class="access-grid">
+        <div class="access-text">
+          <p class="muted">Öffne im Browser:</p>
+          <div class="big-url">${esc(addr)}</div>
+          <p class="muted">Raumcode</p>
+          <div class="big-code">${esc(S.data.roomCode)}</div>
+        </div>
+        <div class="access-qr">${NWQR.svg(qrURL, 320)}<p class="muted">QR-Code scannen – der Raumcode ist schon eingetragen.</p></div>
+      </div>
+      ${addrs.length > 1 ? `<button class="btn ghost small" id="btn-other-addr">Adresse funktioniert nicht? Andere wählen (${idx + 1}/${addrs.length})</button>` : ''}
+    </div>`, { wide: true, full: true });
+    const other = body.querySelector('#btn-other-addr');
+    if (other) other.addEventListener('click', () => { store.set('nw_addr_idx', String((idx + 1) % addrs.length)); showAccess(); });
+  }
+  $('btn-beamer-code').addEventListener('click', showAccess);
 
   start();
 })();

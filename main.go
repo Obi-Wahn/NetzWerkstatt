@@ -11,7 +11,6 @@ import (
 	"embed"
 	"encoding/hex"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"io"
 	"io/fs"
@@ -20,7 +19,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -83,7 +81,11 @@ func loadStore(path string) *Store {
 	s := &Store{path: path}
 	if b, err := os.ReadFile(path); err == nil {
 		if err := json.Unmarshal(b, s); err != nil {
-			log.Fatalf("Die Datei %s ist beschädigt: %v", path, err)
+			// Beschädigte Datei sichern und neu beginnen, statt abzubrechen.
+			backup := path + ".defekt-" + time.Now().Format("2006-01-02-150405")
+			_ = os.Rename(path, backup)
+			warn("Die Datendatei war beschädigt und wurde gesichert als:\n      " + backup + "\n    Es wird mit einer leeren Datei weitergemacht.")
+			*s = Store{path: path}
 		}
 	}
 	if s.RoomCode == "" {
@@ -184,6 +186,10 @@ func normName(n string) string {
 func (srv *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	s := srv.store
+
+	mux.HandleFunc("GET /api/info", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]string{"app": "NetzWerkstatt", "version": Version})
+	})
 
 	// Schüler-Anmeldung: Name + Raumcode
 	mux.HandleFunc("POST /api/login", func(w http.ResponseWriter, r *http.Request) {
@@ -420,8 +426,36 @@ func securityHeaders(h http.Handler) http.Handler {
 	})
 }
 
+// virtualAdapter erkennt typische virtuelle Netzwerkadapter (VirtualBox, VMware,
+// Hyper-V, WSL, Docker …), über die Schülergeräte die NetzWerkstatt nicht erreichen.
+func virtualAdapter(name string) bool {
+	n := strings.ToLower(name)
+	for _, k := range []string{"virtualbox", "vbox", "vmware", "vmnet", "hyper-v", "vethernet", "wsl", "docker", "veth", "br-", "virbr", "tailscale", "zerotier", "tun", "tap", "vpn", "loopback", "bluetooth"} {
+		if strings.Contains(n, k) {
+			return true
+		}
+	}
+	return false
+}
+
+// outboundIP liefert die Adresse, über die dieser Rechner standardmäßig ins Netz geht.
+// Es wird dabei nichts gesendet: Bei UDP legt Dial nur die Route fest.
+func outboundIP() net.IP {
+	c, err := net.Dial("udp4", "192.0.2.1:9")
+	if err != nil {
+		return nil
+	}
+	defer c.Close()
+	if a, ok := c.LocalAddr().(*net.UDPAddr); ok {
+		return a.IP.To4()
+	}
+	return nil
+}
+
+// localIPs liefert die IPv4-Adressen dieses Rechners; die wahrscheinlich richtige
+// Schulnetz-Adresse steht vorne, Adressen virtueller Adapter hinten.
 func localIPs() []string {
-	var out []string
+	var real, virtual []string
 	ifaces, _ := net.Interfaces()
 	for _, ifc := range ifaces {
 		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 {
@@ -429,83 +463,29 @@ func localIPs() []string {
 		}
 		addrs, _ := ifc.Addrs()
 		for _, a := range addrs {
-			if ipn, ok := a.(*net.IPNet); ok {
-				if ip4 := ipn.IP.To4(); ip4 != nil && !ip4.IsLinkLocalUnicast() {
-					out = append(out, ip4.String())
-				}
+			ipn, ok := a.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ip4 := ipn.IP.To4()
+			if ip4 == nil || ip4.IsLinkLocalUnicast() {
+				continue
+			}
+			if virtualAdapter(ifc.Name) {
+				virtual = append(virtual, ip4.String())
+			} else {
+				real = append(real, ip4.String())
 			}
 		}
 	}
-	return out
-}
-
-func main() {
-	port := flag.Int("port", 8080, "Port, auf dem der Server lauscht")
-	dataFile := flag.String("daten", "", "Pfad zur Datendatei (Standard: neben dem Programm)")
-	room := flag.String("raumcode", "", "Raumcode festlegen (sonst bleibt der gespeicherte bzw. ein zufälliger)")
-	pw := flag.String("passwort", "", "Lehrer-Passwort festlegen (sonst bleibt das gespeicherte bzw. ein zufälliges)")
-	flag.Parse()
-
-	path := *dataFile
-	if path == "" {
-		exe, err := os.Executable()
-		dir := "."
-		if err == nil {
-			dir = filepath.Dir(exe)
+	all := append(real, virtual...)
+	if ob := outboundIP(); ob != nil {
+		for i, ip := range all {
+			if ip == ob.String() {
+				all = append([]string{ip}, append(all[:i:i], all[i+1:]...)...)
+				break
+			}
 		}
-		path = filepath.Join(dir, "netzwerkstatt-daten.json")
 	}
-	store := loadStore(path)
-	if *room != "" {
-		store.RoomCode = *room
-	}
-	if *pw != "" {
-		store.TeacherPassword = *pw
-	}
-	store.saveLocked()
-
-	var ln net.Listener
-	var err error
-	p := *port
-	for tries := 0; tries < 10; tries++ {
-		ln, err = net.Listen("tcp", fmt.Sprintf(":%d", p))
-		if err == nil {
-			break
-		}
-		p++
-	}
-	if err != nil {
-		fmt.Println("Der Server konnte nicht starten:", err)
-		fmt.Println("Drücke Enter zum Beenden.")
-		fmt.Scanln()
-		os.Exit(1)
-	}
-
-	srv := &Server{port: p, store: store, teacherTokens: map[string]time.Time{}}
-
-	line := strings.Repeat("=", 62)
-	fmt.Println(line)
-	fmt.Println("  NetzWerkstatt läuft.  Dieses Fenster bitte offen lassen!")
-	fmt.Println(line)
-	fmt.Println()
-	fmt.Println("  Adresse für die Schülerinnen und Schüler:")
-	ips := localIPs()
-	if len(ips) == 0 {
-		ips = []string{"localhost"}
-	}
-	for _, ip := range ips {
-		fmt.Printf("      http://%s:%d\n", ip, p)
-	}
-	fmt.Println()
-	fmt.Printf("  Raumcode:          %s\n", store.RoomCode)
-	fmt.Println()
-	fmt.Println("  Lehrkraft-Ansicht:")
-	fmt.Printf("      http://localhost:%d/lehrer\n", p)
-	fmt.Printf("  Lehrer-Passwort:   %s\n", store.TeacherPassword)
-	fmt.Println()
-	fmt.Println("  Daten werden gespeichert in:")
-	fmt.Println("      " + path)
-	fmt.Println(line)
-
-	log.Fatal(http.Serve(ln, srv.routes()))
+	return all
 }

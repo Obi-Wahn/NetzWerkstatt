@@ -1,0 +1,39 @@
+NetzWerkstatt – Netzwerke bauen und verstehen
+==============================================
+
+So geht's (keine Installation nötig):
+
+1. Das Archiv entpacken und den Ordner an einen festen Ort legen,
+   z. B. in den persönlichen Ordner.
+
+2. „start.sh“ starten: per Doppelklick („Im Terminal ausführen“) oder im
+   Terminal mit:   ./start.sh
+
+3. Das Programm prüft alles selbst und öffnet danach die Lehrkraft-Ansicht
+   im Browser. Im Terminal stehen:
+     - die Adresse für die Schülerinnen und Schüler
+     - der Raumcode
+     - das Lehrer-Passwort
+   Das Terminal während der Stunde offen lassen.
+
+4. In der Lehrkraft-Ansicht auf „Zugang am Beamer zeigen“ klicken.
+   Die Schülerinnen und Schüler öffnen die Adresse im Browser (PC oder iPad)
+   und melden sich mit Vornamen oder Kürzel und dem Raumcode an.
+
+Beenden: im Terminal Strg+C drücken oder das Fenster schließen.
+
+Datenschutz
+-----------
+Alle Daten bleiben auf diesem Rechner in der Datei „netzwerkstatt-daten.json“
+in diesem Ordner. Das Programm lädt nichts aus dem Internet und sendet nichts
+dorthin. Nach der Unterrichtseinheit kann die Datei einfach gelöscht werden.
+
+Probleme?
+---------
+- Die Schüler-Geräte erreichen die Adresse nicht: Sind alle Geräte im selben
+  Netz? Ist eine Firewall aktiv (z. B. ufw)? Dann Port 8080 freigeben:
+  sudo ufw allow 8080/tcp
+- Neues Lehrer-Passwort oder neuer Raumcode: Programm beenden, die Datei
+  „netzwerkstatt-daten.json“ umbenennen oder löschen, neu starten.
+
+Weitere Infos und neue Versionen: https://github.com/Obi-Wahn/NetzWerkstatt
