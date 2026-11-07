@@ -70,8 +70,17 @@
       const s = NW.dev(net, e.src);
       return s && srcFilter(s) && NW.useService(net, s.id, action, e.host).ok;
     });
+    // Wurde eine Webseite per Name aufgerufen, und hat dabei ein passender DNS-Server mitgewirkt (jetzt noch)?
+    // dnsFilter bekommt die Liste der befragten DNS-Server (in Reihenfolge).
+    const webDnsOk = (host, dnsFilter) => (net.events || []).some(e => {
+      if (e.type !== 'web' || !e.ok || (host && e.host !== host)) return false;
+      const s = NW.dev(net, e.src);
+      if (!s) return false;
+      const r = NW.browse(net, s.id, 'http://' + e.host);
+      return r.ok && (r.dns || []).length > 0 && dnsFilter((r.dns || []).map(id => NW.dev(net, id)).filter(Boolean));
+    });
     const svcKinds = () => new Set((net.events || []).filter(e => e.ok && (e.type === 'web' || e.type === 'svc')).map(e => e.type === 'web' ? 'web' : e.action === 'mailget' ? 'mail' : e.action));
-    return { net, byType, hosts, neighbors, linked, inNet, distinctIPs, pingOk, ping6Ok, hasGua, webOk, fileOk, musicOk, kinds, hasKind, pings, topos, svcOk, svcKinds };
+    return { net, byType, hosts, neighbors, linked, inNet, distinctIPs, pingOk, ping6Ok, hasGua, webOk, fileOk, musicOk, kinds, hasKind, pings, topos, svcOk, svcKinds, webDnsOk };
   }
 
   const isType = t => d => d.type === t;
@@ -830,6 +839,7 @@
       has('wlan', d.type === 'ap');
       has('dhcp', (t.host && d.dhcp) || (t.router && d.ports.some(p => p.dhcp && p.dhcp.on)));
       has('web', t.host && (d.dns || '').trim());
+      has('web', t.router && d.dnsRelay);
       has('internet', t.isp);
       has('pan', t.btOnly);
       has('topologie', t.bus);

@@ -700,4 +700,161 @@ test('Sichtbare Funktionen: einfache Aufgaben zeigen wenig, freies Bauen alles',
   assert.ok(featuresFor(t1, net).has('pan'));
 });
 
+
+// ---------------------------------------------------------------- Eigener DNS-Server und Weiterleitung
+/** Heimnetz mit eigenem DNS-Server, der unbekannte Namen beim DNS-Server im Internet (srv) erfragt. */
+function ownDnsNet() {
+  const net = internetNet();
+  NW.dev(net, 'srv').services.dns.entries.push({ name: 'www.schule.de', ip: '91.64.12.100' });
+  NW.dev(net, 'ispA').dns = '91.64.12.100';
+  NW.refreshDns(net);
+  const home = NW.createDevice(net, 'server', 0, 0, { id: 'home', name: 'Heim-DNS', dhcp: false, ip: '192.168.0.53', gw: '192.168.0.1' });
+  home.services.dns.on = true;
+  home.services.dns.entries.push({ name: 'drucker.zuhause', ip: '192.168.0.100' });
+  NW.addLink(net, 'home', 'r', 'kabel');
+  return net;
+}
+
+test('Eigener DNS-Server: beantwortet eigene Namen selbst', () => {
+  const net = ownDnsNet();
+  const home = NW.dev(net, 'home');
+  home.services.web.on = true;
+  home.services.dns.entries.push({ name: 'www.zuhause', ip: '192.168.0.53' });
+  NW.dev(net, 'pc').dns = '192.168.0.53';
+  const r = NW.browse(net, 'pc', 'www.zuhause');
+  assert.ok(r.ok, r.error);
+  assert.deepStrictEqual(r.dns, ['home']);
+  assert.deepStrictEqual(r.steps.slice(0, 2).map(s => s.label), ['DNS-Anfrage', 'DNS-Antwort']);
+});
+
+test('Eigener DNS-Server: ohne Weiterleitung unbekannter Name, mit Weiterleitung fragt er im Internet nach', () => {
+  const net = ownDnsNet();
+  NW.dev(net, 'pc').dns = '192.168.0.53';
+  let r = NW.browse(net, 'pc', 'www.schule.de');
+  assert.ok(!r.ok);
+  assert.match(r.error, /kennt den Namen www\.schule\.de nicht/);
+  NW.dev(net, 'home').services.dns.forward = '91.64.12.100';
+  r = NW.browse(net, 'pc', 'www.schule.de');
+  assert.ok(r.ok, r.error);
+  assert.deepStrictEqual(r.dns, ['home', 'srv']);
+  assert.deepStrictEqual(r.steps.slice(0, 4).map(s => s.label), ['DNS-Anfrage', 'DNS-Anfrage (weitergeleitet)', 'DNS-Antwort', 'DNS-Antwort']);
+  assert.deepStrictEqual(r.steps[0].path, ['pc', 'r', 'home']);
+  assert.deepStrictEqual(r.steps[1].path, ['home', 'r', 'ispA', 'ispB', 'srv'], 'Weiterleitung geht vom Heim-DNS über den Router ins Internet');
+  assert.match(r.steps[1].note, /NAT/);
+  assert.match(r.steps[3].text, /reicht die Antwort von Server 1 weiter/);
+  // Auch der Server im Internet kennt den Namen nicht: Die Absage kommt bis zum PC zurück
+  r = NW.browse(net, 'pc', 'www.gibtsnicht.de');
+  assert.ok(!r.ok);
+  assert.match(r.error, /Auch Server 1 kennt den Namen/);
+  assert.ok(r.steps.filter(s => s.label === 'DNS-Antwort').every(s => s.bad));
+});
+
+test('Eigener DNS-Server: Weiterleitung im Kreis wird erkannt', () => {
+  const net = ownDnsNet();
+  const home = NW.dev(net, 'home');
+  const h2 = NW.createDevice(net, 'server', 0, 0, { id: 'h2', dhcp: false, ip: '192.168.0.54', gw: '192.168.0.1' });
+  NW.addLink(net, 'h2', 'r', 'kabel');
+  h2.services.dns.on = true; h2.services.dns.forward = '192.168.0.53';
+  home.services.dns.forward = '192.168.0.54';
+  NW.dev(net, 'pc').dns = '192.168.0.53';
+  const r = NW.browse(net, 'pc', 'www.schule.de');
+  assert.ok(!r.ok);
+  assert.match(r.error, /im Kreis/);
+});
+
+test('Router als DNS-Server: verteilt sich per DHCP und leitet an den DNS-Server des Anbieters weiter', () => {
+  const net = ownDnsNet();
+  const rt = NW.dev(net, 'r');
+  let r = NW.browse(net, 'pc', 'www.schule.de');
+  assert.ok(r.ok, r.error);
+  assert.deepStrictEqual(r.dns, ['srv'], 'ohne Weiterleitung fragt der PC den Anbieter-DNS direkt');
+  rt.dnsRelay = true;
+  assert.strictEqual(NW.refreshDns(net), 1, 'der PC übernimmt den neuen DNS-Server');
+  assert.strictEqual(NW.dev(net, 'pc').dns, '192.168.0.1');
+  r = NW.browse(net, 'pc', 'www.schule.de');
+  assert.ok(r.ok, r.error);
+  assert.deepStrictEqual(r.dns, ['r', 'srv']);
+  assert.deepStrictEqual(r.steps[0].path, ['pc', 'r']);
+  assert.deepStrictEqual(r.steps[1].path, ['r', 'ispA', 'ispB', 'srv']);
+  assert.deepStrictEqual(r.steps[2].path, ['srv', 'ispB', 'ispA', 'r']);
+  // Router leitet an einen eigenen DNS-Server im Heimnetz weiter (über den LAN-Anschluss)
+  rt.ports[0].dns = '192.168.0.53';
+  NW.dev(net, 'home').services.dns.forward = '91.64.12.100';
+  r = NW.browse(net, 'pc', 'www.schule.de');
+  assert.ok(r.ok, r.error);
+  assert.deepStrictEqual(r.dns, ['r', 'home', 'srv']);
+  assert.deepStrictEqual(r.steps[1].path, ['r', 'home']);
+  // Ohne DNS-Server zum Nachfragen: verständlicher Fehler
+  rt.ports[0].dns = '';
+  r = NW.browse(net, 'pc', 'www.schule.de');
+  assert.ok(!r.ok);
+  assert.match(r.error, /kennt aber selbst keinen DNS-Server/);
+  // Router ohne Weiterleitung ist kein DNS-Server
+  rt.dnsRelay = false;
+  r = NW.browse(net, 'pc', 'www.schule.de');
+  assert.match(r.error, /läuft kein DNS-Server/);
+});
+
+test('Router als DNS-Server: Vorschlag und sichtbare Funktion', () => {
+  const net = ownDnsNet();
+  const pc = NW.dev(net, 'pc');
+  pc.dhcp = false; pc.dns = '';
+  NW.dev(net, 'r').dnsRelay = true;
+  assert.strictEqual(NW.suggest(net, 'pc').dns, '192.168.0.1');
+  assert.ok(NWTasks.usedFeatures(net).has('web'));
+});
+
+test('Eigene Aufgaben: Ziele DNS-Eintrag und Webseite über eigenen DNS', () => {
+  const start = ownDnsNet();
+  NW.dev(start, 'srv').locked = true; // DNS-Server im Internet gehört zur Aufgabe
+  const sol = NW.clone(start);
+  NW.dev(sol, 'r').dnsRelay = true;
+  NW.refreshDns(sol);
+  NW.dev(sol, 'home').services.dns.entries.push({ name: 'www.zuhause', ip: '192.168.0.53' });
+  NW.dev(sol, 'home').services.web.on = true;
+  NW.logEvent(sol, { type: 'web', src: 'pc', host: 'www.schule.de', ok: true });
+  const goals = [
+    { type: 'dns-eintrag', host: 'www.zuhause', ip: '192.168.0.53' },
+    { type: 'dns-weg', host: 'www.schule.de', via: 'router' },
+    { type: 'dns-weg', host: 'www.schule.de', via: 'weiter' },
+    { type: 'dns-weg', host: 'www.schule.de', via: 'eigener' },
+  ].map((g, i) => E.sanitizeGoal(g, i));
+  const task = E.compile({ id: 'x', title: 'x', goals, start, solution: sol });
+  assert.deepStrictEqual(NWTasks.evaluate(task, sol), [true, true, true, false], 'nur der vorgegebene DNS-Server im Internet war beteiligt');
+  assert.deepStrictEqual(NWTasks.evaluate(task, start), [false, false, false, false]);
+  assert.match(E.goalText(goals[1]), /Router soll dabei die DNS-Anfrage weiterleiten/);
+  const sg = E.suggestGoals(start, sol);
+  assert.ok(sg.some(g => g.type === 'dns-eintrag' && g.host === 'www.zuhause'));
+  assert.ok(sg.some(g => g.type === 'dns-weg' && g.via === 'router'));
+  assert.throws(() => E.sanitizeGoal({ type: 'dns-weg', host: 'x.de', via: 'quatsch' }, 0));
+});
+
+test('Rechenzentrum: Internetserver mit eigenem öffentlichem Netz, erreichbar über den Internetanbieter', () => {
+  const net = NW.emptyNetwork();
+  NW.createDevice(net, 'isp', 0, 0, { id: 'isp' });
+  const rz1 = NW.createDevice(net, 'rz', 0, 0, { id: 'rz1' });
+  const rz2 = NW.createDevice(net, 'rz', 0, 0, { id: 'rz2' });
+  assert.strictEqual(rz1.ip, '198.51.100.1');
+  assert.strictEqual(rz2.ip, '192.0.2.1');
+  NW.createDevice(net, 'router', 0, 0, { id: 'r' });
+  NW.createDevice(net, 'pc', 0, 0, { id: 'pc' });
+  const web = NW.createDevice(net, 'server', 0, 0, { id: 'web' });
+  const dns = NW.createDevice(net, 'server', 0, 0, { id: 'dns' });
+  web.services.web.on = true; dns.services.dns.on = true;
+  NW.addLink(net, 'rz1', 'isp', 'kabel'); NW.addLink(net, 'rz2', 'isp', 'kabel');
+  assert.ok(NW.addLink(net, 'r', 'isp', 'kabel').ok);
+  NW.addLink(net, 'pc', 'r', 'kabel'); NW.addLink(net, 'web', 'rz1', 'kabel'); NW.addLink(net, 'dns', 'rz2', 'kabel');
+  for (const id of ['r', 'web', 'dns', 'pc']) { const res = NW.dhcp(net, id); assert.ok(res.ok, res.error); NW.applyLease(NW.dev(net, id), res.lease); }
+  assert.strictEqual(web.ip, '198.51.100.100');
+  assert.strictEqual(dns.ip, '192.0.2.100');
+  assert.strictEqual(web.gw, '198.51.100.1');
+  dns.services.dns.entries.push({ name: 'www.schule.de', ip: web.ip });
+  NW.dev(net, 'isp').dns = dns.ip;
+  NW.refreshDns(net);
+  const r = NW.browse(net, 'pc', 'www.schule.de');
+  assert.ok(r.ok, r.error);
+  assert.deepStrictEqual(r.steps[0].path, ['pc', 'r', 'isp', 'rz2', 'dns']);
+  assert.ok(r.steps.some(s => s.path.join() === 'pc,r,isp,rz1,web'), 'HTTP geht ins andere Rechenzentrum');
+});
+
 console.log(`\n${n} Tests bestanden.`);

@@ -18,6 +18,7 @@
     router: '<circle cx="20" cy="20" r="15"/><path d="M20 8v9M20 32v-9M8 20h9M32 20h-9"/><path d="M17 11l3-3 3 3M17 29l3 3 3-3M11 17l-3 3 3 3M29 17l3 3-3 3"/>',
     headset: '<path d="M7 25v-5a13 13 0 0 1 26 0v5"/><rect x="5" y="23" width="7" height="12" rx="3" class="fill"/><rect x="5" y="23" width="7" height="12" rx="3"/><rect x="28" y="23" width="7" height="12" rx="3" class="fill"/><rect x="28" y="23" width="7" height="12" rx="3"/>',
     isp: '<circle cx="20" cy="20" r="15"/><path d="M5 20h30M20 5a22 22 0 0 1 0 30M20 5a22 22 0 0 0 0 30M8 12h24M8 28h24"/>',
+    rz: '<rect x="6" y="4" width="28" height="32" rx="2"/><path d="M10 9h20v6H10zM10 18h20v6H10zM10 27h20v6H10z" class="fill"/><path d="M13 12h2M13 21h2M13 30h2M20 12h7M20 21h7M20 30h7"/>',
     bus: '<path d="M3 20h34"/><path d="M3 15v10M37 15v10"/><path d="M11 20v-9M20 20v9M29 20v-9"/><circle cx="11" cy="10" r="2"/><circle cx="20" cy="30" r="2"/><circle cx="29" cy="10" r="2"/>',
     cloud: '<path d="M11 30h19a7 7 0 0 0 0-14 9 9 0 0 0-17-2 7.5 7.5 0 0 0-2 16z"/>',
   };
