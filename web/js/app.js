@@ -624,6 +624,14 @@
 
   // ---------------------------------------------------------------- Internetdienste: passender Knopf
   const SVC_ACTIONS = ['mail', 'mailget', 'video', 'call', 'game'];
+  /** Einfache Strich-Symbole für die Dienst-Knöpfe. */
+  const SVC_ICONS = {
+    mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+    mailget: '<path d="M4 13v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M12 3v11m-4-4 4 4 4-4"/>',
+    video: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z" fill="currentColor"/>',
+    call: '<rect x="3" y="7" width="12" height="10" rx="2"/><path d="m15 11 6-3v8l-6-3"/>',
+    game: '<rect x="2" y="8" width="20" height="10" rx="5"/><path d="M7 11v4M5 13h4"/><circle cx="16" cy="12" r="1" fill="currentColor"/><circle cx="18" cy="14" r="1" fill="currentColor"/>',
+  };
   /** Welcher Server steckt hinter dem eingetippten Namen bzw. der IP-Adresse? (nur als Hilfe für die Anzeige) */
   function svcServer(val) {
     val = (val || '').trim().toLowerCase();
@@ -650,7 +658,7 @@
     const inp = $('svc-target');
     if (!inp) return;
     const m = svcMatches(inp.value);
-    insp.querySelectorAll('[data-act="svc"]').forEach(b => b.classList.toggle('primary', m.includes(b.dataset.svc)));
+    insp.querySelectorAll('[data-act="svc"]').forEach(b => b.classList.toggle('match', m.includes(b.dataset.svc)));
     const h = $('svc-hint');
     if (h) h.innerHTML = svcHintText(inp.value);
   }
@@ -934,8 +942,8 @@
       if (has('dienste')) h += sec('svc-use', 'Internetdienste nutzen', `<label class="field">Server (Name oder IP-Adresse)
           <input id="svc-target" placeholder="z. B. mail.beispiel.de" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
         ${serverChips()}
-        <p class="svc-ask" id="svc-hint">${svcHintText()}</p>
-        <div class="svc-btns">${SVC_ACTIONS.map(a => `<button class="btn" data-act="svc" data-svc="${a}">${esc(NW.ACTIONS[a].label)}</button>`).join('')}</div>
+        <div class="svc-box"><p class="svc-ask" id="svc-hint">${svcHintText()}</p>
+        <div class="svc-btns">${SVC_ACTIONS.map(a => `<button class="svc-act" data-act="svc" data-svc="${a}"><svg class="svc-ico" viewBox="0 0 24 24" aria-hidden="true">${SVC_ICONS[a]}</svg><span>${esc(NW.ACTIONS[a].label)}</span></button>`).join('')}</div></div>
         <label class="toggle"><input type="checkbox" data-act="tcp-details" ${S.tcp ? 'checked' : ''}> TCP genau zeigen (Verbindungsaufbau und Bestätigungen)</label>`, 'dienste', 'test');
       const bt = NW.btPartners(S.net, d.id);
       if (bt.length) {

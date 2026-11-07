@@ -445,8 +445,17 @@ table.cmp col.k { width: 26%; }
 .log-proto.udp { background: var(--udp-soft); color: var(--udp); }
 .svc-ask { font-size: .85em; color: var(--muted); margin: 2px 0 6px; }
 .svc-ask b { color: var(--ink); }
-.svc-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
-.svc-btns .btn { padding: 6px 8px; font-size: .88em; }
+.svc-box { background: var(--brand-soft); border-radius: 12px; padding: 8px 10px 10px; margin: 4px 0 10px; }
+.svc-box .svc-ask { margin-top: 0; }
+.svc-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.svc-act { font: inherit; font-size: .88em; font-weight: 600; display: flex; align-items: center; gap: 8px; text-align: left;
+  min-height: 42px; padding: 6px 10px; border-radius: 10px; cursor: pointer;
+  background: var(--panel); color: var(--brand); border: 2px solid var(--brand); }
+.svc-act:hover { background: var(--panel-2); }
+.svc-act:active { transform: translateY(1px); }
+.svc-act .svc-ico { flex: none; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.svc-act.match { background: var(--brand); color: var(--brand-ink); box-shadow: 0 0 0 3px var(--brand-soft), 0 0 0 5px var(--brand); }
+.svc-act:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
 .svc-info { font-size: .85em; color: var(--muted); margin: -4px 0 8px 30px; }
 .svc-info b { color: var(--ink); }
 .proto-tag { font-size: .75em; font-weight: 700; padding: 1px 7px; border-radius: 6px; font-family: ui-monospace, Consolas, monospace; }
