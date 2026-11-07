@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>NetzWerkstatt</title>
+<link rel="icon" href="img/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- Anmeldung -->
+<section id="screen-login" class="screen login-screen" hidden>
+  <div class="login-card">
+    <img src="img/logo.svg" alt="" class="logo-big">
+    <h1>NetzWerkstatt</h1>
+    <p class="muted">Baue Netzwerke und schau den Datenpaketen bei der Arbeit zu.</p>
+    <form id="login-form" autocomplete="off">
+      <label>Dein Vorname oder Kürzel
+        <input id="login-name" maxlength="30" required autocapitalize="words" spellcheck="false">
+      </label>
+      <label>Raumcode (steht an der Tafel)
+        <input id="login-room" inputmode="numeric" maxlength="12" required spellcheck="false">
+      </label>
+      <p id="login-error" class="error" role="alert"></p>
+      <button class="btn primary big" type="submit">Los geht's</button>
+    </form>
+    <p class="small muted">Es werden nur dein Name und deine Netzwerke gespeichert – und zwar nur auf dem Rechner deiner Lehrkraft.</p>
+  </div>
+</section>
+
+<!-- Aufgabenübersicht -->
+<section id="screen-tasks" class="screen" hidden>
+  <header class="topbar">
+    <div class="brand"><img src="img/logo.svg" alt=""> NetzWerkstatt</div>
+    <div class="spacer"></div>
+    <span id="who" class="who"></span>
+    <button id="btn-logout" class="btn ghost">Abmelden</button>
+  </header>
+  <main class="task-list-wrap">
+    <h2>Wähle eine Aufgabe</h2>
+    <div id="task-list" class="task-list"></div>
+  </main>
+</section>
+
+<!-- Arbeitsfläche -->
+<section id="screen-editor" class="screen editor" hidden>
+  <header class="topbar">
+    <button id="btn-back" class="btn ghost">← Aufgaben</button>
+    <h1 id="task-title" class="task-title"></h1>
+    <div class="spacer"></div>
+    <span id="save-state" class="save-state"></span>
+    <button id="btn-solution" class="btn ghost" hidden>Musterlösung</button>
+    <button id="btn-submit" class="btn primary">Abgeben</button>
+  </header>
+
+  <div class="workspace">
+    <nav class="palette" id="palette" aria-label="Geräte"></nav>
+
+    <div class="stage">
+      <div class="toolbar" role="toolbar" aria-label="Werkzeuge">
+        <button class="tool active" data-tool="move" title="Geräte auswählen und verschieben">
+          <svg viewBox="0 0 24 24" class="ti"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg><span>Bewegen</span></button>
+        <button class="tool" data-tool="kabel" title="Zwei Geräte mit einem Kabel verbinden">
+          <svg viewBox="0 0 24 24" class="ti"><path d="M4 20c4 0 4-8 8-8s4-8 8-8"/><rect x="2" y="17" width="5" height="5" rx="1"/><rect x="17" y="2" width="5" height="5" rx="1"/></svg><span>Kabel</span></button>
+        <button class="tool" data-tool="wlan" title="Gerät per WLAN mit einem Access Point verbinden">
+          <svg viewBox="0 0 24 24" class="ti"><path d="M2 9a15 15 0 0 1 20 0M5.5 12.5a10 10 0 0 1 13 0M9 16a5 5 0 0 1 6 0"/><circle cx="12" cy="19.5" r="1.2"/></svg><span>WLAN</span></button>
+        <button class="tool" data-tool="delete" title="Gerät oder Verbindung löschen">
+          <svg viewBox="0 0 24 24" class="ti"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg><span>Löschen</span></button>
+        <div id="tool-hint" class="tool-hint"></div>
+      </div>
+      <div class="canvas-wrap">
+        <svg id="canvas" class="canvas" role="img" aria-label="Arbeitsfläche mit dem Netzwerk"></svg>
+        <div id="readonly-banner" class="readonly-banner" hidden>
+          Abgegeben – du kannst nichts mehr ändern. <button id="btn-unsubmit" class="btn small">Abgabe zurücknehmen</button>
+        </div>
+      </div>
+      <div class="log" id="log" aria-live="polite"><div class="log-empty">Hier erscheinen die Datenpakete, sobald du einen Ping sendest oder eine Webseite aufrufst.</div></div>
+    </div>
+
+    <aside class="side">
+      <section class="card task-card" id="task-card">
+        <h3>Aufgabe</h3>
+        <p id="task-intro"></p>
+        <ul id="goals" class="goals"></ul>
+        <div id="all-done" class="all-done" hidden>Alle Ziele erreicht! Du kannst jetzt abgeben.</div>
+        <details id="task-tip-wrap"><summary>Tipp</summary><p id="task-tip"></p></details>
+        <details id="task-think-wrap" hidden><summary>Zum Nachdenken</summary><p id="task-think"></p></details>
+      </section>
+      <section class="card inspector" id="inspector"></section>
+    </aside>
+  </div>
+</section>
+
+<!-- Dialoge -->
+<div id="modal" class="modal" hidden>
+  <div class="modal-box" role="dialog" aria-modal="true">
+    <button class="modal-close btn ghost" id="modal-close" aria-label="Schließen">✕</button>
+    <div id="modal-body"></div>
+  </div>
+</div>
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script src="js/sim.js"></script>
+<script src="js/tasks.js"></script>
+<script src="js/view.js"></script>
+<script src="js/common.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
