@@ -128,7 +128,7 @@ func openBrowser(url string) error {
 func main() {
 	port := flag.Int("port", 8080, "Port, auf dem der Server lauscht")
 	dataFile := flag.String("daten", "", "Pfad zur Datendatei (Standard: neben dem Programm)")
-	room := flag.String("raumcode", "", "Raumcode festlegen (sonst bleibt der gespeicherte bzw. ein zufälliger)")
+	room := flag.String("raumcode", "", "Raumcode festlegen (sonst wird bei jedem Start ein neuer ausgewürfelt)")
 	pw := flag.String("passwort", "", "Lehrer-Passwort festlegen (sonst bleibt das gespeicherte bzw. ein zufälliges)")
 	noBrowser := flag.Bool("kein-browser", false, "Lehrkraft-Ansicht nicht automatisch im Browser öffnen")
 	flag.Parse()
@@ -157,8 +157,16 @@ func main() {
 
 	// 3. Daten laden
 	store := loadStore(path)
+	// Bei jedem Start einen neuen Raumcode, damit ein alter Code aus einer
+	// früheren Stunde nicht mehr funktioniert. Wer schon angemeldet ist,
+	// arbeitet trotzdem weiter (die Anmeldung hängt nicht am Raumcode).
 	if *room != "" {
 		store.RoomCode = *room
+	} else {
+		old := store.RoomCode
+		for store.RoomCode == old {
+			store.RoomCode = randomDigits(4)
+		}
 	}
 	if *pw != "" {
 		store.TeacherPassword = *pw

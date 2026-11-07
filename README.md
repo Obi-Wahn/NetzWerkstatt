@@ -39,7 +39,7 @@ Optionen für Fortgeschrittene (Kommandozeile):
 NetzWerkstatt.exe -port 8080 -raumcode 1234 -passwort geheim -daten pfad/zur/datei.json -kein-browser
 ```
 
-Raumcode und Passwort bleiben gespeichert, bis sie geändert werden.
+Der Raumcode wird bei jedem Start neu ausgewürfelt (außer er wird mit `-raumcode` festgelegt). Wer schon angemeldet ist, kann nach einem Neustart trotzdem weiterarbeiten. Das Lehrer-Passwort bleibt gespeichert, bis es geändert wird.
 
 ## Datenschutz
 
