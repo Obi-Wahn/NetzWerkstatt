@@ -214,12 +214,14 @@
   });
 
   // ---------------------------------------------------------------- Palette und Werkzeuge
-  // Geräte nach Art sortiert; [Typ, Name, Funktion, ohne die das Gerät ausgeblendet ist]
+  // Geräteleiste nach Art sortiert; [Typ, Name, Funktion, ohne die der Eintrag ausgeblendet ist]
+  // Einträge mit „tool:“ sind Verbindungswerkzeuge, alle anderen legen ein Gerät an.
   const PALETTE = [
-    ['Endgeräte', [['pc', 'PC'], ['tablet', 'Tablet'], ['smartphone', 'Smartphone'], ['headset', 'Kopfhörer', 'pan']]],
-    ['Verteiler', [['switch', 'Switch'], ['bus', 'Bus-Kabel', 'topologie'], ['ap', 'Access Point', 'wlan'], ['router', 'Router']]],
-    ['Server', [['server', 'Server'], ['server:web', 'Webserver', 'web'], ['server:dns', 'DNS-Server', 'web'], ['server:mail', 'Mailserver', 'dienste'], ['server:video', 'Videoserver', 'dienste']]],
-    ['Internet', [['isp', 'Internet\u00adanbieter', 'internet'], ['rz', 'Rechen\u00adzentrum', 'internet']]],
+    ['endgeraete', 'Endgeräte', [['pc', 'PC'], ['laptop', 'Laptop', 'wlan'], ['tablet', 'Tablet'], ['smartphone', 'Smart\u00adphone'], ['headset', 'Kopf\u00adhörer', 'pan']]],
+    ['aktiv', 'Aktive Komponenten', [['switch', 'Switch'], ['ap', 'Access Point', 'wlan'], ['router', 'Router']]],
+    ['verbindungen', 'Verbindungen (passiv)', [['tool:kabel', 'Netzwerk\u00adkabel'], ['tool:glasfaser', 'Glas\u00adfaser', 'netzarten'], ['tool:wlan', 'WLAN', 'wlan'], ['tool:bluetooth', 'Blue\u00adtooth', 'pan'], ['bus', 'Bus-Kabel', 'topologie']]],
+    ['server', 'Server', [['server', 'Server'], ['server:web', 'Web\u00adserver', 'web'], ['server:dns', 'DNS-Server', 'web'], ['server:mail', 'Mail\u00adserver', 'dienste'], ['server:video', 'Video\u00adserver', 'dienste'], ['server:call', 'Telefonie-Server', 'dienste'], ['server:game', 'Spiele-Server', 'dienste']]],
+    ['internet', 'Internet', [['isp', 'Internet\u00adanbieter', 'internet'], ['rz', 'Rechen\u00adzentrum', 'internet']]],
   ];
   // Server mit eingeschaltetem Dienst (Name und Dienst ab Werk)
   const SERVER_PRESETS = {
@@ -227,28 +229,65 @@
     dns: { name: 'DNS-Server' },
     mail: { name: 'Mailserver' },
     video: { name: 'Videoserver' },
+    call: { name: 'Telefonie-Server' },
+    game: { name: 'Spiele-Server' },
   };
+  // Symbole der Verbindungswerkzeuge (24×24)
+  const TOOL_ICONS = {
+    kabel: '<path d="M4 20c4 0 4-8 8-8s4-8 8-8"/><rect x="2" y="17" width="5" height="5" rx="1"/><rect x="17" y="2" width="5" height="5" rx="1"/>',
+    glasfaser: '<path d="M3 18c5 0 5-6 9-6s4-6 9-6"/><circle cx="3" cy="18" r="1.6"/><circle cx="21" cy="6" r="1.6"/><path d="M12 3v2M7.5 5l1 1.6M16.5 5l-1 1.6"/>',
+    wlan: '<path d="M2 9a15 15 0 0 1 20 0M5.5 12.5a10 10 0 0 1 13 0M9 16a5 5 0 0 1 6 0"/><circle cx="12" cy="19.5" r="1.2"/>',
+    bluetooth: '<path d="M7 7l10 10-5 4V3l5 4L7 17"/>',
+  };
+  const TOOL_TITLES = {
+    kabel: 'Zwei Geräte mit einem Netzwerkkabel verbinden',
+    glasfaser: 'Zwei Gebäude mit einer Glasfaserleitung quer durch die Stadt verbinden',
+    wlan: 'Gerät per WLAN mit einem Access Point oder Router verbinden',
+    bluetooth: 'Gerät per Bluetooth mit Kopfhörern koppeln',
+  };
+  // Eingeklappte Kategorien merkt sich der Browser (nur Bequemlichkeit, darf fehlen)
+  const palClosed = new Set();
+  try { (JSON.parse(store.get('nw_palette_zu') || '[]') || []).forEach(k => palClosed.add(k)); } catch (e) { /* ohne Speicher */ }
   const palette = $('palette');
   function renderPalette() {
-    const groups = PALETTE.map(([title, items]) => [title, items.filter(([, , f]) => !f || has(f))]);
-    const html = groups.map(([title, items]) => `<div class="palette-title">${esc(title)}</div>` +
-      items.map(([t, l]) => `<button class="pal-btn" data-type="${t}" title="${esc(l.replace('\u00ad', ''))} hinzufügen">${NWView.iconSVG(t.split(':')[0], 34)}<span>${esc(l)}</span></button>`).join('')).join('');
+    const groups = PALETTE.map(([id, title, items]) => [id, title, items.filter(([, , f]) => !f || has(f))]).filter(g => g[2].length);
+    const btn = ([t, l]) => {
+      const plain = esc(l.replace(/\u00ad/g, ''));
+      if (t.startsWith('tool:')) {
+        const tool = t.slice(5);
+        return `<button class="pal-btn pal-tool${S.tool === tool ? ' active' : ''}" data-tool="${tool}" aria-pressed="${S.tool === tool}" title="${esc(TOOL_TITLES[tool])}"><svg viewBox="0 0 24 24" class="ti" aria-hidden="true">${TOOL_ICONS[tool]}</svg><span>${esc(l)}</span></button>`;
+      }
+      return `<button class="pal-btn" data-type="${t}" title="${plain} hinzufügen">${NWView.iconSVG(t.split(':')[0], 30)}<span>${esc(l)}</span></button>`;
+    };
+    const html = groups.map(([id, title, items]) => {
+      const zu = palClosed.has(id);
+      return `<section class="pal-group${zu ? ' zu' : ''}" data-group="${id}"><button class="palette-title" data-group="${id}" aria-expanded="${!zu}" title="${zu ? 'Aufklappen' : 'Einklappen'}"><span>${esc(title)}</span><svg viewBox="0 0 24 24" class="chev" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>` +
+        `<div class="pal-items">${items.map(btn).join('')}</div></section>`;
+    }).join('');
     if (palette.dataset.sig !== html) { palette.innerHTML = html; palette.dataset.sig = html; }
   }
   /** Werkzeuge, Geräte und Anzeigen passend zur Aufgabe ein- und ausblenden. */
   function applyFeatures() {
     S.feat = NWTasks.featuresFor(S.task, S.net);
     renderPalette();
-    document.querySelector('[data-tool="wlan"]').hidden = !has('wlan');
-    document.querySelector('[data-tool="bluetooth"]').hidden = !has('pan');
     document.querySelector('.addr-switch').hidden = !has('v6');
     if (!has('v6') && S.v6) document.querySelector('[data-addr="v4"]').click();
-    if ((S.tool === 'wlan' && !has('wlan')) || (S.tool === 'bluetooth' && !has('pan'))) setTool('move');
+    if ((S.tool === 'glasfaser' && !has('netzarten')) || (S.tool === 'wlan' && !has('wlan')) || (S.tool === 'bluetooth' && !has('pan'))) setTool('move');
     $('netkinds').hidden = !has('netzarten');
   }
   palette.addEventListener('click', ev => {
+    const head = ev.target.closest('.palette-title');
+    if (head) {
+      const id = head.dataset.group;
+      if (palClosed.has(id)) palClosed.delete(id); else palClosed.add(id);
+      store.set('nw_palette_zu', JSON.stringify([...palClosed]));
+      renderPalette();
+      return;
+    }
     const b = ev.target.closest('.pal-btn');
     if (!b || readOnly()) return;
+    // Verbindungswerkzeug: noch einmal antippen schaltet zurück auf „Auswählen“
+    if (b.dataset.tool) { setTool(S.tool === b.dataset.tool ? 'move' : b.dataset.tool); return; }
     const [type, preset] = b.dataset.type.split(':');
     const p = NWView.freeSpot(S.net, type);
     const d = NW.createDevice(S.net, type, p.x, p.y);
@@ -268,10 +307,11 @@
   });
 
   const HINTS = {
-    move: 'Tippe ein Gerät oder eine Verbindung an, um es einzustellen und zu testen.',
+    move: 'Tippe ein Gerät oder eine Verbindung an, um es einzustellen und zu testen. Geräte kannst du auch verschieben. Zum Verbinden tippe in der Geräteleiste z. B. auf „Netzwerkkabel“.',
     kabel: 'Tippe nacheinander auf die zwei Geräte, die du mit einem Kabel verbinden willst.',
-    wlan: 'Tippe auf einen Access Point oder Router und dann auf ein Tablet oder Smartphone.',
-    bluetooth: 'Tippe auf ein Smartphone, Tablet oder einen PC und dann auf die Kopfhörer.',
+    glasfaser: 'Tippe nacheinander auf die zwei Geräte (z. B. Switches in verschiedenen Gebäuden), die eine Glasfaserleitung quer durch die Stadt verbinden soll.',
+    wlan: 'Tippe auf einen Access Point oder Router und dann auf ein Tablet, Smartphone oder einen Laptop.',
+    bluetooth: 'Tippe auf ein Smartphone, Tablet, einen Laptop oder PC und dann auf die Kopfhörer.',
     delete: 'Tippe auf ein Gerät oder eine Verbindung, um es zu löschen.',
   };
   function setTool(t) {
@@ -279,6 +319,7 @@
     // Beim Verbinden oder Löschen stört das Einstellungsfenster nur
     if (t !== 'move' && S.selected && S.net) { S.selected = null; renderInspector(); }
     document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+    renderPalette();
     $('tool-hint').textContent = HINTS[t];
     if (S.net) renderCanvas();
   }
@@ -401,18 +442,31 @@
       }
       return;
     }
-    if (S.tool === 'kabel' || S.tool === 'wlan' || S.tool === 'bluetooth') {
+    if (S.tool === 'kabel' || S.tool === 'glasfaser' || S.tool === 'wlan' || S.tool === 'bluetooth') {
+      // Eine vorhandene Verbindung antippen: direkt einstellen, ohne erst „Auswählen“ zu wählen
+      if (!devEl && linkEl && !S.pending) {
+        setTool('move');
+        S.selected = linkEl.dataset.link; renderCanvas(); renderInspector();
+        return;
+      }
       if (!devEl) { S.pending = null; $('tool-hint').textContent = HINTS[S.tool]; renderCanvas(); return; }
       const id = devEl.dataset.dev;
       if (!S.pending) {
         S.pending = id;
-        $('tool-hint').textContent = `${NW.dev(S.net, id).name} gewählt – tippe jetzt auf das zweite Gerät.`;
+        $('tool-hint').textContent = `${NW.dev(S.net, id).name} gewählt – tippe jetzt auf das zweite Gerät. Noch einmal antippen öffnet die Einstellungen.`;
       } else if (S.pending === id) {
-        S.pending = null; $('tool-hint').textContent = HINTS[S.tool];
+        // Zweimal dasselbe Gerät: Schüler will es einstellen, nicht verbinden
+        setTool('move');
+        S.selected = id; renderCanvas(); renderInspector();
+        return;
       } else {
-        const r = NW.addLink(S.net, S.pending, id, S.tool);
+        const r = NW.addLink(S.net, S.pending, id, S.tool === 'glasfaser' ? 'kabel' : S.tool);
+        if (r.ok && S.tool === 'glasfaser') r.link.stadt = true;
         if (!r.ok) toast(r.reason, 'error');
-        else { toast({ kabel: 'Kabel verbunden.', wlan: 'WLAN verbunden.', bluetooth: 'Per Bluetooth gekoppelt.' }[S.tool], 'ok'); scheduleSave(); }
+        else {
+          const fiberHint = S.tool === 'kabel' && has('netzarten') ? ' Für eine Glasfaserleitung tippe das Kabel an – oder nimm gleich das Werkzeug „Glasfaser“.' : '';
+          toast({ kabel: 'Kabel verbunden.', glasfaser: 'Glasfaserleitung quer durch die Stadt verlegt.', wlan: 'WLAN verbunden.', bluetooth: 'Per Bluetooth gekoppelt.' }[S.tool] + fiberHint, 'ok'); scheduleSave();
+        }
         S.pending = null; $('tool-hint').textContent = HINTS[S.tool];
         renderGoals(); renderInspector();
         if (r.ok) { renderCanvas(); autoDhcp(); return; }
@@ -690,7 +744,10 @@
         bluetooth: 'Bluetooth ist Funk für kurze Strecken (etwa 10 Meter). Damit verbinden sich die Geräte einer Person, z. B. Smartphone und Kopfhörer, zu einem persönlichen Netz (PAN). Über Bluetooth laufen hier keine IP-Pakete.',
       }[link.kind];
       const fiber = link.kind === 'kabel' && has('netzarten')
-        ? `<label class="toggle"><input type="checkbox" data-act="stadt" ${link.stadt ? 'checked' : ''} ${ro || link.locked ? 'disabled' : ''}> Glasfaserleitung quer durch die Stadt (mehrere Kilometer)</label>`
+        ? `<div class="group"><h4>Art der Leitung</h4><div class="seg" role="group" aria-label="Art der Leitung">
+            <button class="${link.stadt ? '' : 'on'}" data-act="stadt" data-val="0" ${ro || link.locked ? 'disabled' : ''} aria-pressed="${!link.stadt}">Netzwerkkabel<br><span class="seg-sub">im Gebäude</span></button>
+            <button class="${link.stadt ? 'on' : ''}" data-act="stadt" data-val="1" ${ro || link.locked ? 'disabled' : ''} aria-pressed="${!!link.stadt}">Glasfaser<br><span class="seg-sub">quer durch die Stadt</span></button>
+          </div></div>`
         : '';
       insp.innerHTML = `<h3>${title}</h3>
         <p>zwischen <b>${esc(a.name)}</b> und <b>${esc(b.name)}</b></p>${plug}${fiber}
@@ -1086,7 +1143,10 @@
     if (b.dataset.act === 'stadt') {
       const l = S.net.links.find(x => x.id === S.selected);
       if (!l || l.locked || readOnly()) return;
-      l.stadt = !!b.checked;
+      const want = b.dataset.val === '1';
+      if (!!l.stadt === want) return;
+      if (want) l.stadt = true; else delete l.stadt;
+      toast(want ? 'Aus dem Kabel ist eine Glasfaserleitung quer durch die Stadt geworden.' : 'Die Leitung ist wieder ein normales Netzwerkkabel.', 'ok');
       renderAll(); scheduleSave();
       return;
     }

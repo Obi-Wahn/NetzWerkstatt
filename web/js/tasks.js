@@ -279,7 +279,7 @@
       level: 1,
       manual: true,
       intro: 'Früher wurden viele Netze als Bus gebaut: Ein langes Kabel führt durch den Raum, und alle Rechner werden daran angeschlossen. Baue ein Busnetz mit vier PCs und finde heraus, was bei einem Kabelbruch passiert.',
-      tip: 'Das Bus-Kabel findest du links bei den Geräten. Verbinde jeden PC mit einem Kabel mit dem Bus-Kabel. Adressen: 192.168.20.1 bis 192.168.20.4, Subnetzmaske 255.255.255.0. Einen Kabelbruch simulierst du, indem du das Bus-Kabel antippst.',
+      tip: 'Das Bus-Kabel findest du links bei den Geräten. Verbinde jeden PC mit einem Kabel mit dem Bus-Kabel. Adressen: 192.168.20.1 bis 192.168.20.4, Subnetzmaske 255.255.255.0. Einen Kabelbruch simulierst du so: Wähle oben „Auswählen“, tippe das Bus-Kabel an und dann auf „Kabelbruch simulieren“.',
       think: 'Beim Ping siehst du: Das Signal kommt bei allen PCs am Bus an. Was bedeutet das für den Datenschutz? Was passiert, wenn zwei PCs gleichzeitig senden? Und was, wenn nur ein einzelner PC ausfällt?',
       goals: [
         { text: 'Setze ein Bus-Kabel auf die Arbeitsfläche.', check: c => c.byType('bus').length >= 1 },
@@ -311,7 +311,7 @@
       level: 1,
       manual: true,
       intro: 'In einem Ringnetz ist jeder Rechner mit genau zwei Nachbarn verbunden – ganz ohne Switch. Die Daten werden immer in dieselbe Richtung von Station zu Station weitergereicht, bis sie beim Empfänger ankommen. Baue einen Ring aus vier PCs.',
-      tip: 'Verbinde PC 1 mit PC 2, PC 2 mit PC 3, PC 3 mit PC 4 und zum Schluss PC 4 wieder mit PC 1. Adressen: 192.168.30.1 bis 192.168.30.4, Subnetzmaske 255.255.255.0. Einen Ausfall simulierst du, indem du einen PC oder ein Kabel antippst.',
+      tip: 'Verbinde PC 1 mit PC 2, PC 2 mit PC 3, PC 3 mit PC 4 und zum Schluss PC 4 wieder mit PC 1. Adressen: 192.168.30.1 bis 192.168.30.4, Subnetzmaske 255.255.255.0. Einen Ausfall simulierst du so: Wähle oben „Auswählen“ und tippe einen PC oder ein Kabel an. In den Einstellungen findest du „Ausfall testen“.',
       think: 'Schau dir beim Ping genau an, welchen Weg die Antwort nimmt. Warum fällt das ganze Netz aus, wenn nur ein PC ausgeschaltet wird? Vergleiche mit dem Sternnetz.',
       goals: [
         { text: 'Verbinde die vier PCs per Kabel zu einem geschlossenen Ring.', check: c => { const pcs = c.byType('pc'); return pcs.length >= 4 && c.topos('ring').some(t => t.closed && pcs.every(p => t.members.includes(p.id))); } },
@@ -341,7 +341,7 @@
       level: 2,
       manual: true,
       intro: 'Hier sind drei kleine Netze schon fertig aufgebaut: ein Stern, ein Bus und ein Ring. Teste, wie gut sie Ausfälle verkraften. Tippe dafür Kabel und Geräte an und simuliere einen Kabelbruch oder einen Ausfall. Sende danach jeweils einen Ping.',
-      tip: 'Oben links siehst du, welche Topologien erkannt wurden. Tippe darauf, um Vor- und Nachteile nachzulesen. Nach jedem Test kannst du das Kabel reparieren oder das Gerät wieder einschalten.',
+      tip: 'Oben links siehst du, welche Topologien erkannt wurden. Tippe darauf, um Vor- und Nachteile nachzulesen. Für die Tests wählst du oben „Auswählen“ und tippst ein Kabel oder Gerät an: Unter „Ausfall testen“ findest du die Knöpfe. Nach jedem Test kannst du das Kabel reparieren oder das Gerät wieder einschalten.',
       think: 'Welche Topologie verkraftet Ausfälle am besten? Wo ist die Schwachstelle beim Stern? Warum werden heute fast nur noch Sternnetze mit Switches gebaut?',
       goals: [
         { text: 'Stern: Simuliere einen Kabelbruch zu einem PC. Zeige mit einem Ping, dass sich die anderen beiden PCs trotzdem erreichen.', check: c => c.pings().some(e => e.ok && TOPO_TEST.stern.includes(e.src) && TOPO_TEST.stern.includes(e.target) && (e.faults || []).some(f => TOPO_TEST.starLink(c.net, f))) },
@@ -392,7 +392,7 @@
       title: 'Musik über Bluetooth (PAN)',
       level: 1,
       intro: 'Jonas hört mit kabellosen Kopfhörern Musik vom Smartphone. Kopfhörer und Smartphone bilden zusammen ein winziges Netz: ein PAN (Personal Area Network). Gleichzeitig ist das Smartphone im WLAN des Heimnetzes (LAN). Achte unten auf der Arbeitsfläche auf die Anzeige der Netzarten.',
-      tip: 'Nimm das Werkzeug „Bluetooth“ und tippe auf das Smartphone und auf die Kopfhörer. Danach findest du beim Smartphone den Knopf „Musik abspielen“. Für das Heimnetz nimmst du das Werkzeug „WLAN“.',
+      tip: 'Tippe in der Geräteleiste auf „Bluetooth“ und dann auf das Smartphone und auf die Kopfhörer. Danach findest du beim Smartphone den Knopf „Musik abspielen“. Für das Heimnetz nimmst du „WLAN“.',
       think: 'Warum brauchen die Kopfhörer keine IP-Adresse? Kann der PC die Kopfhörer anpingen? Wie weit reicht Bluetooth ungefähr – und wie weit WLAN?',
       goals: [
         { text: 'Kopple die Kopfhörer per Bluetooth mit dem Smartphone.', check: c => c.byType('headset').some(h => c.byType('smartphone').some(s => c.linked(h, s, 'bluetooth'))) },
@@ -417,11 +417,11 @@
       level: 2,
       manual: true,
       intro: 'Die Schule hat eine Außenstelle am anderen Ende der Stadt. Beide Gebäude haben schon ein eigenes lokales Netz (LAN). Die Stadtwerke verlegen eine Glasfaserleitung zwischen den Gebäuden. Verbinde die beiden LANs zu einem Stadtnetz (MAN), damit die Außenstelle den Vertretungsplan vom Schulserver abrufen kann.',
-      tip: 'Verbinde die beiden Switches mit einem Kabel. Tippe das Kabel danach an und kreuze „Glasfaserleitung quer durch die Stadt“ an. Die Adressen sind schon eingetragen: Alle Geräte liegen im Netz 10.10.0.0/24.',
+      tip: 'Tippe in der Geräteleiste auf „Glasfaser“ und dann nacheinander auf die beiden Switches. Hast du schon ein normales Kabel verlegt? Dann tippe auf die Linie zwischen den Switches und wähle bei „Art der Leitung“ den Knopf „Glasfaser“. Die Adressen sind schon eingetragen: Alle Geräte liegen im Netz 10.10.0.0/24.',
       think: 'Woran erkennt man, dass hier zwei LANs und ein MAN entstanden sind? Wie müsste das Netz aussehen, wenn die Außenstelle in einer anderen Stadt oder einem anderen Land läge?',
       goals: [
-        { text: 'Verbinde die Switches der beiden Gebäude mit einem Kabel.', check: c => c.linked(NW.dev(c.net, 'swa') || {}, NW.dev(c.net, 'swb') || {}, 'kabel') },
-        { text: 'Mache aus dem Kabel eine Glasfaserleitung durch die Stadt, sodass ein MAN entsteht.', check: c => c.hasKind('MAN', 'swa') && c.hasKind('MAN', 'swb') },
+        { text: 'Verbinde die Switches der beiden Gebäude miteinander.', check: c => c.linked(NW.dev(c.net, 'swa') || {}, NW.dev(c.net, 'swb') || {}, 'kabel') },
+        { text: 'Die Verbindung muss eine Glasfaserleitung quer durch die Stadt sein (Werkzeug „Glasfaser“), sodass ein MAN entsteht.', check: c => c.hasKind('MAN', 'swa') && c.hasKind('MAN', 'swb') },
         { text: 'Rufe am PC in der Außenstelle den Vertretungsplan auf: http://10.10.0.2', check: c => (c.net.events || []).some(e => e.type === 'web' && e.ok && e.src === 'pcb' && e.host === '10.10.0.2') && c.webOk('10.10.0.2') },
       ],
       start: () => manStart(),
@@ -804,7 +804,7 @@
     { id: 'ausfall', label: 'Ausfälle testen', text: 'Kabelbruch und Geräteausfall simulieren' },
     { id: 'dateien', label: 'Dateien tauschen', text: 'Peer-to-Peer und Dateiablage auf dem Server' },
     { id: 'pan', label: 'Bluetooth', text: 'Kopfhörer und Werkzeug „Bluetooth“ (PAN)' },
-    { id: 'netzarten', label: 'Netzarten', text: 'Anzeige PAN, LAN, MAN, WAN und Glasfaserleitung' },
+    { id: 'netzarten', label: 'Netzarten', text: 'Anzeige PAN, LAN, MAN, WAN und Werkzeug „Glasfaser“' },
     { id: 'dienste', label: 'Internetdienste', text: 'E-Mail, Video, Telefonie, Spiele, TCP und UDP' },
   ];
   const WEBNET = ['gateway', 'wlan', 'dhcp', 'web', 'internet'];

@@ -23,11 +23,11 @@
   const LIMITS = { tasks: 60, goals: 15, devices: 80, links: 160, events: 40, title: 80, intro: 1500, tip: 1000, goalText: 300 };
 
   // ---------------------------------------------------------------- Geräte-Auswahl in Zielen
-  const PLURAL = { pc: 'PCs', tablet: 'Tablets', smartphone: 'Smartphones', headset: 'Kopfhörer', server: 'Server', switch: 'Switches', ap: 'Access Points', router: 'Router', isp: 'Internetanbieter', rz: 'Rechenzentren', bus: 'Bus-Kabel' };
-  const ARTICLE = { pc: 'einem PC', tablet: 'einem Tablet', smartphone: 'einem Smartphone', headset: 'Kopfhörern', server: 'einem Server', switch: 'einem Switch', ap: 'einem Access Point', router: 'einem Router', isp: 'einem Internetanbieter', rz: 'einem Rechenzentrum', bus: 'einem Bus-Kabel' };
-  const AKK = { pc: 'einen PC', tablet: 'ein Tablet', smartphone: 'ein Smartphone', headset: 'Kopfhörer', server: 'einen Server', switch: 'einen Switch', ap: 'einen Access Point', router: 'einen Router', isp: 'einen Internetanbieter', rz: 'ein Rechenzentrum', bus: 'ein Bus-Kabel' };
+  const PLURAL = { pc: 'PCs', laptop: 'Laptops', tablet: 'Tablets', smartphone: 'Smartphones', headset: 'Kopfhörer', server: 'Server', switch: 'Switches', ap: 'Access Points', router: 'Router', isp: 'Internetanbieter', rz: 'Rechenzentren', bus: 'Bus-Kabel' };
+  const ARTICLE = { pc: 'einem PC', laptop: 'einem Laptop', tablet: 'einem Tablet', smartphone: 'einem Smartphone', headset: 'Kopfhörern', server: 'einem Server', switch: 'einem Switch', ap: 'einem Access Point', router: 'einem Router', isp: 'einem Internetanbieter', rz: 'einem Rechenzentrum', bus: 'einem Bus-Kabel' };
+  const AKK = { pc: 'einen PC', laptop: 'einen Laptop', tablet: 'ein Tablet', smartphone: 'ein Smartphone', headset: 'Kopfhörer', server: 'einen Server', switch: 'einen Switch', ap: 'einen Access Point', router: 'einen Router', isp: 'einen Internetanbieter', rz: 'ein Rechenzentrum', bus: 'ein Bus-Kabel' };
   // Sammelbegriffe zusätzlich zu den Gerätetypen
-  const ENDGERAETE = ['pc', 'tablet', 'smartphone'];
+  const ENDGERAETE = ['pc', 'laptop', 'tablet', 'smartphone'];
   const GROUP_LABEL = { endgeraet: ['Endgerät', 'Endgeräte', 'einem Endgerät', 'ein Endgerät'], geraet: ['Gerät', 'Geräte', 'einem Gerät', 'ein Gerät'] };
   function matcher(sel) {
     if (sel === 'endgeraet') return d => ENDGERAETE.includes(d.type);
