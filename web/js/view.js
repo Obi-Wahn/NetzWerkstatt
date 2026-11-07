@@ -15,6 +15,7 @@
     switch: '<rect x="3" y="11" width="34" height="18" rx="2"/><path d="M8 24v-3M13 24v-3M18 24v-3M23 24v-3M28 24v-3M33 24v-3"/><path d="M8 16h8l-2-2M32 16h-8l2 2"/>',
     ap: '<rect x="8" y="25" width="24" height="9" rx="2"/><path d="M20 25v-6"/><path d="M14 15a8 8 0 0 1 12 0M10.5 11.5a13 13 0 0 1 19 0"/><circle cx="20" cy="19" r="1.5"/>',
     router: '<circle cx="20" cy="20" r="15"/><path d="M20 8v9M20 32v-9M8 20h9M32 20h-9"/><path d="M17 11l3-3 3 3M17 29l3 3 3-3M11 17l-3 3 3 3M29 17l3 3-3 3"/>',
+    isp: '<circle cx="20" cy="20" r="15"/><path d="M5 20h30M20 5a22 22 0 0 1 0 30M20 5a22 22 0 0 0 0 30M8 12h24M8 28h24"/>',
     cloud: '<path d="M11 30h19a7 7 0 0 0 0-14 9 9 0 0 0-17-2 7.5 7.5 0 0 0-2 16z"/>',
   };
 
@@ -32,6 +33,7 @@
   function hostLabel(d) {
     const t = NW.TYPES[d.type];
     if (t.host) return d.ip && d.ip.trim() ? d.ip.trim() : (d.dhcp ? 'DHCP: keine IP' : 'keine IP');
+    if (t.isp) return d.ip && d.ip.trim() ? d.ip.trim() : 'keine IP';
     if (t.router) return '';
     return '';
   }
@@ -42,7 +44,7 @@
     const out = [];
     const lip = lan.ip && lan.ip.trim();
     out.push(lip ? lip + (lan.dhcp && lan.dhcp.on ? ' · DHCP' : '') : 'LAN: keine IP');
-    if (wan.ip && wan.ip.trim()) out.push('WAN ' + wan.ip.trim());
+    if (wan.ip && wan.ip.trim()) out.push('extern ' + wan.ip.trim());
     return out;
   }
 
@@ -73,7 +75,7 @@
       for (const [d, other, port] of [[a, b, l.aPort], [b, a, l.bPort]]) {
         if (!NW.TYPES[d.type].router || port === undefined || l.kind !== 'kabel' || NW.iface(port) !== NW.WAN) continue;
         const dist = Math.max(1, Math.hypot(other.x - d.x, other.y - d.y));
-        const t = Math.min(0.5, 58 / dist);
+        const t = Math.min(0.5, 80 / dist);
         const x = d.x + (other.x - d.x) * t, y = d.y + (other.y - d.y) * t;
         const txt = d.modem ? 'Internet' : 'WAN';
         const lab = el('g', { class: 'port-label' }, g);

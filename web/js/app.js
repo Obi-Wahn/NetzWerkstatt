@@ -180,7 +180,7 @@
   // ---------------------------------------------------------------- Palette und Werkzeuge
   const PALETTE = [
     ['pc', 'PC'], ['tablet', 'Tablet'], ['smartphone', 'Smartphone'], ['server', 'Server'],
-    ['switch', 'Switch'], ['ap', 'Access Point'], ['router', 'Router'],
+    ['switch', 'Switch'], ['ap', 'Access Point'], ['router', 'Router'], ['isp', 'Internet\u00adanbieter'],
   ];
   const palette = $('palette');
   palette.innerHTML = '<div class="palette-title">Geräte</div>' + PALETTE.map(([t, l]) => `<button class="pal-btn" data-type="${t}" title="${esc(l)} hinzufügen">${NWView.iconSVG(t, 34)}<span>${esc(l)}</span></button>`).join('');
@@ -359,7 +359,9 @@
         if (!T[r.type].router || port === undefined) continue;
         const isWan = NW.iface(port) === NW.WAN;
         plug += `<p class="small">Steckt bei <b>${esc(r.name)}</b> ${link.kind === 'wlan' ? 'im WLAN des Heimnetzes' : isWan ? 'im Internet-Anschluss (WAN)' : 'in einem LAN-Anschluss (Heimnetz)'}.</p>`;
-        if (link.kind === 'kabel' && !ro && !link.locked) plug += `<button class="btn small" data-act="replug" data-dev="${esc(r.id)}">Umstecken: ${isWan ? 'in einen LAN-Anschluss' : 'in den Internet-Anschluss (WAN)'}</button>`;
+        const toIsp = T[(r === a ? b : a).type].isp;
+        if (toIsp) plug += '<p class="muted small">Das ist die Leitung zum Internetanbieter (z. B. DSL oder Kabel). Sie gehört immer in den Internet-Anschluss.</p>';
+        if (link.kind === 'kabel' && !ro && !link.locked && !toIsp) plug += `<button class="btn small" data-act="replug" data-dev="${esc(r.id)}">Umstecken: ${isWan ? 'in einen LAN-Anschluss' : 'in den Internet-Anschluss (WAN)'}</button>`;
       }
       insp.innerHTML = `<h3>${link.kind === 'kabel' ? 'Netzwerkkabel' : 'WLAN-Verbindung'}</h3>
         <p>zwischen <b>${esc(a.name)}</b> und <b>${esc(b.name)}</b></p>${plug}
@@ -452,7 +454,30 @@
           ? 'Das Modem verbindet den Router über die Telefon- oder Kabelleitung mit dem Internetanbieter. Dort bekommt der Router seine externe (öffentliche) Adresse.'
           : 'Ohne eingebautes Modem wird hier ein externes Modem oder ein anderer Router per Kabel angeschlossen.'}</p>
         <p class="small">${wanConns.length ? wanConns.join(' · ') : '<span class="muted">Nichts angeschlossen.</span>'}</p>
-        <div class="port-fields">${field('Externe IP-Adresse', `ports.${NW.WAN}.ip`, w.ip, 'portip', { disabled: dis, placeholder: d.modem ? 'vom Internetanbieter' : 'z. B. 192.168.100.2' })}${field('Subnetzmaske', `ports.${NW.WAN}.mask`, w.mask, 'mask', { disabled: dis })}</div></div>`;
+        <div class="port-fields">${field('Externe IP-Adresse', `ports.${NW.WAN}.ip`, w.ip, 'portip', { disabled: dis, placeholder: d.modem ? 'vom Internetanbieter' : 'z. B. 192.168.100.2' })}${field('Subnetzmaske', `ports.${NW.WAN}.mask`, w.mask, 'mask', { disabled: dis })}</div>
+        ${field('Gateway ins Internet', `ports.${NW.WAN}.gw`, w.gw || '', 'gw', { disabled: dis, placeholder: 'vom Internetanbieter' })}`;
+      const isp = NW.ispOf(S.net, d);
+      if (isp && !dis) h += `<button class="btn small" data-act="dhcp">Adresse von ${esc(isp.name)} anfordern</button>`;
+      const wa = NW.ifaceAddr(d, NW.WAN);
+      if (wa && wanConns.length) h += `<p class="nat-info"><b>NAT:</b> Alle Geräte im Heimnetz gehen mit der externen Adresse <b>${esc(NW.ipStr(wa.ip))}</b> ins Internet. Ihre lokalen Adressen sieht dort niemand. Antworten verteilt der Router wieder an das richtige Gerät.</p>`;
+      h += '</div>';
+    }
+    if (t.isp) {
+      const a = NW.ifaceAddr(d, 0);
+      h += `<div class="group"><h4>Öffentliche Adressen</h4>
+        <p class="muted small">Der Internetanbieter verteilt öffentliche (externe) IP-Adressen an alle Router und Server, die an seine Leitung angeschlossen werden – automatisch per DHCP.</p>
+        <div class="port-fields">${field('IP-Adresse des Anbieters', 'ip', d.ip, 'ip', { disabled: dis })}${field('Subnetzmaske', 'mask', d.mask, 'mask', { disabled: dis })}</div>`;
+      if (a) { const rg = NW.dhcpDefaultRange(a.ip, a.prefix); h += `<p class="small">Angeschlossene Geräte bekommen eine Adresse von ${esc(NW.ipStr(rg.from))} bis ${esc(NW.ipStr(rg.to))} und ${esc(d.ip.trim())} als Gateway.</p>`; }
+      h += field('DNS-Server für die Kunden', 'dns', d.dns || '', 'dns', { disabled: dis, placeholder: 'leer = kein DNS-Server' });
+      if (!dis && !(d.dns || '').trim()) {
+        const ds = S.net.devices.find(o => o.services && o.services.dns && o.services.dns.on && NW.parseIP(o.ip) !== null && !NW.isPrivate(NW.parseIP(o.ip)));
+        if (ds) h += `<div class="chips"><button class="chip suggest" data-act="isp-dns" data-val="${esc(ds.ip.trim())}">💡 ${esc(ds.name)} (${esc(ds.ip.trim())}) als DNS-Server übernehmen</button></div>`;
+      }
+      const cust = NW.l2Endpoints(S.net, d.id, 0).map(e => {
+        const x = NW.ifaceAddr(e.dev, e.port);
+        return `<li>${esc(e.dev.name)}${T[e.dev.type].isp ? ' <span class="muted">(anderer Internetanbieter)</span>' : ''} – ${x ? esc(NW.ipStr(x.ip)) : '<span class="muted">noch keine Adresse</span>'}</li>`;
+      });
+      h += `<h4>Angeschlossen</h4>${cust.length ? `<ul class="conn">${cust.join('')}</ul>` : '<p class="muted small">Noch nichts. Verbinde einen Router (Internet-Anschluss) oder einen Server per Kabel.</p>'}</div>`;
     }
     if (t.l2) h += `<p class="muted small">Ein ${esc(t.label)} braucht keine IP-Adresse – er leitet die Pakete nur weiter.</p>`;
 
@@ -546,10 +571,15 @@
     // DHCP am Router einschalten: Hat der Anschluss noch keine Adresse, bekommt er automatisch eine
     const dm = inp.dataset.path.match(/^ports\.(\d+)\.dhcp\.on$/);
     if (dm && val && !NW.ifaceAddr(d, Number(dm[1]))) setPortAuto(d, Number(dm[1]));
+    if (inp.dataset.path === 'modem' && !val) {
+      const n = NW.setModem(S.net, d, false);
+      if (n) toast('Modem aus: Die Leitung zum Internetanbieter wurde getrennt.');
+    }
     if (inp.dataset.path === 'wlan' && !val) {
       const n = NW.setRouterWlan(S.net, d, false);
       if (n) toast(`WLAN aus: ${n === 1 ? 'Ein Gerät wurde' : n + ' Geräte wurden'} getrennt.`);
     }
+    if (T[d.type].isp && inp.dataset.path === 'dns' && (NW.parseIP(val) !== null || !val.trim())) NW.refreshDns(S.net);
     if (inp.type === 'checkbox') renderInspector(); else updateHints();
     renderCanvas(); renderGoals(); scheduleSave();
     if (dm && val) autoDhcp();
@@ -567,6 +597,8 @@
       if (S.busy) return;
       // ohne Adresse: fragen (notfalls APIPA); mit Notfall-Adresse: erneut fragen, sobald ein DHCP-Server da ist
       const h = S.net.devices.find(x => {
+        // Router: externe Adresse holen, sobald der Internet-Anschluss angeschlossen ist
+        if (T[x.type].router) return NW.parseIP(x.ports[NW.WAN].ip || '') === null && !!NW.ispOf(S.net, x) && NW.dhcp(S.net, x.id).ok;
         if (!T[x.type].host || !x.dhcp || !NW.linksOf(S.net, x.id).length) return false;
         const ip = NW.parseIP(x.ip);
         if (ip === null) return true;
@@ -631,6 +663,10 @@
         if (sg.dns) d.dns = sg.dns;
         renderAll(); scheduleSave(); break;
       }
+      case 'isp-dns':
+        d.dns = b.dataset.val;
+        { const n = NW.refreshDns(S.net); if (n) toast(`${n === 1 ? 'Ein Gerät hat' : n + ' Geräte haben'} den neuen DNS-Server per DHCP übernommen.`, 'ok'); }
+        renderAll(); scheduleSave(); break;
       case 'dns-add':
         d.services.dns.entries.push({ name: '', ip: '' }); renderInspector(); scheduleSave(); break;
       case 'dns-del':
@@ -645,7 +681,7 @@
     if (empty) empty.remove();
     const div = document.createElement('div');
     div.className = 'log-entry ' + (step.kind || '') + (step.ok === false ? ' failed' : '');
-    div.innerHTML = `<span class="log-label">${esc(step.label)}</span>${step.proto ? `<span class="log-proto">${esc(step.proto)}</span>` : ''}<span class="log-text">${esc(step.text || '')}</span>`;
+    div.innerHTML = `<span class="log-label">${esc(step.label)}</span>${step.proto ? `<span class="log-proto">${esc(step.proto)}</span>` : ''}<span class="log-text">${esc(step.text || '')}</span>${step.note ? `<span class="log-note">↔ ${esc(step.note)}</span>` : ''}`;
     log.prepend(div);
     while (log.children.length > 40) log.lastChild.remove();
   }
@@ -673,7 +709,7 @@
     await runSteps(res.steps);
     if (res.ok) {
       const t = NW.dev(S.net, res.target);
-      logResult(true, `Ping erfolgreich: ${t.name} (${target}) hat geantwortet.`);
+      logResult(true, `Ping erfolgreich: ${t.name} (${target}) hat geantwortet.` + natText(res.nat));
     } else logResult(false, res.error, res.hint);
     NW.logEvent(S.net, { type: 'ping', src: d.id, target: res.target, ok: !!res.ok });
     renderGoals(); scheduleSave();
@@ -686,13 +722,18 @@
     if (res.ok) {
       NW.applyLease(d, res.lease);
       const srv = NW.dev(S.net, res.server);
-      logResult(true, `${d.name} hat von ${srv ? srv.name : 'dem DHCP-Server'} die Adresse ${res.lease.ip} bekommen.`);
+      if (T[d.type].router) logResult(true, `${d.name} hat von ${srv ? srv.name : 'dem Internetanbieter'} die externe (öffentliche) Adresse ${res.lease.ip} bekommen. Damit ist das Heimnetz mit dem Internet verbunden.`);
+      else logResult(true, `${d.name} hat von ${srv ? srv.name : 'dem DHCP-Server'} die Adresse ${res.lease.ip} bekommen.`);
     } else if (res.apipa) {
       NW.applyLease(d, res.apipa);
       logResult(false, `${res.error} ${d.name} gibt sich deshalb selbst die Notfall-Adresse ${res.apipa.ip} (APIPA). Damit erreicht es nur Geräte, die direkt im selben Netz auch eine 169.254-Adresse haben – ohne Gateway, also nicht das Internet.`, res.hint);
     } else logResult(false, res.error, res.hint);
     NW.logEvent(S.net, { type: 'dhcp', src: d.id, ok: !!res.ok });
     renderAll(); scheduleSave();
+  }
+
+  function natText(n) {
+    return n ? ` ${n.target} hat als Absender nur ${n.outside} gesehen – die externe Adresse von ${n.router}. Die lokale Adresse ${n.inside} bleibt im Heimnetz (NAT).` : '';
   }
 
   async function doBrowse() {
@@ -704,7 +745,7 @@
     const u = NW.parseURL(url);
     NW.logEvent(S.net, { type: 'web', src: d.id, host: u ? u.host : url, ok: !!res.ok });
     if (res.ok) {
-      logResult(true, `Webseite ${res.page.host} geladen (Server-IP ${res.page.ip}).`);
+      logResult(true, `Webseite ${res.page.host} geladen (Server-IP ${res.page.ip}).` + natText(res.nat));
       openModal(`<div class="browser"><div class="browser-bar"><span class="dots"><i></i><i></i><i></i></span><span class="browser-url">http://${esc(res.page.host)}/</span></div>
         <div class="browser-page"><h1>${esc(res.page.title || '(ohne Titel)')}</h1><p>${esc(res.page.text)}</p></div>
         <p class="muted small">Geladen auf ${esc(d.name)} · Server-IP ${esc(res.page.ip)} · über HTTP-Request und HTTP-Response</p></div>`);

@@ -35,10 +35,20 @@ test('Webseite über DNS: vier Schritte', () => {
   assert.deepStrictEqual(r.steps[0].path, ['pc', 'r', 'inet', 'dns']);
 });
 
-test('Rückweg ohne Gateway am Ziel scheitert', () => {
+test('Webseite: Der Router übersetzt die Absenderadresse (NAT)', () => {
   const net = TASKS.find(t => t.id === 'webseite').solution();
-  NW.dev(net, 'web').gw = '';
   const r = NW.browse(net, 'pc', 'www.netzwerkstatt.de');
+  assert.match(r.steps[2].note, /Absender 192\.168\.178\.20 wird zu 203\.0\.113\.10/);
+  assert.match(r.steps[3].note, /wieder zu 192\.168\.178\.20/);
+  assert.deepStrictEqual(r.steps[3].path, ['web', 'inet', 'r', 'pc']);
+  assert.strictEqual(r.nat.outside, '203.0.113.10');
+});
+
+test('Rückweg ohne Gateway am Ziel scheitert', () => {
+  // Server bei einem anderen Internetanbieter: Ohne Gateway findet die Antwort nicht zurück
+  const net = internetNet();
+  NW.dev(net, 'srv').gw = '';
+  const r = NW.ping(net, 'pc', NW.dev(net, 'srv').ip);
   assert.ok(!r.ok);
   assert.match(r.error, /Antwort findet nicht zurück/);
 });
@@ -201,6 +211,107 @@ test('APIPA: zwei PCs direkt verbunden, ohne DHCP-Server, erreichen sich über 1
   // Aufgabe 1 verlangt das Netz 192.168.1.0/24 – APIPA erfüllt das nicht
   const t1 = TASKS.find(t => t.id === 'zwei-pcs');
   assert.ok(!evaluate(t1, net)[2]);
+});
+
+// ---------------------------------------------------------------- Internetanbieter
+/** Heimnetz (Router + PC) an Anbieter A, Server an Anbieter B, A und B verbunden. Adressen per DHCP. */
+function internetNet() {
+  const net = NW.emptyNetwork();
+  const a = NW.createDevice(net, 'isp', 0, 0, { id: 'ispA' });
+  const b = NW.createDevice(net, 'isp', 0, 0, { id: 'ispB' });
+  NW.createDevice(net, 'router', 0, 0, { id: 'r' });
+  NW.createDevice(net, 'pc', 0, 0, { id: 'pc' });
+  const srv = NW.createDevice(net, 'server', 0, 0, { id: 'srv' });
+  srv.services.web.on = true; srv.services.dns.on = true;
+  NW.addLink(net, 'ispA', 'ispB', 'kabel');
+  assert.ok(NW.addLink(net, 'r', 'ispA', 'kabel').ok);
+  NW.addLink(net, 'pc', 'r', 'kabel');
+  NW.addLink(net, 'srv', 'ispB', 'kabel');
+  for (const id of ['r', 'srv', 'pc']) { const res = NW.dhcp(net, id); assert.ok(res.ok, res.error); NW.applyLease(NW.dev(net, id), res.lease); }
+  return net;
+}
+
+test('Internetanbieter: eigenes öffentliches Netz, Router bekommt externe Adresse per DHCP', () => {
+  const net = internetNet();
+  assert.strictEqual(NW.dev(net, 'ispA').ip, '85.17.4.1');
+  assert.strictEqual(NW.dev(net, 'ispB').ip, '91.64.12.1');
+  const r = NW.dev(net, 'r');
+  assert.strictEqual(NW.iface(net.links.find(l => l.a === 'r' && l.b === 'ispA').aPort), NW.WAN, 'Leitung steckt im WAN');
+  assert.deepStrictEqual([r.ports[0].ip, r.ports[0].gw], ['85.17.4.100', '85.17.4.1']);
+  assert.strictEqual(NW.dev(net, 'srv').ip, '91.64.12.100');
+  assert.strictEqual(NW.dev(net, 'pc').ip, '192.168.0.100');
+});
+
+test('Internetanbieter: zwei Kunden bekommen verschiedene Adressen', () => {
+  const net = internetNet();
+  const s2 = NW.createDevice(net, 'server', 0, 0, { id: 's2' });
+  NW.addLink(net, 's2', 'ispA', 'kabel');
+  assert.strictEqual(NW.dhcp(net, 's2').lease.ip, '85.17.4.101');
+});
+
+test('Internetanbieter: PC im Heimnetz erreicht Server bei anderem Anbieter, Server sieht externe Adresse', () => {
+  const net = internetNet();
+  const res = NW.ping(net, 'pc', '91.64.12.100');
+  assert.ok(res.ok, res.error);
+  assert.deepStrictEqual(res.steps[0].path, ['pc', 'r', 'ispA', 'ispB', 'srv']);
+  assert.deepStrictEqual(res.steps[1].path, ['srv', 'ispB', 'ispA', 'r', 'pc']);
+  assert.match(res.steps[1].text, /85\.17\.4\.100/);
+  assert.deepStrictEqual(res.nat, { router: 'Router 1', inside: '192.168.0.100', outside: '85.17.4.100', target: 'Server 1' });
+});
+
+test('Internetanbieter: lokale Adressen werden im Internet nicht weitergeleitet', () => {
+  const net = internetNet();
+  const res = NW.ping(net, 'srv', '192.168.0.100');
+  assert.ok(!res.ok);
+  assert.match(res.error, /lokale \(private\) Adresse/);
+  // Die externe Adresse des Routers antwortet
+  assert.ok(NW.ping(net, 'srv', '85.17.4.100').ok);
+});
+
+test('Internetanbieter: Anfragen aus dem Internet kommen nicht ins Heimnetz', () => {
+  // Router mit öffentlicher WAN-Adresse, direkt mit einem anderen Gerät verbunden (ohne Anbieter)
+  const net = NW.emptyNetwork();
+  const r = NW.createDevice(net, 'router', 0, 0, { id: 'r' });
+  Object.assign(r.ports[0], { ip: '203.0.113.10' });
+  NW.createDevice(net, 'pc', 0, 0, { id: 'pc', dhcp: false, ip: '192.168.0.20', gw: '192.168.0.1' });
+  NW.createDevice(net, 'server', 0, 0, { id: 'srv', dhcp: false, ip: '203.0.113.80', gw: '203.0.113.10' });
+  NW.addLink(net, 'pc', 'r', 'kabel');
+  assert.ok(NW.replug(net, NW.addLink(net, 'r', 'srv', 'kabel').link.id, 'r').ok, 'Server an den WAN-Anschluss');
+  const res = NW.ping(net, 'srv', '192.168.0.20');
+  assert.ok(!res.ok);
+  assert.match(res.error, /nicht ins Heimnetz/);
+  assert.ok(NW.ping(net, 'pc', '203.0.113.80').ok, 'umgekehrt klappt es dank NAT');
+});
+
+test('Internetanbieter: DNS des Anbieters kommt per DHCP bis zum PC im Heimnetz', () => {
+  const net = internetNet();
+  NW.dev(net, 'srv').services.dns.entries.push({ name: 'www.schule.de', ip: '91.64.12.100' });
+  NW.dev(net, 'ispA').dns = '91.64.12.100';
+  assert.strictEqual(NW.refreshDns(net), 2, 'Router und PC übernehmen den DNS-Server');
+  assert.strictEqual(NW.dev(net, 'pc').dns, '91.64.12.100');
+  const res = NW.browse(net, 'pc', 'www.schule.de');
+  assert.ok(res.ok, res.error);
+});
+
+test('Internetanbieter: ohne Modem keine Leitung, Leitung nicht ins LAN umstecken', () => {
+  const net = NW.emptyNetwork();
+  NW.createDevice(net, 'isp', 0, 0, { id: 'i' });
+  const r = NW.createDevice(net, 'router', 0, 0, { id: 'r' });
+  r.modem = false;
+  assert.match(NW.canLink(net, 'r', 'i', 'kabel').reason, /Modem/);
+  r.modem = true;
+  const l = NW.addLink(net, 'r', 'i', 'kabel').link;
+  assert.ok(!NW.replug(net, l.id, 'r').ok);
+  assert.strictEqual(NW.setModem(net, r, false), 1);
+  assert.strictEqual(net.links.length, 0);
+});
+
+test('Router ohne Weg ins Internet meldet das verständlich', () => {
+  const net = internetNet();
+  NW.dev(net, 'r').ports[0].gw = '';
+  const res = NW.ping(net, 'pc', '91.64.12.100');
+  assert.ok(!res.ok);
+  assert.match(res.error, /kennt kein Netz/);
 });
 
 console.log(`\n${n} Tests bestanden.`);

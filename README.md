@@ -6,10 +6,12 @@ Die NetzWerkstatt ist für den Informatikunterricht der Sekundarstufe I gedacht.
 
 ## Was kann der Prototyp?
 
-- **Baukasten:** PC, Tablet, Smartphone, Server, Switch, Access Point und Router auf die Arbeitsfläche setzen und per Kabel oder WLAN verbinden. Funktioniert mit Maus und Finger (Windows-PCs und iPads).
+- **Baukasten:** PC, Tablet, Smartphone, Server, Switch, Access Point, Router und Internetanbieter auf die Arbeitsfläche setzen und per Kabel oder WLAN verbinden. Funktioniert mit Maus und Finger (Windows-PCs und iPads).
 - **Netzwerk-Einstellungen:** IP-Adresse (IPv4), Subnetzmaske, Gateway und DNS-Server mit sofortigen Hinweisen, z. B. „lokale (private) Adresse“ oder „Das Gateway muss im selben Netz liegen“. Beim Eintragen von Hand werden passende freie Adressen, der Router als Gateway und ein vorhandener DNS-Server vorgeschlagen.
 - **Heimrouter:** Drei LAN-Anschlüsse und eingebautes WLAN bilden zusammen das Heimnetz (wie ein eingebauter Switch), dazu ein Internet-Anschluss (WAN) mit abschaltbarem eingebautem Modem. Ab Werk hat das Heimnetz eine freie Adresse (192.168.0.1, beim nächsten Router 192.168.1.1 …) und DHCP ist an. Kabel lassen sich zwischen LAN und WAN umstecken.
 - **DHCP:** Neue Endgeräte stehen wie in echt auf „Automatisch (DHCP)“ und holen sich beim Verbinden selbst eine Adresse; in Aufgaben zum Eintragen von Hand ist DHCP aus. Der Ablauf Discover → Offer → Request → Ack wird animiert, Discover und Request gehen sichtbar „an alle“. Findet ein Gerät keinen DHCP-Server, gibt es sich eine Notfall-Adresse 169.254.x.x (APIPA) – so erreichen sich z. B. zwei direkt verbundene PCs.
+- **Internetanbieter und Internet:** Der Internetanbieter verteilt öffentliche (externe) Adressen per DHCP an angeschlossene Router und Server und gibt einen DNS-Server weiter, den der Heimrouter an das Heimnetz durchreicht. Mehrere verbundene Internetanbieter bilden zusammen das Internet. So lassen sich im freien Modus Webserver und DNS-Server ins Internet stellen und vom Heimnetz aus aufrufen.
+- **NAT:** Pakete aus dem Heimnetz gehen mit der externen Adresse des Routers ins Internet; das Protokoll zeigt die Übersetzung hin und zurück. Lokale (private) Adressen werden im Internet nicht weitergeleitet, und Anfragen aus dem Internet kommen nicht ins Heimnetz.
 - **Simulation mit Animation:** Ping (Anfrage und Antwort) sowie Webseiten-Aufruf mit DNS-Anfrage, DNS-Antwort, HTTP-Request und HTTP-Response. Router verbinden verschiedene Netze, Switches und Access Points leiten innerhalb eines Netzes weiter.
 - **Dienste auf Servern:** Webserver mit eigener Seite und DNS-Server mit eigenen Einträgen.
 - **Aufgaben mit automatisch abgehakten Teilzielen:**

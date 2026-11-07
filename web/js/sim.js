@@ -17,6 +17,7 @@
     switch:     { label: 'Switch',       l2: true,    cable: 8, icon: 'switch' },
     ap:         { label: 'Access Point', l2: true,    cable: 1, apWlan: 8, icon: 'ap' },
     router:     { label: 'Router',       router: true, cable: 4, icon: 'router' },
+    isp:        { label: 'Internetanbieter', isp: true, cable: 8, icon: 'isp' },
   };
 
   const DESCRIPTIONS = {
@@ -27,6 +28,7 @@
     switch: 'Verbindet mehrere Geräte im selben Netz (LAN). Er leitet Pakete gezielt an das Gerät weiter, für das sie bestimmt sind. Er braucht keine IP-Adresse.',
     ap: 'Der Access Point (Zugangspunkt) bringt Geräte per Funk (WLAN) ins Kabelnetz. Er braucht keine IP-Adresse.',
     router: 'Verbindet verschiedene Netze miteinander, z. B. das Heimnetz mit dem Internet. Er hat drei LAN-Anschlüsse für das Heimnetz (wie ein eingebauter Switch) und einen Internet-Anschluss (WAN). In jedem der beiden Netze hat er eine eigene IP-Adresse. Endgeräte tragen ihn als Gateway ein.',
+    isp: 'Der Internetanbieter (Provider) verbindet Heimnetze und Server mit dem Internet. Jeder Router, der an seine Leitung angeschlossen wird, bekommt von ihm automatisch eine öffentliche (externe) IP-Adresse. Mehrere Internetanbieter, die per Kabel miteinander verbunden sind, bilden zusammen das Internet.',
   };
 
   // ------------------------------------------------------------------ IP-Hilfen
@@ -92,6 +94,14 @@
     return prefix + Date.now().toString(36).slice(-4) + Math.random().toString(36).slice(2, 6) + idCounter;
   }
 
+  /** Öffentliche Adressbereiche für Internetanbieter (je ein Netz /24, der Anbieter selbst hat .1). */
+  const ISP_NETS = ['85.17.4', '91.64.12', '62.157.8', '78.42.30', '93.120.5', '217.80.21', '188.96.3', '46.5.77'];
+  function freeIspNet(net) {
+    const all = allAddrs(net);
+    const cand = ISP_NETS.find(n => all.every(a => !sameNet(a.ip, parseIP(n + '.0'), Math.min(24, a.prefix))));
+    return cand ? cand + '.1' : '';
+  }
+
   function nextName(net, type) {
     const base = TYPES[type].label.replace('Access Point', 'AP');
     let i = 1;
@@ -115,6 +125,7 @@
       d.wlan = true;             // eingebautes WLAN (wie ein Access Point)
       d.modem = true;            // eingebautes Internet-Modem (DSL/Kabel)
     }
+    if (t.isp) { d.ip = freeIspNet(net); d.mask = '255.255.255.0'; d.dns = ''; }
     if (t.services) d.services = { web: { on: false, title: 'Willkommen!', text: 'Das ist meine erste Webseite.' }, dns: { on: false, entries: [] } };
     Object.assign(d, extra || {});
     net.devices.push(d);
@@ -125,7 +136,7 @@
   function allAddrs(net, skipDev, skipPort) {
     const all = [];
     for (const d of net.devices) {
-      if (TYPES[d.type].host) { const a = ifaceAddr(d, 0); if (a) all.push(a); }
+      if (TYPES[d.type].host || TYPES[d.type].isp) { const a = ifaceAddr(d, 0); if (a) all.push(a); }
       if (TYPES[d.type].router) IFACES.forEach(i => { if (d === skipDev && i === iface(skipPort)) return; const a = ifaceAddr(d, i); if (a) all.push(a); });
     }
     return all;
@@ -172,7 +183,7 @@
 
   /** Freien Anschluss wählen: zu einem anderen Router oder ins Internet → WAN, sonst LAN. */
   function freeRouterPort(net, r, other) {
-    const wanFirst = other && (TYPES[other.type].router || other.cloud);
+    const wanFirst = other && (TYPES[other.type].router || TYPES[other.type].isp || other.cloud);
     const order = wanFirst ? [WAN, LAN] : [LAN, WAN];
     for (const w of order) { const p = freePortIn(net, r, w); if (p >= 0) return p; }
     return -1;
@@ -187,6 +198,21 @@
     return ls.length;
   }
 
+  /** Internetanbieter, an dessen Leitung der Internet-Anschluss (WAN) des Routers hängt (oder null). */
+  function ispOf(net, r) {
+    const e = l2Endpoints(net, r.id, WAN).find(x => TYPES[x.dev.type].isp);
+    return e ? e.dev : null;
+  }
+
+  /** Modem ein/aus. Ohne Modem wird die Leitung zum Internetanbieter getrennt. Liefert die Zahl getrennter Leitungen. */
+  function setModem(net, r, on) {
+    r.modem = !!on;
+    if (on) return 0;
+    const ls = linksOf(net, r.id).filter(l => { const o = dev(net, l.a === r.id ? l.b : l.a); return o && TYPES[o.type].isp; });
+    net.links = net.links.filter(l => !ls.includes(l));
+    return ls.length;
+  }
+
   /** Steckt ein Kabel am Router zwischen LAN und WAN um. Liefert {ok, reason}. */
   function replug(net, linkId, routerId) {
     const l = net.links.find(x => x.id === linkId);
@@ -195,6 +221,8 @@
     if (l.kind !== 'kabel') return { ok: false, reason: 'Nur Kabel können umgesteckt werden.' };
     const key = l.a === routerId ? 'aPort' : 'bPort';
     const target = iface(l[key]) === WAN ? LAN : WAN;
+    const other = dev(net, l.a === routerId ? l.b : l.a);
+    if (other && TYPES[other.type].isp && target === LAN) return { ok: false, reason: `Die Leitung von ${other.name} gehört in den Internet-Anschluss (WAN) von ${r.name}.` };
     const p = freePortIn(net, r, target);
     if (p < 0) return { ok: false, reason: target === WAN ? `Der Internet-Anschluss von ${r.name} ist schon belegt.` : `Alle LAN-Anschlüsse von ${r.name} sind belegt.` };
     l[key] = p;
@@ -214,6 +242,12 @@
         if (!t.cable) return { ok: false, reason: `${d.name} hat keinen Netzwerkanschluss für ein Kabel. Verbinde es per WLAN mit einem Access Point.` };
         if (cableCount(net, d.id) >= t.cable)
           return { ok: false, reason: `Alle Anschlüsse von ${d.name} sind belegt (${t.cable} ${t.cable === 1 ? 'Anschluss' : 'Anschlüsse'}).` + (t.host ? ' Nutze einen Switch, um mehrere Geräte zu verbinden.' : '') };
+      }
+      // Router an die Leitung des Internetanbieters: nur über den Internet-Anschluss (WAN) mit Modem
+      const isp = [a, b].find(x => TYPES[x.type].isp), r = [a, b].find(x => TYPES[x.type].router);
+      if (isp && r) {
+        if (!r.modem) return { ok: false, reason: `${r.name} hat kein eingeschaltetes Modem und kann nicht direkt an die Leitung von ${isp.name}. Tippe den Router an und schalte das eingebaute Modem ein.` };
+        if (freePortIn(net, r, WAN) < 0) return { ok: false, reason: `Der Internet-Anschluss (WAN) von ${r.name} ist schon belegt.` };
       }
       return { ok: true };
     }
@@ -239,8 +273,9 @@
     if (!chk.ok) return chk;
     const l = { id: newId('l'), a: aId, b: bId, kind };
     const a = dev(net, aId), b = dev(net, bId);
-    if (TYPES[a.type].router) l.aPort = kind === 'wlan' ? WLAN_PORT : freeRouterPort(net, a, b);
-    if (TYPES[b.type].router) l.bPort = kind === 'wlan' ? WLAN_PORT : freeRouterPort(net, b, a);
+    const rport = (r, o) => kind === 'wlan' ? WLAN_PORT : TYPES[o.type].isp ? WAN : freeRouterPort(net, r, o);
+    if (TYPES[a.type].router) l.aPort = rport(a, b);
+    if (TYPES[b.type].router) l.bPort = rport(b, a);
     net.links.push(l);
     return { ok: true, link: l };
   }
@@ -262,7 +297,7 @@
       const ip = parseIP(p.ip), pre = parseMask(p.mask);
       return ip === null || pre === null ? null : { ip, prefix: pre };
     }
-    if (TYPES[d.type].host) {
+    if (TYPES[d.type].host || TYPES[d.type].isp) {
       const ip = parseIP(d.ip), pre = parseMask(d.mask);
       return ip === null || pre === null ? null : { ip, prefix: pre };
     }
@@ -314,7 +349,7 @@
   function devicesWithIP(net, ip) {
     const res = [];
     for (const d of net.devices) {
-      if (TYPES[d.type].host && parseIP(d.ip) === ip) res.push(d);
+      if ((TYPES[d.type].host || TYPES[d.type].isp) && parseIP(d.ip) === ip) res.push(d);
       if (TYPES[d.type].router) IFACES.forEach(i => { if (parseIP(d.ports[i].ip) === ip) res.push(d); });
     }
     return res;
@@ -322,12 +357,15 @@
 
   /**
    * Weg eines Pakets von einem Endgerät zu einer IP-Adresse.
-   * Ergebnis: {ok, path:[Geräte-IDs], target, error, hint}
+   * Ergebnis: {ok, path:[Geräte-IDs], target, error, hint, nat:[…], seenSrc}
    * Bei Fehlern enthält path den Weg bis zur Stelle, an der es nicht weitergeht.
+   * nat: Adressübersetzungen unterwegs ({router, inside, outside}); seenSrc: Absender,
+   * den das Ziel sieht (nach NAT die externe Adresse des Routers).
    */
   function route(net, srcId, dstIP) {
     const src = dev(net, srcId);
-    const fail = (path, error, hint) => ({ ok: false, path, error, hint: hint || '' });
+    const nat = [];
+    const fail = (path, error, hint) => ({ ok: false, path, error, hint: hint || '', nat });
     if (!src || !TYPES[src.type].host) return fail([srcId], 'Nur Endgeräte können Pakete senden.');
     if (!linksOf(net, srcId).length) return fail([srcId], `${src.name} ist mit nichts verbunden.`, TYPES[src.type].wlan && !TYPES[src.type].cable ? 'Verbinde es per WLAN mit einem Access Point.' : 'Verbinde es mit einem Kabel.');
     const sa = ifaceAddr(src, 0);
@@ -335,69 +373,148 @@
       if (parseIP(src.ip) === null) return fail([srcId], `${src.name} hat noch keine gültige IP-Adresse.`, src.dhcp ? 'Tippe das Gerät an und fordere per DHCP eine Adresse an.' : 'Tippe das Gerät an und trage eine IP-Adresse ein, z. B. 192.168.1.10.');
       return fail([srcId], `Die Subnetzmaske von ${src.name} ist ungültig.`, 'Üblich ist 255.255.255.0.');
     }
-    if (sa.ip === dstIP) return { ok: true, path: [srcId], target: src };
+    let seenSrc = sa.ip;
+    const done = (path, target) => ({ ok: true, path, target, nat, seenSrc });
+    if (sa.ip === dstIP) return done([srcId], src);
 
     let curId = srcId, curPort = 0, path = [srcId];
-    const visitedRouters = new Set();
-    for (let step = 0; step < 12; step++) {
+    const visited = new Set();
+    for (let step = 0; step < 16; step++) {
       const cd = dev(net, curId);
       const ca = ifaceAddr(cd, curPort);
       const eps = l2Endpoints(net, curId, curPort);
       if (sameNet(ca.ip, dstIP, ca.prefix)) {
         const hits = eps.filter(e => { const a = ifaceAddr(e.dev, e.port); return a && a.ip === dstIP; });
         if (hits.length > 1) return fail(path, `Die IP-Adresse ${ipStr(dstIP)} ist im Netz mehrfach vergeben (${hits.map(h => h.dev.name).join(', ')}).`, 'Jede IP-Adresse darf in einem Netz nur einmal vorkommen.');
-        if (hits.length === 1) return { ok: true, path: path.concat(hits[0].path.slice(1)), target: hits[0].dev };
+        if (hits.length === 1) return done(path.concat(hits[0].path.slice(1)), hits[0].dev);
+        // Im Netz eines Internetanbieters sind die Kunden nicht direkt verbunden: Der Anbieter stellt zu
+        const ispE = eps.find(e => TYPES[e.dev.type].isp);
+        if (ispE) {
+          const res = ispForward(net, ispE.dev, dstIP, path.concat(ispE.path.slice(1)));
+          return res.ok ? done(res.path, res.target) : fail(res.path, res.error, res.hint);
+        }
         const elsewhere = devicesWithIP(net, dstIP);
         let hint = `Kein Gerät im Netz ${netStr(ca.ip, ca.prefix)} hat diese Adresse.`;
         if (elsewhere.length) hint = `${elsewhere[0].name} hat die Adresse ${ipStr(dstIP)}, ist aber nicht mit diesem Netz verbunden.`;
         return fail(path, `Im Netz von ${cd.name} antwortet niemand unter ${ipStr(dstIP)}.`, hint);
       }
-      // Ziel liegt in einem anderen Netz → Gateway / Router nötig
-      let routerHit;
-      if (TYPES[cd.type].host) {
-        const gw = parseIP(cd.gw);
-        if (gw === null) return fail(path, `${cd.name}: Das Ziel ${ipStr(dstIP)} liegt in einem anderen Netz. Dafür braucht ${cd.name} ein Gateway.`, 'Trage beim Gerät als Gateway die IP-Adresse des Routers ein.');
-        if (!sameNet(gw, ca.ip, ca.prefix)) return fail(path, `Das Gateway ${ipStr(gw)} von ${cd.name} liegt nicht im eigenen Netz.`, 'Das Gateway muss im selben Netz liegen wie das Gerät selbst.');
-        routerHit = eps.find(e => { const a = ifaceAddr(e.dev, e.port); return TYPES[e.dev.type].router && a && a.ip === gw; });
-        if (!routerHit) {
-          const other = eps.find(e => { const a = ifaceAddr(e.dev, e.port); return a && a.ip === gw; });
-          if (other) return fail(path, `Das Gateway ${ipStr(gw)} ist ${other.dev.name} – das ist kein Router.`, 'Als Gateway muss ein Router eingetragen werden.');
-          return fail(path, `Das Gateway ${ipStr(gw)} ist von ${cd.name} aus nicht erreichbar.`, 'Ist der Router angeschlossen und hat sein Anschluss genau diese IP-Adresse?');
-        }
-      } else {
-        return fail(path, `${cd.name} kennt keinen Weg zu ${ipStr(dstIP)}.`);
+      // Ziel liegt in einem anderen Netz → weiter zum Gateway (Router oder Internetanbieter)
+      const isHost = TYPES[cd.type].host;
+      const gw = parseIP(isHost ? cd.gw : (cd.ports[WAN].gw || ''));
+      if (gw === null) {
+        if (isHost) return fail(path, `${cd.name}: Das Ziel ${ipStr(dstIP)} liegt in einem anderen Netz. Dafür braucht ${cd.name} ein Gateway.`, 'Trage beim Gerät als Gateway die IP-Adresse des Routers ein.');
+        return fail(path, `Der Router ${cd.name} kennt kein Netz, in dem ${ipStr(dstIP)} liegt.`, 'Ein Router kennt die Netze, an die er angeschlossen ist. Alles andere schickt er über den Internet-Anschluss (WAN) weiter – dafür braucht er dort ein Gateway, z. B. vom Internetanbieter.');
       }
-      path = path.concat(routerHit.path.slice(1));
-      const r = routerHit.dev;
-      if (visitedRouters.has(r.id)) return fail(path, 'Das Paket läuft im Kreis.');
-      visitedRouters.add(r.id);
+      if (!sameNet(gw, ca.ip, ca.prefix)) return fail(path, `Das Gateway ${ipStr(gw)} von ${cd.name} liegt nicht im eigenen Netz.`, 'Das Gateway muss im selben Netz liegen wie das Gerät selbst.');
+      const hop = eps.find(e => { const a = ifaceAddr(e.dev, e.port); return (TYPES[e.dev.type].router || TYPES[e.dev.type].isp) && a && a.ip === gw; });
+      if (!hop) {
+        const other = eps.find(e => { const a = ifaceAddr(e.dev, e.port); return a && a.ip === gw; });
+        if (other) return fail(path, `Das Gateway ${ipStr(gw)} ist ${other.dev.name} – das ist kein Router.`, 'Als Gateway muss ein Router eingetragen werden.');
+        return fail(path, `Das Gateway ${ipStr(gw)} ist von ${cd.name} aus nicht erreichbar.`, 'Ist der Router angeschlossen und hat sein Anschluss genau diese IP-Adresse?');
+      }
+      path = path.concat(hop.path.slice(1));
+      const r = hop.dev;
+      if (TYPES[r.type].isp) {
+        const res = ispForward(net, r, dstIP, path);
+        return res.ok ? done(res.path, res.target) : fail(res.path, res.error, res.hint);
+      }
+      if (visited.has(r.id)) return fail(path, 'Das Paket läuft im Kreis.');
+      visited.add(r.id);
       // Ziel ist ein Anschluss des Routers selbst?
-      if (IFACES.some(i => parseIP(r.ports[i].ip) === dstIP)) return { ok: true, path, target: r };
-      // Passenden Anschluss suchen (direkt angeschlossene Netze: LAN oder WAN)
+      if (IFACES.some(i => parseIP(r.ports[i].ip) === dstIP)) return done(path, r);
+      // Passenden Anschluss suchen: zuerst die direkt angeschlossenen Netze (LAN oder WAN) …
       const used = new Set(linksOf(net, r.id).map(l => iface(portOf(l, r.id))));
       let outPort = -1;
       IFACES.forEach(i => {
         const a = ifaceAddr(r, i);
-        if (outPort < 0 && a && used.has(i) && i !== routerHit.port && sameNet(a.ip, dstIP, a.prefix)) outPort = i;
+        if (outPort < 0 && a && used.has(i) && i !== hop.port && sameNet(a.ip, dstIP, a.prefix)) outPort = i;
       });
-      if (outPort < 0) return fail(path, `Der Router ${r.name} kennt kein Netz, in dem ${ipStr(dstIP)} liegt.`, 'Ein Router kennt die Netze, an die er angeschlossen ist (Heimnetz und Internet-Anschluss). Prüfe seine IP-Adressen und ob das Kabel im richtigen Anschluss steckt.');
+      // … sonst alles Unbekannte über den Internet-Anschluss (WAN) hinaus
+      if (outPort < 0 && hop.port !== WAN && used.has(WAN) && ifaceAddr(r, WAN) && parseIP(r.ports[WAN].gw || '') !== null) outPort = WAN;
+      if (outPort < 0) return fail(path, `Der Router ${r.name} kennt kein Netz, in dem ${ipStr(dstIP)} liegt.`, 'Ein Router kennt die Netze, an die er angeschlossen ist (Heimnetz und Internet-Anschluss). Alles andere schickt er ins Internet – dafür muss sein Internet-Anschluss mit einem Internetanbieter verbunden sein. Prüfe auch, ob das Kabel im richtigen Anschluss steckt.');
+      const wan = ifaceAddr(r, WAN);
+      if (hop.port === WAN && outPort === LAN && wan && !isPrivate(wan.ip))
+        return fail(path, `${r.name} lässt die Anfrage aus dem Internet nicht ins Heimnetz.`, 'Geräte im Heimnetz haben lokale Adressen. Der Router lässt nur Antworten auf Anfragen herein, die vorher aus dem Heimnetz gestellt wurden (NAT).');
+      // NAT: Pakete aus dem Heimnetz gehen mit der externen Adresse des Routers hinaus
+      if (hop.port === LAN && outPort === WAN) {
+        nat.push({ router: r.id, inside: seenSrc, outside: wan.ip });
+        seenSrc = wan.ip;
+      }
       curId = r.id; curPort = outPort;
     }
     return fail(path, 'Das Paket hat zu viele Stationen passiert und wurde verworfen.');
   }
 
-  /** Hin- und Rückweg (z. B. Ping oder Anfrage/Antwort). */
+  /**
+   * Weiterleitung im Internet: Ein Internetanbieter stellt Pakete an seine eigenen
+   * Kunden zu oder reicht sie an andere, per Kabel verbundene Internetanbieter weiter.
+   */
+  function ispForward(net, isp, dstIP, path) {
+    const fail = (p, error, hint) => ({ ok: false, path: p, error, hint: hint || '' });
+    if (isPrivate(dstIP) || isApipa(dstIP))
+      return fail(path, `${isp.name} leitet das Paket nicht weiter: ${ipStr(dstIP)} ist eine lokale (private) Adresse.`, 'Lokale Adressen wie 192.168.… gibt es in sehr vielen Heimnetzen gleichzeitig. Im Internet sind sie deshalb nicht erreichbar – nur öffentliche Adressen.');
+    const queue = [{ d: isp, path }];
+    const seen = new Set([isp.id]);
+    while (queue.length) {
+      const cur = queue.shift();
+      const a = ifaceAddr(cur.d, 0);
+      const eps = l2Endpoints(net, cur.d.id, 0);
+      if (a && a.ip === dstIP) return { ok: true, path: cur.path, target: cur.d };
+      if (a && sameNet(a.ip, dstIP, a.prefix)) {
+        const hits = eps.filter(e => { const x = ifaceAddr(e.dev, e.port); return x && x.ip === dstIP; });
+        if (hits.length > 1) return fail(cur.path, `Die IP-Adresse ${ipStr(dstIP)} ist bei ${cur.d.name} mehrfach vergeben (${hits.map(h => h.dev.name).join(', ')}).`, 'Jede öffentliche IP-Adresse gibt es im Internet nur einmal.');
+        if (hits.length === 1) return { ok: true, path: cur.path.concat(hits[0].path.slice(1)), target: hits[0].dev };
+        return fail(cur.path, `${cur.d.name} hat keinen Kunden mit der Adresse ${ipStr(dstIP)}.`, 'Prüfe die Adresse. Angeschlossene Geräte bekommen ihre Adresse vom Internetanbieter.');
+      }
+      for (const e of eps) if (TYPES[e.dev.type].isp && !seen.has(e.dev.id)) {
+        seen.add(e.dev.id);
+        queue.push({ d: e.dev, path: cur.path.concat(e.path.slice(1)) });
+      }
+    }
+    return fail(path, `Im Internet ist die Adresse ${ipStr(dstIP)} nicht bekannt.`, 'Ist das Ziel an einen Internetanbieter angeschlossen? Verschiedene Internetanbieter müssen miteinander verbunden sein.');
+  }
+
+  /** Hin- und Rückweg (z. B. Ping oder Anfrage/Antwort). Die Antwort geht an den Absender, den das Ziel sieht. */
   function roundTrip(net, srcId, dstIP) {
     const there = route(net, srcId, dstIP);
     if (!there.ok) return { ok: false, there, error: there.error, hint: there.hint };
     const target = there.target;
     if (TYPES[target.type].host && target.id !== srcId) {
-      const src = dev(net, srcId);
-      const back = route(net, target.id, parseIP(src.ip));
+      const back = route(net, target.id, there.seenSrc);
       if (!back.ok) return { ok: false, there, back, target, error: `Die Anfrage kommt bei ${target.name} an, aber die Antwort findet nicht zurück: ${back.error}`, hint: back.hint };
+      // NAT rückgängig machen: Der Router weiß noch, wem im Heimnetz die Antwort gehört
+      back.unnat = [];
+      for (let k = there.nat.length - 1; k >= 0; k--) {
+        const n = there.nat[k];
+        if (back.target.id !== n.router) break;
+        const hit = l2Endpoints(net, n.router, LAN).find(e => { const a = ifaceAddr(e.dev, e.port); return a && a.ip === n.inside; });
+        if (!hit) return { ok: false, there, back, target, error: `Die Antwort kommt bei ${back.target.name} an, aber ${ipStr(n.inside)} ist im Heimnetz nicht mehr zu finden.` };
+        back.path = back.path.concat(hit.path.slice(1));
+        back.target = hit.dev;
+        back.unnat.push(n);
+      }
       return { ok: true, there, back, target };
     }
     return { ok: true, there, back: { ok: true, path: there.path.slice().reverse() }, target };
+  }
+
+  /** Kurzinfo zur NAT-Übersetzung für die Ergebnismeldung (oder null). */
+  function natInfo(net, rt) {
+    if (!rt.ok || !rt.there.nat || !rt.there.nat.length) return null;
+    const first = rt.there.nat[0], last = rt.there.nat[rt.there.nat.length - 1];
+    const r = dev(net, last.router);
+    return { router: r ? r.name : '', inside: ipStr(first.inside), outside: ipStr(last.outside), target: rt.target.name };
+  }
+
+  /** Erklärt die Adressübersetzung (NAT) für das Protokoll. */
+  function natNote(net, rt, dir) {
+    const list = dir === 'back' ? (rt.back && rt.back.unnat) || [] : rt.there.nat || [];
+    return list.map(n => {
+      const r = dev(net, n.router);
+      return dir === 'back'
+        ? `NAT in ${r ? r.name : 'Router'}: Empfänger ${ipStr(n.outside)} wird wieder zu ${ipStr(n.inside)}`
+        : `NAT in ${r ? r.name : 'Router'}: Absender ${ipStr(n.inside)} wird zu ${ipStr(n.outside)}`;
+    }).join(' · ');
   }
 
   // ------------------------------------------------------------------ Aktionen: Ping und Browser
@@ -407,9 +524,9 @@
     const dstIP = parseIP(dstText || '');
     if (dstIP === null) return { ok: false, steps: [], error: `„${dstText || ''}" ist keine gültige IPv4-Adresse.`, hint: 'Eine IPv4-Adresse besteht aus vier Zahlen von 0 bis 255, getrennt durch Punkte.' };
     const rt = roundTrip(net, srcId, dstIP);
-    const steps = [{ kind: 'request', label: 'Ping-Anfrage', proto: 'ICMP', text: `${src.name} → ${ipStr(dstIP)}: „Bist du da?"`, path: rt.there.path, ok: rt.there.ok }];
-    if (rt.back) steps.push({ kind: 'response', label: 'Ping-Antwort', proto: 'ICMP', text: `${rt.target.name} → ${src.name}: „Ja, ich bin da!"`, path: rt.back.path, ok: rt.back.ok });
-    return { ok: rt.ok, steps, error: rt.error, hint: rt.hint, target: rt.target ? rt.target.id : null };
+    const steps = [{ kind: 'request', label: 'Ping-Anfrage', proto: 'ICMP', text: `${src.name} → ${ipStr(dstIP)}: „Bist du da?"`, note: natNote(net, rt, 'there'), path: rt.there.path, ok: rt.there.ok }];
+    if (rt.back) steps.push({ kind: 'response', label: 'Ping-Antwort', proto: 'ICMP', text: `${rt.target.name} → ${rt.back.ok && rt.there.nat.length ? ipStr(rt.there.seenSrc) : src.name}: „Ja, ich bin da!"`, note: natNote(net, rt, 'back'), path: rt.back.path, ok: rt.back.ok });
+    return { ok: rt.ok, steps, error: rt.error, hint: rt.hint, target: rt.target ? rt.target.id : null, nat: natInfo(net, rt) };
   }
 
   function parseURL(url) {
@@ -431,7 +548,7 @@
       const dnsIP = parseIP(src.dns || '');
       if (dnsIP === null) return res(false, { error: `${src.name} kennt keinen DNS-Server und kann den Namen ${u.host} nicht in eine IP-Adresse übersetzen.`, hint: 'Trage beim Gerät die IP-Adresse eines DNS-Servers ein.' });
       const rt = roundTrip(net, srcId, dnsIP);
-      steps.push({ kind: 'request', label: 'DNS-Anfrage', proto: 'UDP · Port 53', text: `Welche IP-Adresse hat ${u.host}?`, path: rt.there.path, ok: rt.there.ok });
+      steps.push({ kind: 'request', label: 'DNS-Anfrage', proto: 'UDP · Port 53', text: `Welche IP-Adresse hat ${u.host}?`, note: natNote(net, rt, 'there'), path: rt.there.path, ok: rt.there.ok });
       if (!rt.ok) {
         if (rt.back) steps.push({ kind: 'response', label: 'DNS-Antwort', proto: 'UDP · Port 53', text: '', path: rt.back.path, ok: false });
         return res(false, { error: 'DNS-Server nicht erreichbar: ' + rt.error, hint: rt.hint });
@@ -445,10 +562,10 @@
         return res(false, { error: `Der DNS-Server kennt den Namen ${u.host} nicht.`, hint: 'Prüfe die Schreibweise der Adresse oder ergänze den Eintrag beim DNS-Server.' });
       }
       ip = parseIP(entry.ip);
-      steps.push({ kind: 'response', label: 'DNS-Antwort', proto: 'UDP · Port 53', text: `${u.host} hat die IP-Adresse ${ipStr(ip)}`, path: rt.back.path, ok: true });
+      steps.push({ kind: 'response', label: 'DNS-Antwort', proto: 'UDP · Port 53', text: `${u.host} hat die IP-Adresse ${ipStr(ip)}`, note: natNote(net, rt, 'back'), path: rt.back.path, ok: true });
     }
     const rt = roundTrip(net, srcId, ip);
-    steps.push({ kind: 'request', label: 'HTTP-Request', proto: 'TCP · Port 80', text: `GET ${u.path} – „Schick mir bitte die Webseite ${u.host}"`, path: rt.there.path, ok: rt.there.ok });
+    steps.push({ kind: 'request', label: 'HTTP-Request', proto: 'TCP · Port 80', text: `GET ${u.path} – „Schick mir bitte die Webseite ${u.host}"`, note: natNote(net, rt, 'there'), path: rt.there.path, ok: rt.there.ok });
     if (!rt.ok) {
       if (rt.back) steps.push({ kind: 'response', label: 'HTTP-Response', proto: 'TCP · Port 80', text: '', path: rt.back.path, ok: false });
       return res(false, { error: 'Webserver nicht erreichbar: ' + rt.error, hint: rt.hint });
@@ -456,8 +573,8 @@
     const ws = rt.target;
     if (!(ws.services && ws.services.web && ws.services.web.on))
       return res(false, { error: `Unter ${ipStr(ip)} (${ws.name}) läuft kein Webserver.`, hint: 'Schalte beim Server den Webserver-Dienst ein.' });
-    steps.push({ kind: 'response', label: 'HTTP-Response', proto: 'TCP · Port 80', text: '200 OK – hier ist die Webseite', path: rt.back.path, ok: true });
-    return res(true, { page: { host: u.host, ip: ipStr(ip), title: ws.services.web.title || '', text: ws.services.web.text || '' }, target: ws.id });
+    steps.push({ kind: 'response', label: 'HTTP-Response', proto: 'TCP · Port 80', text: '200 OK – hier ist die Webseite', note: natNote(net, rt, 'back'), path: rt.back.path, ok: true });
+    return res(true, { page: { host: u.host, ip: ipStr(ip), title: ws.services.web.title || '', text: ws.services.web.text || '' }, target: ws.id, nat: natInfo(net, rt) });
   }
 
   // ------------------------------------------------------------------ DHCP
@@ -519,44 +636,56 @@
     const steps = [];
     const res = (ok, extra) => Object.assign({ ok, steps }, extra);
     const P_REQ = 'UDP · Port 67', P_RESP = 'UDP · Port 68';
-    if (!h || !TYPES[h.type].host) return res(false, { error: 'Nur Endgeräte können per DHCP eine Adresse anfordern.' });
-    if (!linksOf(net, hostId).length) return res(false, { error: `${h.name} ist mit nichts verbunden und kann niemanden nach einer Adresse fragen.`, hint: TYPES[h.type].cable ? 'Verbinde es mit einem Kabel.' : 'Verbinde es per WLAN mit einem Access Point.' });
-    const eps = l2Endpoints(net, hostId, 0);
-    const servers = eps.filter(e => TYPES[e.dev.type].router && ifaceAddr(e.dev, e.port) && dhcpOf(e.dev.ports[e.port]).on);
+    // Ein Router fragt an seinem Internet-Anschluss (WAN), z. B. beim Internetanbieter
+    const isRouter = h && TYPES[h.type].router;
+    if (!h || !(TYPES[h.type].host || isRouter)) return res(false, { error: 'Nur Endgeräte und Router können per DHCP eine Adresse anfordern.' });
+    const myLinks = linksOf(net, hostId).filter(l => !isRouter || iface(portOf(l, hostId)) === WAN);
+    if (!myLinks.length) return res(false, { error: isRouter ? `Am Internet-Anschluss (WAN) von ${h.name} ist nichts angeschlossen.` : `${h.name} ist mit nichts verbunden und kann niemanden nach einer Adresse fragen.`, hint: isRouter ? 'Verbinde den Router mit einem Internetanbieter.' : TYPES[h.type].cable ? 'Verbinde es mit einem Kabel.' : 'Verbinde es per WLAN mit einem Access Point.' });
+    const eps = l2Endpoints(net, hostId, isRouter ? WAN : 0);
+    const servers = eps.filter(e => (TYPES[e.dev.type].isp && ifaceAddr(e.dev, 0)) || (TYPES[e.dev.type].router && e.port === LAN && ifaceAddr(e.dev, e.port) && dhcpOf(e.dev.ports[e.port]).on));
     const bcPaths = eps.length ? eps.map(e => e.path) : [[hostId]];
     steps.push({ kind: 'request', label: 'DHCP-Discover', proto: P_REQ + ' · an alle', text: `${h.name} an alle im Netz: „Ich brauche eine IP-Adresse! Gibt es hier einen DHCP-Server?"`, paths: bcPaths, path: bcPaths[0], ok: servers.length > 0 });
     if (!servers.length) {
       const router = eps.find(e => TYPES[e.dev.type].router);
       let hint = 'Ein DHCP-Server (meist im Router) muss im selben Netz eingeschaltet sein.';
+      if (isRouter) return res(false, { error: 'Kein DHCP-Server hat geantwortet.', hint: 'Schließe den Internet-Anschluss (WAN) an einen Internetanbieter an oder trage die externe Adresse von Hand ein.' });
       if (router && router.port === WAN) hint = `Das Gerät hängt am Internet-Anschluss (WAN) von ${router.dev.name}. Adressen per DHCP gibt es im Heimnetz: Stecke das Kabel an einen LAN-Anschluss.`;
       else if (router && !ifaceAddr(router.dev, router.port)) hint = `${router.dev.name} braucht im Heimnetz (LAN) zuerst eine eigene IP-Adresse. Danach kannst du dort den DHCP-Server einschalten.`;
       else if (router) hint = `Tippe ${router.dev.name} an und schalte im Heimnetz (LAN) den DHCP-Server ein.`;
       // Wie echte Rechner: ohne DHCP-Server eine Notfall-Adresse (APIPA) aus 169.254.0.0/16 wählen
       return res(false, { error: 'Kein DHCP-Server hat geantwortet.', hint, apipa: apipaLease(h, eps) });
     }
-    const srv = servers[0];
+    const srv = servers.find(e => TYPES[e.dev.type].isp) || servers[0];
     const r = srv.dev, port = srv.port;
     const ra = ifaceAddr(r, port);
-    const range = dhcpRange(r, port);
+    const ispSrv = !!TYPES[r.type].isp;
+    const range = ispSrv ? dhcpDefaultRange(ra.ip, ra.prefix) : dhcpRange(r, port);
     const back = srv.path.slice().reverse();
     // Freie Adresse suchen: Bisherige Adresse behalten, wenn möglich
     const used = new Set();
-    for (const e of eps) { const a = ifaceAddr(e.dev, e.port); if (a) used.add(a.ip); }
+    // Beim Internetanbieter zählen alle seine Kunden (sie sind untereinander nicht direkt verbunden)
+    const known = ispSrv ? eps.concat(l2Endpoints(net, r.id, 0).filter(e => e.dev.id !== hostId)) : eps;
+    for (const e of known) { const a = ifaceAddr(e.dev, e.port); if (a) used.add(a.ip); }
     let ip = null;
-    const own = parseIP(h.ip || '');
+    const own = parseIP((isRouter ? h.ports[WAN].ip : h.ip) || '');
     if (own !== null && own >= range.from && own <= range.to && !used.has(own)) ip = own;
     for (let c = range.from; ip === null && c <= range.to; c++) if (!used.has(c)) ip = c;
     if (ip === null) {
       steps.push({ kind: 'response', label: 'DHCP-Offer', proto: P_RESP, text: `${r.name}: „Tut mir leid, alle Adressen sind vergeben."`, path: back, ok: true, bad: true });
-      return res(false, { error: `Der DHCP-Server von ${r.name} hat keine freie Adresse mehr (${ipStr(range.from)} bis ${ipStr(range.to)}).`, hint: 'Vergrößere beim Router den Adressbereich.' });
+      return res(false, { error: `Der DHCP-Server von ${r.name} hat keine freie Adresse mehr (${ipStr(range.from)} bis ${ipStr(range.to)}).`, hint: ispSrv ? 'Verbinde das Gerät mit einem anderen Internetanbieter.' : 'Vergrößere beim Router den Adressbereich.' });
     }
-    const cfg = dhcpOf(r.ports[port]);
-    const dnsIP = parseIP(cfg.dns || '');
+    // DNS-Server: beim Internetanbieter eingestellt; ein Heimrouter gibt sonst den DNS-Server seines Anbieters weiter
+    const dnsIP = ispSrv ? parseIP(r.dns || '') : firstIP(dhcpOf(r.ports[port]).dns, r.ports[WAN].dns);
     const lease = { ip: ipStr(ip), mask: ipStr(maskOf(ra.prefix)), gw: ipStr(ra.ip), dns: dnsIP === null ? '' : ipStr(dnsIP) };
     steps.push({ kind: 'response', label: 'DHCP-Offer', proto: P_RESP, text: `${r.name}: „Du kannst die Adresse ${lease.ip} haben."`, path: back, ok: true });
     steps.push({ kind: 'request', label: 'DHCP-Request', proto: P_REQ + ' · an alle', text: `${h.name} an alle: „Ich nehme die Adresse ${lease.ip} von ${r.name}!"`, paths: bcPaths, path: srv.path, ok: true });
     steps.push({ kind: 'response', label: 'DHCP-Ack', proto: P_RESP, text: `${r.name}: „Bestätigt! IP ${lease.ip}, Maske ${lease.mask}, Gateway ${lease.gw}` + (lease.dns ? `, DNS ${lease.dns}` : '') + '"', path: back, ok: true });
-    return res(true, { lease, server: r.id });
+    return res(true, { lease, server: r.id, isp: ispSrv });
+  }
+
+  function firstIP(...list) {
+    for (const x of list) { const ip = parseIP(x || ''); if (ip !== null) return ip; }
+    return null;
   }
 
   const APIPA_NET = 0xa9fe0000; // 169.254.0.0
@@ -582,7 +711,27 @@
 
   /** Übernimmt eine DHCP-Zuteilung in das Gerät. */
   function applyLease(d, lease) {
-    d.ip = lease.ip; d.mask = lease.mask; d.gw = lease.gw; d.dns = lease.dns;
+    const t = TYPES[d.type].router ? d.ports[WAN] : d;
+    t.ip = lease.ip; t.mask = lease.mask; t.gw = lease.gw; t.dns = lease.dns;
+  }
+
+  /**
+   * Nach einer Änderung des DNS-Servers beim Internetanbieter: Router und Geräte, die ihre
+   * Adresse per DHCP bekommen haben, übernehmen den neuen DNS-Server (wie bei einer Verlängerung).
+   * Liefert die Zahl der geänderten Geräte.
+   */
+  function refreshDns(net) {
+    let n = 0;
+    const order = net.devices.filter(d => TYPES[d.type].router).concat(net.devices.filter(d => TYPES[d.type].host && d.dhcp));
+    for (const d of order) {
+      const cur = TYPES[d.type].router ? d.ports[WAN] : d;
+      const own = parseIP(cur.ip || '');
+      if (own === null || isApipa(own)) continue;
+      const r = dhcp(net, d.id);
+      if (!r.ok || r.lease.ip !== ipStr(own) || (TYPES[d.type].router && !r.isp)) continue;
+      if ((cur.dns || '') !== r.lease.dns) { cur.dns = r.lease.dns; n++; }
+    }
+    return n;
   }
 
   /**
@@ -597,7 +746,8 @@
     const own = ifaceAddr(h, 0);
     // Bezugsnetz: zuerst ein Router-Anschluss, sonst ein anderes Endgerät
     const withAddr = eps.map(e => ({ e, a: ifaceAddr(e.dev, e.port) })).filter(x => x.a && !ipProblem(ipStr(x.a.ip), ipStr(maskOf(x.a.prefix))));
-    const ref = withAddr.find(x => TYPES[x.e.dev.type].router) || withAddr[0];
+    const isGw = x => TYPES[x.e.dev.type].router || TYPES[x.e.dev.type].isp;
+    const ref = withAddr.find(isGw) || withAddr[0];
     if (ref) {
       const used = new Set(withAddr.map(x => x.a.ip));
       const ownOk = own && sameNet(own.ip, ref.a.ip, ref.a.prefix) && own.prefix === ref.a.prefix && !used.has(own.ip) && !ipProblem(h.ip, h.mask);
@@ -608,7 +758,7 @@
         for (let i = start; i < size - 1; i++) if (!used.has(base + i)) { out.ip = ipStr(base + i); break; }
         if (out.ip) out.mask = ipStr(maskOf(ref.a.prefix));
       }
-      const router = withAddr.find(x => TYPES[x.e.dev.type].router);
+      const router = withAddr.find(isGw);
       if (router && parseIP(h.gw || '') !== router.a.ip) out.gw = ipStr(router.a.ip);
     }
     if (!(h.dns || '').trim()) {
@@ -645,7 +795,7 @@
     TYPES, DESCRIPTIONS, parseIP, ipStr, parseMask, sameNet, netStr, ipProblem, isPrivate,
     emptyNetwork, createDevice, dev, linksOf, portOf, canLink, addLink, removeDevice, removeLink,
     ifaceAddr, l2Endpoints, route, roundTrip, ping, browse, parseURL, logEvent, topology, clone, newId,
-    dhcpOf, dhcpRange, dhcp, applyLease, suggest, suggestPortIP, iface, ifaceName, replug, WAN, LAN, wlanHub, setRouterWlan, isApipa,
+    dhcpOf, dhcpRange, dhcpDefaultRange, dhcp, applyLease, refreshDns, suggest, suggestPortIP, iface, ifaceName, replug, WAN, LAN, wlanHub, setRouterWlan, isApipa, setModem, ispOf,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = NW;
   else root.NW = NW;

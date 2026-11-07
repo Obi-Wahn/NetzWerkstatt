@@ -133,7 +133,7 @@
       id: 'webseite',
       title: 'Eine Webseite aufrufen',
       level: 2,
-      intro: 'Im Internet (rechts) stehen ein Webserver und ein DNS-Server. Schließe einen PC an den Heimrouter an und rufe im Browser die Seite http://www.netzwerkstatt.de auf. Beobachte genau, welche Pakete unterwegs sind!',
+      intro: 'Rechts siehst du den Internetanbieter. Bei ihm stehen ein Webserver und ein DNS-Server im Internet. Schließe einen PC an den Heimrouter an und rufe im Browser die Seite http://www.netzwerkstatt.de auf. Beobachte genau, welche Pakete unterwegs sind!',
       manual: true,
       tip: 'Der Router hat zwei IP-Adressen: eine lokale im Heimnetz (LAN, 192.168.178.1) und eine externe am Internet-Anschluss (WAN, 203.0.113.10). Dein PC braucht eine IP-Adresse im Heimnetz, den Router als Gateway und den DNS-Server 203.0.113.53.',
       think: 'Warum braucht der PC einen DNS-Server, obwohl er doch nur eine Webseite laden will? Was würde passieren, wenn du statt des Namens direkt http://203.0.113.80 eingibst?',
@@ -187,7 +187,7 @@
       level: 0,
       free: true,
       intro: 'Hier kannst du ohne Vorgaben eigene Netzwerke bauen und ausprobieren.',
-      tip: 'Ideen: Verbinde zwei Netze mit einem Router. Baue einen eigenen Webserver mit DNS-Eintrag. Was passiert, wenn zwei Geräte dieselbe IP-Adresse haben?',
+      tip: 'Ideen: Schließe deinen Heimrouter an einen Internetanbieter an und stelle beim Anbieter einen Webserver und einen DNS-Server ins Internet. Rufe die Seite dann vom Heimnetz aus auf und achte auf NAT im Protokoll. Was passiert, wenn ein Server im Internet einen PC in deinem Heimnetz anpingen will? Was passiert, wenn zwei Geräte dieselbe IP-Adresse haben?',
       goals: [],
       start: () => NW.emptyNetwork(),
       solution: null,
@@ -209,12 +209,12 @@
   function internetStart() {
     return build(({ add, link }) => {
       const r = add('r', 'router', 360, 280, { name: 'Heimrouter', locked: true });
-      r.ports[0].ip = '203.0.113.10';
+      Object.assign(r.ports[0], { ip: '203.0.113.10', gw: '203.0.113.1', dns: '203.0.113.53' });
       r.ports[1].ip = '192.168.178.1';
-      add('inet', 'switch', 560, 280, { name: 'Internet', locked: true, cloud: true });
-      add('dns', 'server', 760, 160, { name: 'DNS-Server', locked: true, ip: '203.0.113.53', gw: '203.0.113.10',
+      add('inet', 'isp', 560, 280, { name: 'Internetanbieter', locked: true, ip: '203.0.113.1', dns: '203.0.113.53' });
+      add('dns', 'server', 760, 160, { name: 'DNS-Server', locked: true, ip: '203.0.113.53', gw: '203.0.113.1',
         services: { web: { on: false, title: '', text: '' }, dns: { on: true, entries: [{ name: 'www.netzwerkstatt.de', ip: '203.0.113.80' }] } } });
-      add('web', 'server', 760, 400, { name: 'Webserver', locked: true, ip: '203.0.113.80', gw: '203.0.113.10',
+      add('web', 'server', 760, 400, { name: 'Webserver', locked: true, ip: '203.0.113.80', gw: '203.0.113.1',
         services: { web: { on: true, title: 'Willkommen in der NetzWerkstatt!', text: 'Glückwunsch – dein PC hat diese Seite über DNS, den Router und das Internet geladen.' }, dns: { on: false, entries: [] } } });
       link('r', 'inet', 'kabel', { locked: true });
       link('inet', 'dns', 'kabel', { locked: true });
