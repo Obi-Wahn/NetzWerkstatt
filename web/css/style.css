@@ -356,11 +356,23 @@ select { font: inherit; width: 100%; padding: 8px; border: 1px solid var(--line)
 .toast.ok { background: var(--ok); color: var(--on-color); }
 
 /* ---------------------------------------------------------------- Tablet hochkant / schmale Fenster */
-/* Wenn ein Gerät gewählt ist: Aufgabe kompakt, damit die Einstellungen sichtbar bleiben */
-.side.has-sel #task-intro, .side.has-sel #task-tip-wrap, .side.has-sel #task-think-wrap { display: none; }
-.side.has-sel .goals li { padding-top: 4px; padding-bottom: 4px; font-size: .86em; }
-.side.has-sel .goals li::before { top: 5px; }
-.side.has-sel .goals li.done::after { top: 8px; }
+/* Einstellungsfenster direkt am Gerät (große Bildschirme) */
+.inspector { position: relative; }
+.inspector.floating { position: absolute; z-index: 5; width: 310px; max-height: calc(100% - 16px); overflow-y: auto; overscroll-behavior: contain;
+  box-shadow: 0 10px 30px rgba(20, 35, 60, .22), 0 2px 6px rgba(20, 35, 60, .12); padding: 12px 14px; }
+.insp-close { position: absolute; top: 6px; right: 6px; z-index: 1; min-height: 34px; min-width: 34px; padding: 4px 8px; }
+.inspector .insp-head, .inspector > h3 { padding-right: 34px; }
+@media (max-width: 860px) {
+  /* Tablet hochkant: Einstellungen als Leiste unten, die Arbeitsfläche bleibt darüber sichtbar */
+  .inspector.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; max-height: 46vh; overflow-y: auto; overscroll-behavior: contain;
+    border-radius: 16px 16px 0 0; box-shadow: 0 -8px 28px rgba(20, 35, 60, .22); padding-bottom: max(14px, env(safe-area-inset-bottom)); }
+  body.has-sheet .screen.editor { padding-bottom: 46vh; }
+  /* Wenn ein Gerät gewählt ist: Aufgabe kompakt, damit die Einstellungen sichtbar bleiben */
+  .side.has-sel #task-intro, .side.has-sel #task-tip-wrap, .side.has-sel #task-think-wrap { display: none; }
+  .side.has-sel .goals li { padding-top: 4px; padding-bottom: 4px; font-size: .86em; }
+  .side.has-sel .goals li::before { top: 5px; }
+  .side.has-sel .goals li.done::after { top: 8px; }
+}
 @media (max-width: 1100px) {
   .workspace { grid-template-columns: 84px minmax(0, 1fr) 290px; }
   .tool-hint { flex-basis: 100%; padding-left: 2px; }

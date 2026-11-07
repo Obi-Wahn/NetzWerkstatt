@@ -252,7 +252,7 @@
   });
 
   const HINTS = {
-    move: '',
+    move: 'Tippe ein Gerät oder eine Verbindung an, um es einzustellen und zu testen.',
     kabel: 'Tippe nacheinander auf die zwei Geräte, die du mit einem Kabel verbinden willst.',
     wlan: 'Tippe auf einen Access Point oder Router und dann auf ein Tablet oder Smartphone.',
     bluetooth: 'Tippe auf ein Smartphone, Tablet oder einen PC und dann auf die Kopfhörer.',
@@ -260,6 +260,8 @@
   };
   function setTool(t) {
     S.tool = t; S.pending = null;
+    // Beim Verbinden oder Löschen stört das Einstellungsfenster nur
+    if (t !== 'move' && S.selected && S.net) { S.selected = null; renderInspector(); }
     document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
     $('tool-hint').textContent = HINTS[t];
     if (S.net) renderCanvas();
@@ -286,6 +288,7 @@
     kinds.filter(k => k.kind === S.netKind).forEach(k => k.devices.forEach(id => highlight.add(id)));
     NWView.render($('canvas'), S.net, { selected: S.selected, pending: S.pending, highlight, v6: S.v6 });
     renderNetKinds(kinds);
+    positionInspector();
   }
 
   /** Anzeige unten auf der Arbeitsfläche: Welche Netzarten (PAN, LAN, MAN, WAN) stecken im Aufbau? */
@@ -571,11 +574,68 @@
     store.set('nw-open', JSON.stringify(openSecs));
   }, true);
 
+  // ---------------------------------------------------------------- Einstellungsfenster am Gerät
+  // Auf großen Bildschirmen schwebt das Fenster direkt neben dem angetippten Gerät
+  // auf der Arbeitsfläche. Auf schmalen Bildschirmen (Tablet hochkant) steht es unter der Arbeitsfläche.
+  const wide = window.matchMedia('(min-width: 861px)');
+  function placeInspectorBox() {
+    const target = wide.matches ? document.querySelector('.canvas-wrap') : document.querySelector('.side');
+    if (insp.parentElement !== target) target.appendChild(insp);
+    insp.classList.toggle('floating', wide.matches);
+  }
+  /** Schiebt das Fenster neben das gewählte Gerät (bzw. neben die Mitte der gewählten Verbindung). */
+  function positionInspector() {
+    if (!wide.matches || insp.hidden || !S.selected) return;
+    const link = S.net.links.find(l => l.id === S.selected);
+    const d = NW.dev(S.net, S.selected);
+    let x, y;
+    if (link) { const a = NW.dev(S.net, link.a), b = NW.dev(S.net, link.b); x = (a.x + b.x) / 2; y = (a.y + b.y) / 2; }
+    else if (d) { x = d.x; y = d.y; }
+    else return;
+    const m = canvas.getScreenCTM();
+    const wrap = insp.parentElement.getBoundingClientRect();
+    if (!m) return;
+    const pt = canvas.createSVGPoint(); pt.x = x; pt.y = y;
+    const c = pt.matrixTransform(m);
+    const cx = c.x - wrap.left, cy = c.y - wrap.top;
+    const half = (link ? 14 : NWView.BOX.w / 2 + 6) * m.a;
+    const w = insp.offsetWidth, h = insp.offsetHeight, gap = 12;
+    const top = Math.min(Math.max(8, cy - 60), Math.max(8, wrap.height - h - 8));
+    // Rechts oder links vom Gerät – dort, wo das Fenster weniger andere Geräte verdeckt
+    const clampL = l => Math.min(Math.max(8, l), Math.max(8, wrap.width - w - 8));
+    const covered = l => S.net.devices.filter(o => {
+      const q = canvas.createSVGPoint(); q.x = o.x; q.y = o.y;
+      const r = q.matrixTransform(m), ox = r.x - wrap.left, oy = r.y - wrap.top;
+      return ox > l - 30 && ox < l + w + 30 && oy > top - 30 && oy < top + h + 30;
+    }).length;
+    const right = cx + half + gap, leftSide = cx - half - gap - w;
+    const fitsR = right + w <= wrap.width - 8, fitsL = leftSide >= 8;
+    let left;
+    if (fitsR && fitsL) left = covered(leftSide) < covered(right) ? leftSide : right;
+    else left = clampL(fitsR ? right : fitsL ? leftSide : (cx > wrap.width / 2 ? leftSide : right));
+    insp.style.left = Math.round(left) + 'px';
+    insp.style.top = Math.round(top) + 'px';
+  }
+  wide.addEventListener('change', () => { placeInspectorBox(); renderInspector(); });
+  window.addEventListener('resize', () => positionInspector());
+  placeInspectorBox();
+
   function renderInspector() {
+    renderInspectorBody();
+    if (!S.selected) return;
+    insp.insertAdjacentHTML('afterbegin', '<button class="insp-close btn ghost" data-act="close-insp" aria-label="Einstellungen schließen" title="Schließen">✕</button>');
+    positionInspector();
+  }
+
+  function renderInspectorBody() {
     document.querySelector('.side').classList.toggle('has-sel', !!S.selected);
+    insp.hidden = !S.selected && wide.matches;
+    insp.classList.toggle('sheet', !!S.selected && !wide.matches);
+    document.body.classList.toggle('has-sheet', !!S.selected && !wide.matches);
     const ro = readOnly();
     if (!S.selected) {
       insp.innerHTML = `<h3>Einstellungen</h3><p class="muted">Tippe auf ein Gerät, um es einzustellen und zu testen.</p>`;
+      insp.style.left = insp.style.top = '';
       return;
     }
     const link = S.net.links.find(l => l.id === S.selected);
@@ -614,7 +674,7 @@
       return;
     }
     const d = NW.dev(S.net, S.selected);
-    if (!d) { S.selected = null; renderInspector(); return; }
+    if (!d) { S.selected = null; renderInspectorBody(); return; }
     const t = T[d.type];
     const dis = ro || d.locked;
     let h = `<div class="insp-head">${NWView.iconSVG(d.cloud ? 'switch' : d.type, 30)}<div><div class="insp-type">${esc(d.cloud ? 'Internet (vereinfacht)' : t.label)}</div>
@@ -1006,6 +1066,8 @@
         if (!l.loss) delete l.loss;
         renderAll(); scheduleSave(); break;
       }
+      case 'close-insp':
+        S.selected = null; renderCanvas(); renderInspector(); break;
       case 'del-dev':
         NW.removeDevice(S.net, d.id); S.selected = null; renderAll(); scheduleSave(); break;
       case 'del-link':
