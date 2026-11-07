@@ -1,0 +1,6 @@
+# Erzeugte Programmdateien
+dist/
+# Daten aus dem Unterricht (Namen der Schülerinnen und Schüler) – niemals einchecken!
+netzwerkstatt-daten.json
+netzwerkstatt-daten.json.tmp
+*.json.tmp

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>NetzWerkstatt – Lehrkraft</title>
+<link rel="icon" href="img/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/lehrer.css">
+</head>
+<body>
+
+<section id="screen-login" class="screen login-screen" hidden>
+  <div class="login-card">
+    <img src="img/logo.svg" alt="" class="logo-big">
+    <h1>Lehrkraft-Ansicht</h1>
+    <p class="muted">Das Passwort steht im Fenster des NetzWerkstatt-Servers.</p>
+    <form id="login-form" autocomplete="off">
+      <label>Lehrer-Passwort <input id="login-pw" type="password" required></label>
+      <p id="login-error" class="error" role="alert"></p>
+      <button class="btn primary big" type="submit">Anmelden</button>
+    </form>
+  </div>
+</section>
+
+<section id="screen-dash" class="screen" hidden>
+  <header class="topbar">
+    <div class="brand"><img src="img/logo.svg" alt=""> NetzWerkstatt <span class="muted">· Lehrkraft</span></div>
+    <div class="spacer"></div>
+    <span class="room">Raumcode <b id="room-code"></b></span>
+    <button id="btn-beamer-code" class="btn">Zugang am Beamer zeigen</button>
+    <button id="btn-logout" class="btn ghost">Abmelden</button>
+  </header>
+  <main class="dash">
+    <nav id="task-tabs" class="task-tabs" aria-label="Aufgaben"></nav>
+    <div class="dash-tools">
+      <button id="btn-show-solution" class="btn">Musterlösung zeigen</button>
+      <label class="toggle"><input type="checkbox" id="chk-release"> Musterlösung für Schüler freigeben</label>
+      <div class="spacer"></div>
+      <label class="toggle"><input type="checkbox" id="chk-anon"> Namen beim Zeigen ausblenden</label>
+      <label class="toggle"><input type="checkbox" id="chk-only-submitted"> nur Abgaben</label>
+      <button id="btn-compare" class="btn primary" disabled>Ausgewählte vergleichen</button>
+    </div>
+    <div class="table-wrap">
+      <table class="students">
+        <thead><tr><th class="sel"></th><th>Name</th><th>Status</th><th>Ziele</th><th>Zuletzt</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <p id="empty" class="muted empty" hidden>Noch keine Schülerinnen und Schüler angemeldet. Zeige den Zugang am Beamer, damit sich alle anmelden können.</p>
+    </div>
+    <p class="muted small">Die Liste aktualisiert sich automatisch alle paar Sekunden.</p>
+  </main>
+</section>
+
+<div id="modal" class="modal" hidden>
+  <div class="modal-box" role="dialog" aria-modal="true">
+    <button class="modal-close btn ghost" id="modal-close" aria-label="Schließen">✕</button>
+    <div id="modal-body"></div>
+  </div>
+</div>
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script src="js/sim.js"></script>
+<script src="js/tasks.js"></script>
+<script src="js/view.js"></script>
+<script src="js/common.js"></script>
+<script src="js/teacher.js"></script>
+</body>
+</html>
