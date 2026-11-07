@@ -105,11 +105,38 @@
     const t = TYPES[type];
     if (t.host) { d.ip = ''; d.mask = '255.255.255.0'; d.gw = ''; d.dns = ''; }
     if (t.host) d.dhcp = false;
-    if (t.router) d.ports = [0, 1, 2, 3].map(() => ({ ip: '', mask: '255.255.255.0', dhcp: { on: false, from: '', to: '', dns: '' } }));
+    if (t.router) {
+      // Wie bei echten Routern: Jeder Anschluss hat ab Werk eine feste lokale Adresse,
+      // jeweils in einem eigenen, noch freien Netz (192.168.0.1, 192.168.1.1, …)
+      const nets = freeNets(net, 4);
+      d.ports = nets.map(n => ({ ip: n, mask: '255.255.255.0', dhcp: { on: false, from: '', to: '', dns: '' } }));
+    }
     if (t.services) d.services = { web: { on: false, title: 'Willkommen!', text: 'Das ist meine erste Webseite.' }, dns: { on: false, entries: [] } };
     Object.assign(d, extra || {});
     net.devices.push(d);
     return d;
+  }
+
+  /** Alle gültigen Adressen im Netzwerk (Endgeräte und Router-Anschlüsse), optional ohne einen Anschluss. */
+  function allAddrs(net, skipDev, skipPort) {
+    const all = [];
+    for (const d of net.devices) {
+      if (TYPES[d.type].host) { const a = ifaceAddr(d, 0); if (a) all.push(a); }
+      if (TYPES[d.type].router) d.ports.forEach((p, i) => { if (d === skipDev && i === skipPort) return; const a = ifaceAddr(d, i); if (a) all.push(a); });
+    }
+    return all;
+  }
+
+  /** Liefert count Router-Adressen 192.168.N.1 in Netzen, die noch niemand benutzt. */
+  function freeNets(net, count, skipDev, skipPort) {
+    const all = allAddrs(net, skipDev, skipPort);
+    const out = [];
+    for (let n = 0; n < 256 && out.length < count; n++) {
+      const cand = parseIP(`192.168.${n}.0`);
+      if (all.every(a => !sameNet(a.ip, cand, Math.min(24, a.prefix)))) out.push(`192.168.${n}.1`);
+    }
+    while (out.length < count) out.push('');
+    return out;
   }
 
   function dev(net, id) { return net.devices.find(d => d.id === id) || null; }
@@ -402,6 +429,26 @@
   }
 
   /**
+   * Schlägt eine feste IP-Adresse für einen Router-Anschluss vor, z. B. beim
+   * Einschalten des DHCP-Servers. Gibt es im angeschlossenen Netz schon Geräte
+   * mit Adresse, passt sich der Vorschlag diesem Netz an (bevorzugt .1).
+   * Sonst wird ein freies Netz 192.168.N.0/24 gewählt.
+   * Ergebnis: {ip, mask} als Text.
+   */
+  function suggestPortIP(net, r, port) {
+    const eps = l2Endpoints(net, r.id, port);
+    const known = eps.map(e => ifaceAddr(e.dev, e.port)).filter(a => a && !ipProblem(ipStr(a.ip), ipStr(maskOf(a.prefix))));
+    if (known.length) {
+      const ref = known[0];
+      const used = new Set(known.map(a => a.ip));
+      const base = (ref.ip & maskOf(ref.prefix)) >>> 0;
+      const size = 2 ** (32 - ref.prefix);
+      for (let i = 1; i < size - 1; i++) if (!used.has(base + i)) return { ip: ipStr(base + i), mask: ipStr(maskOf(ref.prefix)) };
+    }
+    return { ip: freeNets(net, 1, r, port)[0] || '10.0.0.1', mask: '255.255.255.0' };
+  }
+
+  /**
    * Ein Endgerät fragt per DHCP nach einer IP-Adresse.
    * Ablauf wie in echt: Discover (an alle) → Offer → Request (an alle) → Ack.
    * Das Netzwerk wird nicht verändert; das Ergebnis steht in lease.
@@ -515,7 +562,7 @@
     TYPES, DESCRIPTIONS, parseIP, ipStr, parseMask, sameNet, netStr, ipProblem, isPrivate,
     emptyNetwork, createDevice, dev, linksOf, portOf, canLink, addLink, removeDevice, removeLink,
     ifaceAddr, l2Endpoints, route, roundTrip, ping, browse, parseURL, logEvent, topology, clone, newId,
-    dhcpOf, dhcpRange, dhcp, applyLease, suggest,
+    dhcpOf, dhcpRange, dhcp, applyLease, suggest, suggestPortIP,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = NW;
   else root.NW = NW;
