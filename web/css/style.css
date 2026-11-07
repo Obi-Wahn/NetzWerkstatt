@@ -82,15 +82,20 @@ input:disabled { background: #f0f2f6; color: var(--muted); }
 
 /* ---------------------------------------------------------------- Aufgabenliste */
 .task-list-wrap { max-width: 980px; margin: 0 auto; padding: 24px 16px; }
-.task-list { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.task-list { display: grid; gap: 22px; }
+.group-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 1.05em; margin: 0 0 8px; padding-bottom: 6px; border-bottom: 2px solid var(--line); }
+.group-count { font-size: .78em; font-weight: 600; color: var(--muted); }
+.group-count.all { color: var(--ok); }
+.task-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
 .task-tile {
-  display: flex; gap: 14px; text-align: left; font: inherit; color: inherit; background: var(--panel);
-  border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; cursor: pointer; box-shadow: var(--shadow);
+  display: flex; gap: 12px; text-align: left; font: inherit; color: inherit; background: var(--panel);
+  border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; cursor: pointer; box-shadow: var(--shadow);
 }
 .task-tile:hover { border-color: var(--brand); }
-.task-tile h3 { font-size: 1.05em; margin-bottom: .3em; }
-.task-tile p { color: var(--muted); font-size: .92em; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.tile-num { flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--brand-soft); color: var(--brand); font-weight: 700; display: grid; place-items: center; font-size: 1.1em; }
+.task-tile h4 { font-size: 1em; margin: 0 0 .25em; }
+.task-tile p { color: var(--muted); font-size: .88em; margin: 0 0 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.task-tile.done .tile-num { background: var(--ok-soft); color: var(--ok); }
+.tile-num { flex: none; width: 34px; height: 34px; border-radius: 50%; background: var(--brand-soft); color: var(--brand); font-weight: 700; display: grid; place-items: center; font-size: 1.1em; }
 .task-tile.free .tile-num { background: #fff4d1; color: var(--warn); }
 .tile-meta { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .badge { font-size: .78em; padding: 2px 9px; border-radius: 99px; background: #eef1f6; color: var(--muted); font-weight: 600; }

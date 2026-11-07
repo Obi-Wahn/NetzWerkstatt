@@ -1,7 +1,7 @@
 // Automatische Tests für Simulation und Aufgaben: node test/simulation.test.js
 const assert = require('assert');
 const NW = require('../web/js/sim.js');
-const { TASKS, evaluate } = require('../web/js/tasks.js');
+const { TASKS, GROUPS, evaluate } = require('../web/js/tasks.js');
 
 let n = 0;
 function test(name, fn) { fn(); n++; console.log('ok  ' + name); }
@@ -18,6 +18,13 @@ for (const t of TASKS) {
     assert.ok(res.some(x => !x));
   });
 }
+
+test('Jede Aufgabe gehört zu genau einem Thema, Nummern 1–5 unverändert', () => {
+  const ids = GROUPS.flatMap(g => g.tasks);
+  assert.deepStrictEqual([...ids].sort(), TASKS.map(t => t.id).sort());
+  assert.strictEqual(new Set(ids).size, ids.length);
+  assert.deepStrictEqual(TASKS.slice(0, 5).map(t => t.id), ['zwei-pcs', 'stern', 'heimnetz', 'webseite', 'dhcp']);
+});
 
 test('Ping ohne Gateway in fremdes Netz scheitert mit Hinweis', () => {
   const net = TASKS.find(t => t.id === 'webseite').solution();
