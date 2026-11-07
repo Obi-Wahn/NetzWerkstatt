@@ -8,7 +8,7 @@ Die NetzWerkstatt ist für den Informatikunterricht der Sekundarstufe I gedacht.
 
 - **Baukasten:** PC, Tablet, Smartphone, Server, Switch, Access Point und Router auf die Arbeitsfläche setzen und per Kabel oder WLAN verbinden. Funktioniert mit Maus und Finger (Windows-PCs und iPads).
 - **Netzwerk-Einstellungen:** IP-Adresse (IPv4), Subnetzmaske, Gateway und DNS-Server mit sofortigen Hinweisen, z. B. „lokale (private) Adresse“ oder „Das Gateway muss im selben Netz liegen“. Beim Eintragen von Hand werden passende freie Adressen, der Router als Gateway und ein vorhandener DNS-Server vorgeschlagen.
-- **DHCP:** Jeder Router-Anschluss kann als DHCP-Server Adressen verteilen (Adressbereich und DNS-Server einstellbar). Endgeräte lassen sich zwischen „Von Hand“ und „Automatisch (DHCP)“ umschalten; der Ablauf Discover → Offer → Request → Ack wird als Pakete animiert, Discover und Request sichtbar „an alle“.
+- **DHCP:** Router haben wie echte Geräte ab Werk feste lokale Adressen (192.168.0.1, 192.168.1.1, … in jeweils freien Netzen). Jeder Router-Anschluss kann als DHCP-Server Adressen verteilen (Adressbereich und DNS-Server einstellbar). Endgeräte lassen sich zwischen „Von Hand“ und „Automatisch (DHCP)“ umschalten; der Ablauf Discover → Offer → Request → Ack wird als Pakete animiert, Discover und Request sichtbar „an alle“.
 - **Simulation mit Animation:** Ping (Anfrage und Antwort) sowie Webseiten-Aufruf mit DNS-Anfrage, DNS-Antwort, HTTP-Request und HTTP-Response. Router verbinden verschiedene Netze, Switches und Access Points leiten innerhalb eines Netzes weiter.
 - **Dienste auf Servern:** Webserver mit eigener Seite und DNS-Server mit eigenen Einträgen.
 - **Aufgaben mit automatisch abgehakten Teilzielen:**

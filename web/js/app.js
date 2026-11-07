@@ -416,7 +416,7 @@
       h += '</div>';
     }
     if (t.router) {
-      h += '<div class="group"><h4>Anschlüsse</h4><p class="muted small">Jeder Anschluss gehört zu einem anderen Netz und braucht dort eine eigene IP-Adresse.</p>';
+      h += '<div class="group"><h4>Anschlüsse</h4><p class="muted small">Jeder Anschluss gehört zu einem anderen Netz und hat dort eine eigene feste IP-Adresse. Wie bei echten Routern ist ab Werk schon eine eingetragen; du kannst sie ändern.</p>';
       d.ports.forEach((p, i) => {
         const l = NW.linksOf(S.net, d.id).find(x => NW.portOf(x, d.id) === i);
         const other = l ? NW.dev(S.net, l.a === d.id ? l.b : l.a) : null;
@@ -426,8 +426,9 @@
         h += `<label class="toggle"><input type="checkbox" data-path="ports.${i}.dhcp.on" ${dh.on ? 'checked' : ''} ${dis ? 'disabled' : ''}> DHCP-Server für dieses Netz</label>`;
         if (dh.on) {
           const rg = NW.dhcpRange(d, i);
-          if (!rg) h += '<p class="fhint warn">Trage zuerst eine gültige IP-Adresse für diesen Anschluss ein.</p>';
+          if (!rg) h += `<p class="fhint warn">Der Router braucht an diesem Anschluss selbst eine feste IP-Adresse, damit er Adressen verteilen kann.</p>${dis ? '' : `<div class="chips"><button class="chip suggest" data-act="port-auto" data-i="${i}">💡 Adresse für den Router eintragen</button></div>`}`;
           else {
+            h += `<p class="dhcp-info">Der Router selbst hat die feste Adresse <b>${esc(p.ip.trim())}</b>. Die Geräte in diesem Netz bekommen ihre Adressen automatisch von ihm.</p>`;
             h += `<div class="port-fields">${field('Adressen von', `ports.${i}.dhcp.from`, dh.from, 'range', { disabled: dis, placeholder: NW.ipStr(rg.from) })}${field('bis', `ports.${i}.dhcp.to`, dh.to, 'range', { disabled: dis, placeholder: NW.ipStr(rg.to) })}</div>`;
             h += field('DNS-Server für die Geräte', `ports.${i}.dhcp.dns`, dh.dns, 'dns', { disabled: dis, placeholder: 'leer = kein DNS-Server' });
             h += `<p class="muted small">Geräte in diesem Netz, die auf „Automatisch (DHCP)" stehen, bekommen eine freie Adresse von ${esc(NW.ipStr(rg.from))} bis ${esc(NW.ipStr(rg.to))}, die Subnetzmaske und ${esc(p.ip.trim())} als Gateway.</p>`;
@@ -525,9 +526,18 @@
     if (!d || d.locked) return;
     const val = inp.type === 'checkbox' ? inp.checked : inp.value;
     setPath(d, inp.dataset.path, val);
+    // DHCP am Router einschalten: Hat der Anschluss noch keine Adresse, bekommt er automatisch eine
+    const dm = inp.dataset.path.match(/^ports\.(\d+)\.dhcp\.on$/);
+    if (dm && val && !NW.ifaceAddr(d, Number(dm[1]))) setPortAuto(d, Number(dm[1]));
     if (inp.type === 'checkbox') renderInspector(); else updateHints();
     renderCanvas(); renderGoals(); scheduleSave();
   });
+
+  function setPortAuto(d, i) {
+    const sg = NW.suggestPortIP(S.net, d, i);
+    d.ports[i].ip = sg.ip; d.ports[i].mask = sg.mask;
+    toast(`${d.name} hat an Anschluss ${i + 1} die feste Adresse ${sg.ip} bekommen. Du kannst sie ändern.`, 'ok');
+  }
 
   insp.addEventListener('keydown', ev => {
     if (ev.key !== 'Enter') return;
@@ -559,6 +569,8 @@
         d.dhcp = true; d.ip = ''; d.gw = ''; d.dns = '';
         renderAll(); scheduleSave(); doDhcp(d); break;
       case 'dhcp': doDhcp(d); break;
+      case 'port-auto':
+        setPortAuto(d, Number(b.dataset.i)); renderAll(); scheduleSave(); break;
       case 'suggest-ip': {
         const sg = NW.suggest(S.net, d.id);
         if (sg.ip) { d.ip = sg.ip; d.mask = sg.mask; }

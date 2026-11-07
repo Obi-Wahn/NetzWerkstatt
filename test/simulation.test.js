@@ -127,4 +127,25 @@ test('Vorschläge für IP-Adresse, Gateway und DNS', () => {
   assert.strictEqual(NW.suggest(net, lone.id).ip, null, 'ohne Verbindung kein Vorschlag');
 });
 
+test('Router-Anschluss bekommt beim Einschalten von DHCP eine passende Adresse', () => {
+  const net = dhcpNet();
+  const r = NW.dev(net, 'r');
+  r.ports[0].ip = '';
+  assert.deepStrictEqual(NW.suggestPortIP(net, r, 0), { ip: '192.168.0.1', mask: '255.255.255.0' }, 'freies Netz');
+  r.ports[1].ip = '192.168.0.1';
+  assert.strictEqual(NW.suggestPortIP(net, r, 0).ip, '192.168.1.1', 'Netz eines anderen Anschlusses wird nicht doppelt benutzt');
+  r.ports[1].ip = '';
+  NW.dev(net, 'a').ip = '10.1.2.1';
+  NW.dev(net, 'a').mask = '255.255.0.0';
+  assert.deepStrictEqual(NW.suggestPortIP(net, r, 0), { ip: '10.1.0.1', mask: '255.255.0.0' }, 'passt sich vorhandenen Geräten an');
+});
+
+test('Neuer Router hat ab Werk feste Adressen in freien Netzen', () => {
+  const net = NW.emptyNetwork();
+  const r1 = NW.createDevice(net, 'router', 0, 0);
+  assert.deepStrictEqual(r1.ports.map(p => p.ip), ['192.168.0.1', '192.168.1.1', '192.168.2.1', '192.168.3.1']);
+  const r2 = NW.createDevice(net, 'router', 0, 0);
+  assert.strictEqual(r2.ports[0].ip, '192.168.4.1', 'zweiter Router nutzt andere Netze');
+});
+
 console.log(`\n${n} Tests bestanden.`);
