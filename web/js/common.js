@@ -34,14 +34,22 @@
   }
 
   let toastTimer;
-  function toast(msg, kind) {
+  /** Kurze Meldung unten. action = {label, run} zeigt zusätzlich einen Knopf (z. B. „Rückgängig“). */
+  function toast(msg, kind, action) {
     const t = document.getElementById('toast');
     if (!t) return;
     t.textContent = msg;
-    t.className = 'toast ' + (kind || '');
+    t.className = 'toast ' + (kind || '') + (action ? ' has-act' : '');
+    if (action) {
+      const b = document.createElement('button');
+      b.className = 'toast-act';
+      b.textContent = action.label;
+      b.addEventListener('click', () => { t.hidden = true; clearTimeout(toastTimer); action.run(); });
+      t.appendChild(b);
+    }
     t.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { t.hidden = true; }, kind === 'error' ? 5000 : 2800);
+    toastTimer = setTimeout(() => { t.hidden = true; }, action ? 7000 : kind === 'error' ? 5000 : 2800);
   }
 
   function openModal(html, opts) {
@@ -60,9 +68,10 @@
     document.addEventListener('keydown', e => { if (e.key === 'Escape' && !m.hidden) closeModal(); });
   });
 
-  function confirmBox(text, okLabel) {
+  /** Rückfrage mit Abbrechen und OK. danger = true färbt den OK-Knopf rot (für Löschen). */
+  function confirmBox(text, okLabel, danger) {
     return new Promise(resolve => {
-      const body = openModal(`<p class="confirm-text">${esc(text)}</p><div class="row end"><button class="btn ghost" data-r="0">Abbrechen</button><button class="btn primary" data-r="1">${esc(okLabel || 'OK')}</button></div>`);
+      const body = openModal(`<p class="confirm-text">${esc(text)}</p><div class="row end"><button class="btn ghost" data-r="0">Abbrechen</button><button class="btn ${danger ? 'danger-fill' : 'primary'}" data-r="1">${esc(okLabel || 'OK')}</button></div>`);
       body.querySelectorAll('button[data-r]').forEach(b => b.addEventListener('click', () => { closeModal(); resolve(b.dataset.r === '1'); }));
     });
   }

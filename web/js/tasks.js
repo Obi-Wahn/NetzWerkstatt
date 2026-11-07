@@ -279,7 +279,7 @@
       level: 1,
       manual: true,
       intro: 'Früher wurden viele Netze als Bus gebaut: Ein langes Kabel führt durch den Raum, und alle Rechner werden daran angeschlossen. Baue ein Busnetz mit vier PCs und finde heraus, was bei einem Kabelbruch passiert.',
-      tip: 'Das Bus-Kabel findest du links bei den Geräten. Verbinde jeden PC mit einem Kabel mit dem Bus-Kabel. Adressen: 192.168.20.1 bis 192.168.20.4, Subnetzmaske 255.255.255.0. Einen Kabelbruch simulierst du so: Wähle oben „Auswählen“, tippe das Bus-Kabel an und dann auf „Kabelbruch simulieren“.',
+      tip: 'Das Bus-Kabel findest du in der Geräteleiste. Verbinde jeden PC mit einem Kabel mit dem Bus-Kabel. Adressen: 192.168.20.1 bis 192.168.20.4, Subnetzmaske 255.255.255.0. Einen Kabelbruch simulierst du so: Wähle oben „Auswählen“, tippe das Bus-Kabel an und dann auf „Kabelbruch im Bus-Kabel simulieren“.',
       think: 'Beim Ping siehst du: Das Signal kommt bei allen PCs am Bus an. Was bedeutet das für den Datenschutz? Was passiert, wenn zwei PCs gleichzeitig senden? Und was, wenn nur ein einzelner PC ausfällt?',
       goals: [
         { text: 'Setze ein Bus-Kabel auf die Arbeitsfläche.', check: c => c.byType('bus').length >= 1 },
@@ -462,7 +462,7 @@
       title: 'TCP und UDP im Vergleich',
       level: 3,
       intro: 'Im Internet stehen ein Video-Server und ein Server für Videokonferenzen. Verbinde das Tablet mit dem WLAN des Heimrouters, sieh dir ein Video an und starte einen Videoanruf. Danach störst du das WLAN – und beobachtest genau, was mit einem verlorenen Paket passiert.',
-      tip: 'Tippe das Tablet an: Unter „Testen" findest du die Internetdienste. Tippe einen der Namen an, damit er im Feld „Server" steht. Um das WLAN zu stören, tippst du die gestrichelte WLAN-Linie an und schaltest „Gestörte Verbindung" ein. Schalte auch einmal „TCP genau zeigen" ein.',
+      tip: 'Tippe das Tablet an: Unter „Internetdienste nutzen“ findest du die Knöpfe für Video und Telefonie. Tippe einen der Namen an, damit er im Feld „Server" steht. Um das WLAN zu stören, tippst du die gestrichelte WLAN-Linie an und schaltest „Gestörte Verbindung" ein. Schalte auch einmal „TCP genau zeigen" ein.',
       think: 'Beim Video wurde das verlorene Paket neu gesendet, beim Videoanruf nicht. Warum ist das jeweils sinnvoll? Welche drei Pakete gehen dem Video voraus, wenn du „TCP genau zeigen" einschaltest – und warum fehlen sie beim Videoanruf?',
       goals: [
         { text: 'Verbinde das Tablet per WLAN mit dem Heimrouter.', check: c => c.byType('tablet').some(t => c.neighbors(t.id).some(n => n.kind === 'wlan' && n.dev.type === 'router')) },

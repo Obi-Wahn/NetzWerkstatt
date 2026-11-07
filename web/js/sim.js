@@ -274,7 +274,7 @@
       // Router an die Leitung des Internetanbieters: nur über den Internet-Anschluss (WAN) mit Modem
       const isp = [a, b].find(x => TYPES[x.type].isp), r = [a, b].find(x => TYPES[x.type].router);
       if (isp && r) {
-        if (!r.modem) return { ok: false, reason: `${r.name} hat kein eingeschaltetes Modem und kann nicht direkt an die Leitung von ${isp.name}. Tippe den Router an und schalte das eingebaute Modem ein.` };
+        if (!r.modem) return { ok: false, reason: `${r.name} hat kein eingeschaltetes Modem und kann nicht direkt an die Leitung von ${isp.name}. ` + (r.locked ? 'Der Router gehört zur Aufgabe und lässt sich nicht ändern.' : 'Tippe den Router an und schalte das eingebaute Modem ein.') };
         if (freePortIn(net, r, WAN) < 0) return { ok: false, reason: `Der Internet-Anschluss (WAN) von ${r.name} ist schon belegt.` };
       }
       return { ok: true };
@@ -284,7 +284,7 @@
       if (wlanHub(a)) { apD = a; other = b; } else if (wlanHub(b)) { apD = b; other = a; }
       if (!apD) {
         const r = [a, b].find(x => TYPES[x.type].router);
-        if (r) return { ok: false, reason: `Das WLAN von ${r.name} ist ausgeschaltet. Tippe den Router an und schalte es ein.` };
+        if (r) return { ok: false, reason: `Das WLAN von ${r.name} ist ausgeschaltet. ` + (r.locked ? 'Der Router gehört zur Aufgabe. Nimm einen Access Point oder ein Kabel.' : 'Tippe den Router an und schalte es ein.') };
         return { ok: false, reason: 'Eine WLAN-Verbindung braucht immer einen Access Point oder einen Router mit WLAN.' };
       }
       const to = TYPES[other.type];
@@ -668,7 +668,9 @@
       const isHost = TYPES[cd.type].host;
       const gw = parseIP(isHost ? cd.gw : (cd.ports[WAN].gw || ''));
       if (gw === null) {
-        if (isHost) return fail(path, `${cd.name}: Das Ziel ${ipStr(dstIP)} liegt in einem anderen Netz. Dafür braucht ${cd.name} ein Gateway.`, 'Trage beim Gerät als Gateway die IP-Adresse des Routers ein.');
+        if (isHost) return fail(path, `${cd.name}: Das Ziel ${ipStr(dstIP)} liegt in einem anderen Netz. Dafür braucht ${cd.name} ein Gateway.`, cd.dhcp
+          ? `${cd.name} steht auf „Automatisch (DHCP)“ und bekommt das Gateway vom DHCP-Server mitgeschickt. Fordere die Adresse neu an. Klappt das nicht, stelle ${cd.name} auf „Von Hand“ und trage die IP-Adresse des Routers als Gateway ein.`
+          : 'Trage beim Gerät als Gateway die IP-Adresse des Routers ein.');
         return fail(path, `Der Router ${cd.name} kennt kein Netz, in dem ${ipStr(dstIP)} liegt.`, 'Ein Router kennt die Netze, an die er angeschlossen ist. Alles andere schickt er über den Internet-Anschluss (WAN) weiter – dafür braucht er dort ein Gateway, z. B. vom Internetanbieter.');
       }
       if (!sameNet(gw, ca.ip, ca.prefix)) return fail(path, `Das Gateway ${ipStr(gw)} von ${cd.name} liegt nicht im eigenen Netz.`, 'Das Gateway muss im selben Netz liegen wie das Gerät selbst.');
@@ -928,7 +930,11 @@
     const direct = parseIP(host);
     if (direct !== null) return { ip: direct, dns: [] };
     const dnsIP = parseIP(src.dns || '');
-    if (dnsIP === null) return { error: `${src.name} kennt keinen DNS-Server und kann den Namen ${host} nicht in eine IP-Adresse übersetzen.`, hint: 'Trage beim Gerät die IP-Adresse eines DNS-Servers ein.', dns: [] };
+    if (dnsIP === null) return { error: `${src.name} kennt keinen DNS-Server und kann den Namen ${host} nicht in eine IP-Adresse übersetzen.`, hint: src.dhcp
+      ? (parseIP(src.ip || '') === null
+        ? `${src.name} hat noch gar keine Adresse. Verbinde es und fordere per DHCP eine Adresse an – der DHCP-Server schickt den DNS-Server gleich mit.`
+        : `${src.name} steht auf „Automatisch (DHCP)“ und bekommt den DNS-Server vom DHCP-Server (meist im Router) mitgeschickt. Fordere die Adresse neu an. Klappt das nicht, stelle ${src.name} auf „Von Hand“ und trage einen DNS-Server ein.`)
+      : 'Trage beim Gerät die IP-Adresse eines DNS-Servers ein.', dns: [] };
     const chain = [];
     const r = askDns(net, src, dnsIP, host, steps, chain, 0);
     r.dns = chain;
@@ -942,6 +948,27 @@
   function dnsUpstream(d) {
     if (TYPES[d.type].router) return d.dnsRelay ? parseIP(d.ports[WAN].dns || '') : null;
     return svcOn(d, 'dns') ? parseIP(d.services.dns.forward || '') : null;
+  }
+
+  /**
+   * Tipp: Wie „from“ einen anderen DNS-Server bekommt – passend dazu, ob das Gerät gesperrt ist
+   * oder seine Adressen per DHCP bekommt (dann sind die Felder ausgegraut). Liefert '' wenn es nicht geht.
+   */
+  function otherDnsHint(from, fwd) {
+    if (from.locked) return '';
+    if (fwd) return `Trage bei ${from.name} einen anderen DNS-Server für die Weiterleitung ein.`;
+    if (TYPES[from.type].host && from.dhcp) return `${from.name} bekommt den DNS-Server per DHCP. Stelle ${from.name} auf „Von Hand“ und trage einen anderen DNS-Server ein.`;
+    return `Trage bei ${from.name} einen anderen DNS-Server ein.`;
+  }
+  /** Einige Namen, die ein DNS-Server kennt (für Tipps bei gesperrten DNS-Servern). */
+  function knownNamesHint(ds) {
+    const names = svcOn(ds, 'dns') ? (ds.services.dns.entries || []).map(e => (e.name || '').trim()).filter(Boolean).slice(0, 4) : [];
+    return names.length ? ` ${ds.name} kennt z. B.: ${names.join(', ')}.` : '';
+  }
+  /** Mehrere Tipp-Sätze verbinden: der erste normal, weitere mit „Oder:“. */
+  function joinHints(list) {
+    list = list.filter(Boolean);
+    return list.map((h, i) => (i ? 'Oder: ' : '') + h).join(' ');
   }
 
   /** Ist das Gerät ein DNS-Server (eigener Server oder weiterleitender Router)? */
@@ -966,8 +993,9 @@
     const ds = rt.target;
     const answer = (text, extra) => steps.push(Object.assign({ kind: 'response', label: 'DNS-Antwort', proto: P, text, note: natNote(net, rt, 'back'), path: rt.back.path, ok: true }, extra || {}));
     if (!isDnsServer(ds)) {
-      if (TYPES[ds.type].router) return { error: `Unter ${ipStr(dnsIP)} (${ds.name}) läuft kein DNS-Server.`, hint: `Schalte beim Router ${ds.name} „DNS-Anfragen weiterleiten" ein oder trage einen anderen DNS-Server ein.` };
-      return { error: `Unter ${ipStr(dnsIP)} (${ds.name}) läuft kein DNS-Server.`, hint: 'Prüfe die DNS-Adresse oder schalte beim Server den DNS-Dienst ein.' };
+      const own = TYPES[ds.type].router ? `Schalte beim Router ${ds.name} „DNS-Anfragen weiterleiten“ ein.` : `Schalte bei ${ds.name} den DNS-Server ein.`;
+      const alt = otherDnsHint(from, fwd);
+      return { error: `Unter ${ipStr(dnsIP)} (${ds.name}) läuft kein DNS-Server.`, hint: joinHints([ds.locked ? '' : own, alt]) || 'Prüfe die eingetragene Adresse des DNS-Servers.' };
     }
     if (chain.includes(ds.id) || depth >= 5) {
       answer('Fehler: Die Anfrage läuft im Kreis.', { bad: true });
@@ -985,10 +1013,14 @@
     if (up === null) {
       if (isR) {
         answer('Fehler: Ich kenne keinen DNS-Server, den ich fragen kann.', { bad: true });
-        return { error: `${ds.name} soll DNS-Anfragen weiterleiten, kennt aber selbst keinen DNS-Server.`, hint: 'Fordere beim Router am Internet-Anschluss (WAN) eine Adresse vom Internetanbieter an – dann kennt er dessen DNS-Server – oder trage dort einen DNS-Server ein.' };
+        return { error: `${ds.name} soll DNS-Anfragen weiterleiten, kennt aber selbst keinen DNS-Server.`, hint: ds.locked
+          ? (otherDnsHint(from, fwd) || 'Der Router gehört zur Aufgabe und lässt sich nicht ändern.')
+          : 'Fordere beim Router am Internet-Anschluss (WAN) eine Adresse vom Internetanbieter an – dann kennt er dessen DNS-Server – oder trage dort einen DNS-Server ein.' };
       }
       answer(`Den Namen ${host} kenne ich nicht.`, { bad: true });
-      return { error: `${fwd ? 'Auch ' + ds.name : 'Der DNS-Server'} kennt den Namen ${host} nicht.`, hint: fwd ? `Ergänze den Eintrag bei ${ds.name}.` : 'Prüfe die Schreibweise der Adresse, ergänze den Eintrag beim DNS-Server oder lass ihn unbekannte Namen an einen anderen DNS-Server weiterleiten.' };
+      return { error: `${fwd ? 'Auch ' + ds.name : 'Der DNS-Server'} kennt den Namen ${host} nicht.`, hint: ds.locked
+        ? 'Prüfe die Schreibweise der Adresse.' + knownNamesHint(ds)
+        : fwd ? `Ergänze den Eintrag bei ${ds.name}.` : 'Prüfe die Schreibweise der Adresse, ergänze den Eintrag beim DNS-Server oder lass ihn unbekannte Namen an einen anderen DNS-Server weiterleiten.' };
     }
     const r = askDns(net, ds, up, host, steps, chain, depth + 1);
     if (r.error) {
@@ -1279,7 +1311,8 @@
       const fx = blocked && ifaceAddr(blocked.dev, blocked.port) ? explainFault(net, hostId, isRouter ? WAN : 0, ifaceAddr(blocked.dev, blocked.port).ip) : null;
       if (isRouter) return res(false, { error: 'Kein DHCP-Server hat geantwortet.', hint: fx ? fx.error + ' ' + fx.hint : 'Schließe den Internet-Anschluss (WAN) an einen Internetanbieter an oder trage die externe Adresse von Hand ein.' });
       if (fx) hint = fx.error + ' ' + fx.hint;
-      else if (router && router.port === WAN) hint = `Das Gerät hängt am Internet-Anschluss (WAN) von ${router.dev.name}. Adressen per DHCP gibt es im Heimnetz: Stecke das Kabel an einen LAN-Anschluss.`;
+      else if (router && router.port === WAN) hint = `Das Gerät hängt am Internet-Anschluss (WAN) von ${router.dev.name}. Adressen per DHCP gibt es im Heimnetz: Tippe ${router.dev.name} an und stecke das Kabel mit „Umstecken“ in einen LAN-Anschluss.`;
+      else if (router && router.dev.locked) hint = `${router.dev.name} gehört zur Aufgabe und verteilt hier keine Adressen. Stelle ${h.name} auf „Von Hand“ und trage die Adressen selbst ein.`;
       else if (router && !ifaceAddr(router.dev, router.port)) hint = `${router.dev.name} braucht im Heimnetz (LAN) zuerst eine eigene IP-Adresse. Danach kannst du dort den DHCP-Server einschalten.`;
       else if (router) hint = `Tippe ${router.dev.name} an und schalte im Heimnetz (LAN) den DHCP-Server ein.`;
       // Wie echte Rechner: ohne DHCP-Server eine Notfall-Adresse (APIPA) aus 169.254.0.0/16 wählen
@@ -1302,7 +1335,7 @@
     for (let c = range.from; ip === null && c <= range.to; c++) if (!used.has(c)) ip = c;
     if (ip === null) {
       steps.push({ kind: 'response', label: 'DHCP-Offer', proto: P_RESP, text: `${r.name}: „Tut mir leid, alle Adressen sind vergeben."`, path: back, ok: true, bad: true });
-      return res(false, { error: `Der DHCP-Server von ${r.name} hat keine freie Adresse mehr (${ipStr(range.from)} bis ${ipStr(range.to)}).`, hint: ispSrv ? 'Verbinde das Gerät mit einem anderen Internetanbieter.' : 'Vergrößere beim Router den Adressbereich.' });
+      return res(false, { error: `Der DHCP-Server von ${r.name} hat keine freie Adresse mehr (${ipStr(range.from)} bis ${ipStr(range.to)}).`, hint: ispSrv ? 'Verbinde das Gerät mit einem anderen Internetanbieter.' : r.locked ? `Stelle ${h.name} auf „Von Hand“ und trage eine freie Adresse ein.` : 'Vergrößere beim Router den Adressbereich.' });
     }
     // DNS-Server: beim Internetanbieter eingestellt; ein Heimrouter gibt den eingetragenen DNS-Server weiter,
     // sonst sich selbst (wenn er DNS-Anfragen weiterleitet) oder den DNS-Server seines Anbieters
@@ -1670,10 +1703,18 @@
     return { ok: rt.ok, rt, target: rt.target || null, mode: role === 'server' ? 'server' : 'p2p', error: rt.error, hint: rt.hint };
   }
 
+  /** Macht das Gerät beim Dateitausch mit? (Server mit Dateiablage oder Endgerät mit Peer-to-Peer) */
+  function fileReady(d) {
+    const role = fileRole(d);
+    return role === 'server' ? fileStore(d).on : role === 'peer' ? !!d.share : false;
+  }
+
   /** Prüft, ob der Partner beim Dateitausch mitmacht. Liefert null oder {error, hint, reply}. */
   function fileRefusal(target) {
     const role = fileRole(target);
     if (!role) return { error: `${target.name} ist kein Endgerät und kann keine Dateien speichern.`, hint: 'Dateien tauschen Endgeräte (Peer-to-Peer) oder Endgeräte mit einem Server (Client-Server).' };
+    if (target.locked && (role === 'server' ? !fileStore(target).on : !target.share))
+      return { error: `${target.name} macht beim Dateitausch nicht mit.`, hint: `${target.name} gehört zur Aufgabe und lässt sich nicht ändern. Wähle einen anderen Partner.`, reply: 'Ich tausche keine Dateien.' };
     if (role === 'server' && !fileStore(target).on)
       return { error: `Auf ${target.name} läuft keine Dateiablage.`, hint: `Tippe ${target.name} an und schalte bei den Diensten die Dateiablage (Cloud-Speicher) ein.`, reply: 'Hier gibt es keine Dateiablage.' };
     if (role === 'peer' && !target.share)
@@ -1844,7 +1885,7 @@
   const NW = {
     TYPES, DESCRIPTIONS, parseIP, ipStr, parseMask, sameNet, netStr, ipProblem, isPrivate,
     emptyNetwork, createDevice, dev, linksOf, portOf, canLink, addLink, removeDevice, removeLink,
-    allLinksOf, filesOf, fileStore, newFile, sendFile, getFiles, btPartners, playMusic, NET_KINDS, netKinds,
+    allLinksOf, filesOf, fileStore, fileReady, newFile, sendFile, getFiles, btPartners, playMusic, NET_KINDS, netKinds,
     ifaceAddr, l2Endpoints, route, roundTrip, ping, browse, parseURL, logEvent, topology, topologies, TOPOLOGY_INFO, ringOf, activeFaults, setFault, clone, newId,
     useService, SERVICES, ACTIONS, defaultServices, svcOn, NAMED_SERVICES, validHost, svcHost, nameStatus, registerName, linkBetween, isDnsServer, dnsUpstream,
     parseIP6, ip6Str, net6Str, isLinkLocal6, ip6Map, ip6Of, route6, ping6,

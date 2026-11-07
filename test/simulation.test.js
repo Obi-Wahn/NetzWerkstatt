@@ -999,4 +999,61 @@ test('Keine Aufgabe verlangt, einen Dienst auf einem gesperrten Server einzuscha
   }
 });
 
+// ---------------------------------------------------------------- Tipps raten nie zu Unmöglichem
+test('Unbekannter Name bei gesperrtem DNS-Server: kein „Ergänze den Eintrag“, sondern bekannte Namen', () => {
+  const net = TASKS.find(t => t.id === 'tcp-udp').solution();
+  const r = NW.browse(net, 'tb', 'http://www.gibtsnicht.de');
+  assert.ok(!r.ok);
+  assert.doesNotMatch(r.hint, /rgänze/);
+  assert.match(r.hint, /video\.netzwerkstatt\.de/);
+});
+
+test('Gerät auf DHCP ohne DNS-Server oder Gateway: Tipp nennt den DHCP-Weg statt „Trage beim Gerät … ein“', () => {
+  const net = TASKS.find(t => t.id === 'webseite').solution();
+  const pc = NW.dev(net, 'pc');
+  pc.dhcp = true; pc.dns = '';
+  const r = NW.browse(net, 'pc', 'http://www.netzwerkstatt.de');
+  assert.match(r.hint, /DHCP/);
+  assert.doesNotMatch(r.hint, /Trage beim Gerät/);
+  pc.gw = '';
+  const p = NW.ping(net, 'pc', '203.0.113.80');
+  assert.match(p.hint, /DHCP/);
+  assert.doesNotMatch(p.hint, /Trage beim Gerät/);
+});
+
+test('Gesperrter Router ohne DHCP-Server: Tipp verlangt nicht, ihn einzuschalten', () => {
+  const net = TASKS.find(t => t.id === 'tcp-udp').solution();
+  const r = NW.dev(net, 'r');
+  assert.ok(r.locked);
+  r.ports.forEach(p => { if (p.dhcp) p.dhcp.on = false; });
+  const res = NW.dhcp(net, 'tb');
+  assert.ok(!res.ok);
+  assert.match(res.hint, /gehört zur Aufgabe/);
+  assert.doesNotMatch(res.hint, /schalte/i);
+});
+
+test('Gesperrter Router ohne DNS-Weiterleitung: Tipp nennt nur den anderen Weg', () => {
+  const net = TASKS.find(t => t.id === 'tcp-udp').solution();
+  const tb = NW.dev(net, 'tb');
+  tb.dhcp = false; tb.dns = '192.168.178.1';
+  NW.dev(net, 'r').dnsRelay = false;
+  const res = NW.browse(net, 'tb', 'http://video.netzwerkstatt.de');
+  assert.ok(!res.ok);
+  assert.doesNotMatch(res.hint, /Schalte beim Router/);
+  assert.match(res.hint, /anderen DNS-Server/);
+});
+
+test('Dateitausch: nur mitmachende Geräte sind Partner, gesperrte Partner werden nicht „eingeschaltet“', () => {
+  const net = TASKS.find(t => t.id === 'dateien').start();
+  const hosts = net.devices.filter(d => NW.TYPES[d.type].host);
+  for (const d of hosts) assert.strictEqual(NW.fileReady(d), NW.TYPES[d.type].services ? NW.fileStore(d).on : !!d.share);
+  const a = hosts.find(d => !NW.TYPES[d.type].services), b = hosts.find(d => d !== a && !NW.TYPES[d.type].services);
+  b.share = false; b.locked = true;
+  NW.newFile(a);
+  const r = NW.sendFile(net, a.id, b.ip, NW.filesOf(a)[0]);
+  assert.ok(!r.ok);
+  assert.match(r.hint, /anderen Partner/);
+  assert.doesNotMatch(r.hint, /schalte/i);
+});
+
 console.log(`\n${n} Tests bestanden.`);
