@@ -56,13 +56,21 @@ table.students { width: 100%; border-collapse: collapse; }
 .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; flex: 1; min-height: 0; }
 .compare > div { display: flex; flex-direction: column; min-height: 0; }
 .compare .view-wrap { flex: 1; }
-.access { text-align: center; padding: 30px 10px; }
-.access-grid { display: flex; gap: 40px; align-items: center; justify-content: center; flex-wrap: wrap; margin-bottom: 20px; }
+.access { text-align: center; padding: 12px 10px; }
+.access-grid { display: flex; gap: 40px; align-items: center; justify-content: center; flex-wrap: wrap; margin-bottom: 12px; }
 .access-text { flex: 1 1 420px; }
 .access-qr { flex: 0 0 auto; }
-.access-qr svg { width: min(340px, 70vw); height: auto; display: block; margin: 0 auto 8px; }
-.access .big-url { font-size: clamp(26px, 4vw, 56px); font-weight: 800; font-family: ui-monospace, Consolas, monospace; color: var(--brand); margin: 10px 0 30px; word-break: break-all; }
-.access .big-code { font-size: clamp(48px, 9vw, 120px); font-weight: 800; letter-spacing: .12em; }
+.access-qr svg { width: min(340px, 70vw, 44vh); height: auto; display: block; margin: 0 auto 8px; }
+.access .big-url { font-size: clamp(26px, min(4vw, 7vh), 56px); font-weight: 800; font-family: ui-monospace, Consolas, monospace; color: var(--brand); margin: 6px 0 18px; word-break: break-all; }
+.access .big-code { font-size: clamp(48px, min(9vw, 13vh), 120px); font-weight: 800; letter-spacing: .12em; }
+.access-tasks { max-width: 1100px; margin: 0 auto 8px; text-align: left; border-top: 1px solid var(--line); padding-top: 10px; }
+.access-tasks h3 { text-align: center; font-size: 1.2em; margin-bottom: 8px; }
+.access-groups { display: flex; flex-wrap: wrap; gap: 12px 28px; justify-content: center; }
+.access-group { flex: 0 1 300px; }
+.access-group-title { font-size: .8em; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; margin-bottom: 4px; }
+.access-group ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 1.1em; }
+.access-group li { display: flex; }
+.access-group .num { flex: none; min-width: 2.2em; color: var(--brand); font-weight: 700; font-variant-numeric: tabular-nums; }
 .view-head { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
 .view-head .goals { flex: 1; min-width: 260px; }
 @media (max-width: 800px) { .compare { grid-template-columns: 1fr; } }
