@@ -392,7 +392,7 @@
       title: 'Musik über Bluetooth (PAN)',
       level: 1,
       intro: 'Jonas hört mit kabellosen Kopfhörern Musik vom Smartphone. Kopfhörer und Smartphone bilden zusammen ein winziges Netz: ein PAN (Personal Area Network). Gleichzeitig ist das Smartphone im WLAN des Heimnetzes (LAN). Achte unten auf der Arbeitsfläche auf die Anzeige der Netzarten.',
-      tip: 'Nimm das Werkzeug „Bluetooth“ und tippe auf das Smartphone und auf die Kopfhörer. Danach findest du beim Smartphone den Knopf „Musik abspielen“. Für das Heimnetz nimmst du das Werkzeug „WLAN“.',
+      tip: 'Tippe in der Geräteleiste auf „Bluetooth“ und dann auf das Smartphone und auf die Kopfhörer. Danach findest du beim Smartphone den Knopf „Musik abspielen“. Für das Heimnetz nimmst du „WLAN“.',
       think: 'Warum brauchen die Kopfhörer keine IP-Adresse? Kann der PC die Kopfhörer anpingen? Wie weit reicht Bluetooth ungefähr – und wie weit WLAN?',
       goals: [
         { text: 'Kopple die Kopfhörer per Bluetooth mit dem Smartphone.', check: c => c.byType('headset').some(h => c.byType('smartphone').some(s => c.linked(h, s, 'bluetooth'))) },
@@ -417,7 +417,7 @@
       level: 2,
       manual: true,
       intro: 'Die Schule hat eine Außenstelle am anderen Ende der Stadt. Beide Gebäude haben schon ein eigenes lokales Netz (LAN). Die Stadtwerke verlegen eine Glasfaserleitung zwischen den Gebäuden. Verbinde die beiden LANs zu einem Stadtnetz (MAN), damit die Außenstelle den Vertretungsplan vom Schulserver abrufen kann.',
-      tip: 'Nimm oben das Werkzeug „Glasfaser“ und tippe nacheinander auf die beiden Switches. Hast du schon ein normales Kabel verlegt? Dann tippe auf die Linie zwischen den Switches und wähle bei „Art der Leitung“ den Knopf „Glasfaser“. Die Adressen sind schon eingetragen: Alle Geräte liegen im Netz 10.10.0.0/24.',
+      tip: 'Tippe in der Geräteleiste auf „Glasfaser“ und dann nacheinander auf die beiden Switches. Hast du schon ein normales Kabel verlegt? Dann tippe auf die Linie zwischen den Switches und wähle bei „Art der Leitung“ den Knopf „Glasfaser“. Die Adressen sind schon eingetragen: Alle Geräte liegen im Netz 10.10.0.0/24.',
       think: 'Woran erkennt man, dass hier zwei LANs und ein MAN entstanden sind? Wie müsste das Netz aussehen, wenn die Außenstelle in einer anderen Stadt oder einem anderen Land läge?',
       goals: [
         { text: 'Verbinde die Switches der beiden Gebäude miteinander.', check: c => c.linked(NW.dev(c.net, 'swa') || {}, NW.dev(c.net, 'swb') || {}, 'kabel') },

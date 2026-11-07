@@ -10,6 +10,7 @@
   // Einfache Symbole, gezeichnet in einem 40×40-Feld
   const ICONS = {
     pc: '<rect x="4" y="5" width="32" height="22" rx="2"/><path d="M15 33h10M20 27v6"/><path d="M8 9h24v14H8z" class="fill"/>',
+    laptop: '<rect x="8" y="7" width="24" height="17" rx="1.5"/><rect x="11" y="10" width="18" height="11" class="fill"/><path d="M3 30h34l-3-6H6z"/><path d="M17 27h6"/>',
     tablet: '<rect x="9" y="3" width="22" height="34" rx="3"/><rect x="12" y="7" width="16" height="24" class="fill"/><circle cx="20" cy="34" r="1"/>',
     smartphone: '<rect x="12" y="3" width="16" height="34" rx="3"/><rect x="14.5" y="7" width="11" height="24" class="fill"/><path d="M18 34.5h4"/>',
     server: '<rect x="7" y="3" width="26" height="10" rx="1.5"/><rect x="7" y="15" width="26" height="10" rx="1.5"/><rect x="7" y="27" width="26" height="10" rx="1.5"/><path d="M11 8h2M11 20h2M11 32h2M22 8h7M22 20h7M22 32h7"/>',

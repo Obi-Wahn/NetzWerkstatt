@@ -11,6 +11,7 @@
   // ------------------------------------------------------------------ Gerätetypen
   const TYPES = {
     pc:         { label: 'PC',           host: true,  cable: 1, wlan: false, bt: true, icon: 'pc' },
+    laptop:     { label: 'Laptop',       host: true,  cable: 1, wlan: true,  bt: true, icon: 'laptop' },
     tablet:     { label: 'Tablet',       host: true,  cable: 0, wlan: true,  bt: true, icon: 'tablet' },
     smartphone: { label: 'Smartphone',   host: true,  cable: 0, wlan: true,  bt: true, icon: 'smartphone' },
     headset:    { label: 'Kopfhörer',    cable: 0, wlan: false, bt: true, btOnly: true, icon: 'headset' },
@@ -26,6 +27,7 @@
 
   const DESCRIPTIONS = {
     pc: 'Ein Endgerät. Es wird per Kabel angeschlossen und braucht eine IP-Adresse, um im Netz erreichbar zu sein. Für ein Ringnetz kann ein PC direkt mit zwei Nachbar-PCs verbunden werden.',
+    laptop: 'Ein tragbares Endgerät. Es kann per Kabel oder per WLAN ins Netz – aber immer nur auf eine Art gleichzeitig. Wie jedes Endgerät braucht es eine IP-Adresse.',
     tablet: 'Ein Endgerät ohne Netzwerkkabel. Es verbindet sich per WLAN mit einem Access Point.',
     smartphone: 'Ein Endgerät ohne Netzwerkkabel. Es verbindet sich per WLAN mit einem Access Point.',
     server: 'Ein Rechner, der Dienste für andere anbietet (Server im Client-Server-Modell), z. B. Webseiten, E-Mail, Videos, Videotelefonie, Online-Spiele oder die Namensauflösung (DNS).',
@@ -253,8 +255,8 @@
       return { ok: false, reason: `${a.name} und ${b.name} sind schon verbunden.` };
     const ta = TYPES[a.type], tb = TYPES[b.type];
     if (kind === 'bluetooth') {
-      for (const d of [a, b]) if (!TYPES[d.type].bt) return { ok: false, reason: `${d.name} hat kein Bluetooth. Bluetooth haben z. B. Smartphone, Tablet, PC und Kopfhörer.` };
-      if (ta.btOnly && tb.btOnly) return { ok: false, reason: 'Zwei Kopfhörer können nicht miteinander gekoppelt werden. Verbinde die Kopfhörer mit einem Smartphone, Tablet oder PC.' };
+      for (const d of [a, b]) if (!TYPES[d.type].bt) return { ok: false, reason: `${d.name} hat kein Bluetooth. Bluetooth haben z. B. Smartphone, Tablet, Laptop, PC und Kopfhörer.` };
+      if (ta.btOnly && tb.btOnly) return { ok: false, reason: 'Zwei Kopfhörer können nicht miteinander gekoppelt werden. Verbinde die Kopfhörer mit einem Smartphone, Tablet, Laptop oder PC.' };
       for (const d of [a, b]) if (TYPES[d.type].btOnly && btCount(net, d.id) >= 1) return { ok: false, reason: `${d.name} ist schon mit einem anderen Gerät gekoppelt.` };
       return { ok: true };
     }
@@ -262,6 +264,7 @@
     if (kind === 'kabel') {
       for (const [d, t, o] of [[a, ta, b], [b, tb, a]]) {
         if (!t.cable) return { ok: false, reason: `${d.name} hat keinen Netzwerkanschluss für ein Kabel. Verbinde es per WLAN mit einem Access Point.` };
+        if (t.host && wlanCount(net, d.id) >= 1) return { ok: false, reason: `${d.name} ist schon per WLAN verbunden. Ein Endgerät nutzt entweder Kabel oder WLAN. Lösche zuerst die WLAN-Verbindung.` };
         if (t.host && TYPES[o.type].host && cableCount(net, d.id) === 1 && hostCablesOnlyToHosts(net, d.id)) continue; // Ring: zweiter Nachbar
         if (t.host && cableCount(net, d.id) >= 2)
           return { ok: false, reason: `${d.name} ist schon mit zwei Nachbarn verbunden. In einem Ring hat jede Station genau zwei Nachbarn.` };
@@ -287,6 +290,7 @@
       const to = TYPES[other.type];
       if (!to.wlan) return { ok: false, reason: `${other.name} hat kein WLAN. Schließe es per Kabel an.` };
       if (wlanCount(net, other.id) >= 1) return { ok: false, reason: `${other.name} ist schon mit einem WLAN verbunden.` };
+      if (to.host && cableCount(net, other.id) >= 1) return { ok: false, reason: `${other.name} ist schon per Kabel verbunden. Ein Endgerät nutzt entweder Kabel oder WLAN. Lösche zuerst das Kabel.` };
       if (wlanCount(net, apD.id) >= TYPES.ap.apWlan) return { ok: false, reason: `${apD.name} kann höchstens ${TYPES.ap.apWlan} WLAN-Geräte versorgen.` };
       return { ok: true };
     }
@@ -621,7 +625,7 @@
     const fromRouter = !!(src && TYPES[src.type].router);
     if (!src || !(TYPES[src.type].host || fromRouter)) return fail([srcId], 'Nur Endgeräte können Pakete senden.');
     if (src.off) return fail([srcId], `${src.name} ist ausgefallen (ausgeschaltet) und kann nichts senden.`, 'Tippe das Gerät an und schalte es wieder ein.');
-    if (!linksOf(net, srcId).length) return fail([srcId], `${src.name} ist mit nichts verbunden.`, TYPES[src.type].wlan && !TYPES[src.type].cable ? 'Verbinde es per WLAN mit einem Access Point.' : 'Verbinde es mit einem Kabel.');
+    if (!linksOf(net, srcId).length) return fail([srcId], `${src.name} ist mit nichts verbunden.`, TYPES[src.type].wlan && !TYPES[src.type].cable ? 'Verbinde es per WLAN mit einem Access Point.' : TYPES[src.type].wlan ? 'Verbinde es mit einem Kabel oder per WLAN.' : 'Verbinde es mit einem Kabel.');
     // Ein Router (z. B. als DNS-Weiterleitung) sendet über den Anschluss, in dessen Netz das Ziel liegt, sonst über WAN
     const startPort = fromRouter ? (IFACES.find(i => { const a = ifaceAddr(src, i); return a && sameNet(a.ip, dstIP, a.prefix); }) ?? WAN) : 0;
     const sa = ifaceAddr(src, startPort);
@@ -1172,7 +1176,7 @@
     if (!h || !(TYPES[h.type].host || isRouter)) return res(false, { error: 'Nur Endgeräte und Router können per DHCP eine Adresse anfordern.' });
     if (h.off) return res(false, { error: `${h.name} ist ausgefallen (ausgeschaltet).`, hint: 'Tippe das Gerät an und schalte es wieder ein.' });
     const myLinks = linksOf(net, hostId).filter(l => !isRouter || iface(portOf(l, hostId)) === WAN);
-    if (!myLinks.length) return res(false, { error: isRouter ? `Am Internet-Anschluss (WAN) von ${h.name} ist nichts angeschlossen.` : `${h.name} ist mit nichts verbunden und kann niemanden nach einer Adresse fragen.`, hint: isRouter ? 'Verbinde den Router mit einem Internetanbieter.' : TYPES[h.type].cable ? 'Verbinde es mit einem Kabel.' : 'Verbinde es per WLAN mit einem Access Point.' });
+    if (!myLinks.length) return res(false, { error: isRouter ? `Am Internet-Anschluss (WAN) von ${h.name} ist nichts angeschlossen.` : `${h.name} ist mit nichts verbunden und kann niemanden nach einer Adresse fragen.`, hint: isRouter ? 'Verbinde den Router mit einem Internetanbieter.' : TYPES[h.type].cable ? (TYPES[h.type].wlan ? 'Verbinde es mit einem Kabel oder per WLAN.' : 'Verbinde es mit einem Kabel.') : 'Verbinde es per WLAN mit einem Access Point.' });
     const eps = l2Endpoints(net, hostId, isRouter ? WAN : 0);
     const servers = eps.filter(e => (TYPES[e.dev.type].isp && ifaceAddr(e.dev, 0)) || (TYPES[e.dev.type].router && e.port === LAN && ifaceAddr(e.dev, e.port) && dhcpOf(e.dev.ports[e.port]).on));
     const bcPaths = eps.length ? eps.map(e => e.path) : [[hostId]];
@@ -1451,7 +1455,7 @@
     const done = (path, target) => ({ ok: true, path, target });
     if (!src || !(TYPES[src.type].host || TYPES[src.type].isp)) return fail([srcId], 'Nur Endgeräte können Pakete senden.');
     if (src.off) return fail([srcId], `${src.name} ist ausgefallen (ausgeschaltet) und kann nichts senden.`, 'Tippe das Gerät an und schalte es wieder ein.');
-    if (!linksOf(net, srcId).length) return fail([srcId], `${src.name} ist mit nichts verbunden.`, TYPES[src.type].wlan && !TYPES[src.type].cable ? 'Verbinde es per WLAN mit einem Access Point.' : 'Verbinde es mit einem Kabel.');
+    if (!linksOf(net, srcId).length) return fail([srcId], `${src.name} ist mit nichts verbunden.`, TYPES[src.type].wlan && !TYPES[src.type].cable ? 'Verbinde es per WLAN mit einem Access Point.' : TYPES[src.type].wlan ? 'Verbinde es mit einem Kabel oder per WLAN.' : 'Verbinde es mit einem Kabel.');
     const me = map.get(srcId + ':0');
     if (me.ll === dst || me.gua === dst) return done([srcId], src);
     const at = (d, i) => map.get(d.id + ':' + i) || {};

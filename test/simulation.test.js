@@ -182,6 +182,28 @@ test('Heimrouter: PCs an verschiedenen LAN-Anschlüssen und im WLAN sind im selb
   assert.deepStrictEqual(res.steps[0].path, ['sp', 'r', 'p3']);
 });
 
+test('Laptop: per Kabel oder per WLAN, aber nicht beides gleichzeitig', () => {
+  const net = NW.emptyNetwork();
+  NW.createDevice(net, 'router', 0, 0, { id: 'r' });
+  NW.createDevice(net, 'pc', 0, 0, { id: 'p' });
+  const lp = NW.createDevice(net, 'laptop', 0, 0, { id: 'lp' });
+  assert.ok(NW.addLink(net, 'p', 'r', 'kabel').ok);
+  const w = NW.addLink(net, 'lp', 'r', 'wlan');
+  assert.ok(w.ok, w.reason);
+  const k = NW.addLink(net, 'lp', 'p', 'kabel');
+  assert.ok(!k.ok && /entweder Kabel oder WLAN/.test(k.reason), k.reason);
+  for (const d of net.devices.filter(d => NW.TYPES[d.type].host)) NW.applyLease(d, NW.dhcp(net, d.id).lease);
+  let res = NW.ping(net, 'lp', net.devices.find(d => d.id === 'p').ip);
+  assert.ok(res.ok, res.error);
+  // Umstecken: WLAN weg, Kabel dran
+  NW.removeLink(net, w.link.id);
+  assert.ok(NW.addLink(net, 'lp', 'r', 'kabel').ok);
+  assert.ok(!NW.addLink(net, 'lp', 'r', 'wlan').ok, 'zweite Verbindung per WLAN abgelehnt');
+  res = NW.ping(net, 'lp', net.devices.find(d => d.id === 'p').ip);
+  assert.ok(res.ok, res.error);
+  assert.ok(NW.addLink(net, 'lp', NW.createDevice(net, 'headset', 0, 0, { id: 'h' }).id, 'bluetooth').ok, 'Bluetooth geht zusätzlich');
+});
+
 test('Heimrouter: Kabel zu anderem Router steckt im WAN, Umstecken möglich', () => {
   const net = NW.emptyNetwork();
   NW.createDevice(net, 'router', 0, 0, { id: 'r1' });
