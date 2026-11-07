@@ -19,6 +19,8 @@
     ap:         { label: 'Access Point', l2: true,    cable: 1, apWlan: 8, icon: 'ap' },
     router:     { label: 'Router',       router: true, cable: 4, icon: 'router' },
     isp:        { label: 'Internetanbieter', isp: true, cable: 8, icon: 'isp' },
+    // Rechenzentrum: Netz für Internetserver mit eigenem öffentlichem Adressbereich (verhält sich wie ein Anbieter-Netz)
+    rz:         { label: 'Rechenzentrum', isp: true, rz: true, cable: 8, icon: 'rz' },
     bus:        { label: 'Bus-Kabel',    l2: true,    bus: true, cable: 8, icon: 'bus' },
   };
 
@@ -33,6 +35,7 @@
     bus: 'Ein langes Kabel, an das alle Geräte angeschlossen werden (Bustopologie). Jedes Signal läuft über das ganze Kabel und kommt bei allen Geräten an – nur der Empfänger nimmt es an. Es darf immer nur ein Gerät gleichzeitig senden. Ist das Bus-Kabel an einer Stelle unterbrochen, ist das ganze Netz gestört. Es ist eine passive Komponente und braucht keine IP-Adresse.',
     headset: 'Kabellose Kopfhörer verbinden sich per Bluetooth mit einem Smartphone, Tablet oder PC in der Nähe (wenige Meter). Sie haben keine IP-Adresse und gehören nicht zum Heimnetz, sondern zum persönlichen Netz (PAN) ihres Besitzers.',
     isp: 'Der Internetanbieter (Provider) verbindet Heimnetze und Server mit dem Internet. Jeder Router, der an seine Leitung angeschlossen wird, bekommt von ihm automatisch eine öffentliche (externe) IP-Adresse. Mehrere Internetanbieter, die per Kabel miteinander verbunden sind, bilden zusammen das Internet.',
+    rz: 'Ein Rechenzentrum betreibt Internetserver, z. B. für Webseiten, E-Mail, Videos oder die Namensauflösung (DNS). Es hat ein eigenes öffentliches Netz, getrennt von den Netzen der Internetanbieter. Über eine Leitung zu einem Internetanbieter sind seine Server im ganzen Internet erreichbar. Server, die hier angeschlossen werden, bekommen automatisch eine öffentliche Adresse aus dem Netz des Rechenzentrums.',
   };
 
   // ------------------------------------------------------------------ IP-Hilfen
@@ -100,9 +103,11 @@
 
   /** Öffentliche Adressbereiche für Internetanbieter (je ein Netz /24, der Anbieter selbst hat .1). */
   const ISP_NETS = ['85.17.4', '91.64.12', '62.157.8', '78.42.30', '93.120.5', '217.80.21', '188.96.3', '46.5.77'];
-  function freeIspNet(net) {
+  /** Öffentliche Adressbereiche für Rechenzentren (zuerst die für Beispiele reservierten Bereiche). */
+  const RZ_NETS = ['198.51.100', '192.0.2', '203.0.113', '45.137.20', '80.240.12', '176.28.50', '5.199.140', '37.120.8'];
+  function freeIspNet(net, list) {
     const all = allAddrs(net);
-    const cand = ISP_NETS.find(n => all.every(a => !sameNet(a.ip, parseIP(n + '.0'), Math.min(24, a.prefix))));
+    const cand = (list || ISP_NETS).find(n => all.every(a => !sameNet(a.ip, parseIP(n + '.0'), Math.min(24, a.prefix))));
     return cand ? cand + '.1' : '';
   }
 
@@ -128,8 +133,9 @@
       d.ports[1].dhcp.on = true; // DHCP im Heimnetz ist ab Werk an
       d.wlan = true;             // eingebautes WLAN (wie ein Access Point)
       d.modem = true;            // eingebautes Internet-Modem (DSL/Kabel)
+      d.dnsRelay = false;        // DNS-Anfragen aus dem Heimnetz an den DNS-Server des Anbieters weiterleiten
     }
-    if (t.isp) { d.ip = freeIspNet(net); d.mask = '255.255.255.0'; d.dns = ''; }
+    if (t.isp) { d.ip = freeIspNet(net, t.rz ? RZ_NETS : ISP_NETS); d.mask = '255.255.255.0'; d.dns = ''; }
     if (t.services) d.services = defaultServices();
     else if (t.host) { d.files = []; d.share = false; }
     Object.assign(d, extra || {});
@@ -612,10 +618,14 @@
     const src = dev(net, srcId);
     const nat = [];
     const fail = (path, error, hint) => ({ ok: false, path, error, hint: hint || '', nat });
-    if (!src || !TYPES[src.type].host) return fail([srcId], 'Nur Endgeräte können Pakete senden.');
+    const fromRouter = !!(src && TYPES[src.type].router);
+    if (!src || !(TYPES[src.type].host || fromRouter)) return fail([srcId], 'Nur Endgeräte können Pakete senden.');
     if (src.off) return fail([srcId], `${src.name} ist ausgefallen (ausgeschaltet) und kann nichts senden.`, 'Tippe das Gerät an und schalte es wieder ein.');
     if (!linksOf(net, srcId).length) return fail([srcId], `${src.name} ist mit nichts verbunden.`, TYPES[src.type].wlan && !TYPES[src.type].cable ? 'Verbinde es per WLAN mit einem Access Point.' : 'Verbinde es mit einem Kabel.');
-    const sa = ifaceAddr(src, 0);
+    // Ein Router (z. B. als DNS-Weiterleitung) sendet über den Anschluss, in dessen Netz das Ziel liegt, sonst über WAN
+    const startPort = fromRouter ? (IFACES.find(i => { const a = ifaceAddr(src, i); return a && sameNet(a.ip, dstIP, a.prefix); }) ?? WAN) : 0;
+    const sa = ifaceAddr(src, startPort);
+    if (fromRouter && !sa) return fail([srcId], `${src.name} hat am Internet-Anschluss (WAN) noch keine Adresse.`, 'Fordere beim Router eine Adresse vom Internetanbieter an.');
     if (!sa) {
       if (parseIP(src.ip) === null) return fail([srcId], `${src.name} hat noch keine gültige IP-Adresse.`, src.dhcp ? 'Tippe das Gerät an und fordere per DHCP eine Adresse an.' : 'Tippe das Gerät an und trage eine IP-Adresse ein, z. B. 192.168.1.10.');
       return fail([srcId], `Die Subnetzmaske von ${src.name} ist ungültig.`, 'Üblich ist 255.255.255.0.');
@@ -624,8 +634,11 @@
     const done = (path, target) => ({ ok: true, path, target, nat, seenSrc });
     if (sa.ip === dstIP) return done([srcId], src);
 
-    let curId = srcId, curPort = 0, path = [srcId];
+    if (fromRouter && IFACES.some(i => parseIP(src.ports[i].ip) === dstIP)) return done([srcId], src);
+
+    let curId = srcId, curPort = startPort, path = [srcId];
     const visited = new Set();
+    if (fromRouter) visited.add(srcId);
     for (let step = 0; step < 16; step++) {
       const cd = dev(net, curId);
       const ca = ifaceAddr(cd, curPort);
@@ -821,7 +834,7 @@
   function defaultServices() {
     return {
       web: { on: false, title: 'Willkommen!', text: 'Das ist meine erste Webseite.' },
-      dns: { on: false, entries: [] },
+      dns: { on: false, entries: [], forward: '' },
       mail: { on: false, box: [] },
       video: { on: false },
       call: { on: false },
@@ -848,26 +861,78 @@
   /** Name per DNS in eine IP-Adresse übersetzen (DNS-Schritte landen in steps). */
   function resolveHost(net, src, host, steps) {
     const direct = parseIP(host);
-    if (direct !== null) return { ip: direct };
+    if (direct !== null) return { ip: direct, dns: [] };
     const dnsIP = parseIP(src.dns || '');
-    if (dnsIP === null) return { error: `${src.name} kennt keinen DNS-Server und kann den Namen ${host} nicht in eine IP-Adresse übersetzen.`, hint: 'Trage beim Gerät die IP-Adresse eines DNS-Servers ein.' };
-    const rt = roundTrip(net, src.id, dnsIP);
-    steps.push({ kind: 'request', label: 'DNS-Anfrage', proto: 'UDP · Port 53', text: `Welche IP-Adresse hat ${host}?`, note: natNote(net, rt, 'there'), path: rt.there.path, ok: rt.there.ok });
+    if (dnsIP === null) return { error: `${src.name} kennt keinen DNS-Server und kann den Namen ${host} nicht in eine IP-Adresse übersetzen.`, hint: 'Trage beim Gerät die IP-Adresse eines DNS-Servers ein.', dns: [] };
+    const chain = [];
+    const r = askDns(net, src, dnsIP, host, steps, chain, 0);
+    r.dns = chain;
+    return r;
+  }
+
+  /**
+   * Wohin ein DNS-Server Anfragen weiterleitet, deren Namen er nicht selbst kennt (IP oder null).
+   * Router: an den DNS-Server, den er vom Internetanbieter kennt. Server: an den eingetragenen DNS-Server.
+   */
+  function dnsUpstream(d) {
+    if (TYPES[d.type].router) return d.dnsRelay ? parseIP(d.ports[WAN].dns || '') : null;
+    return svcOn(d, 'dns') ? parseIP(d.services.dns.forward || '') : null;
+  }
+
+  /** Ist das Gerät ein DNS-Server (eigener Server oder weiterleitender Router)? */
+  function isDnsServer(d) { return svcOn(d, 'dns') || (TYPES[d.type].router && !!d.dnsRelay); }
+
+  /**
+   * Eine DNS-Anfrage von „from“ an den DNS-Server dnsIP. Kennt der Server den Namen nicht,
+   * fragt er (falls eingestellt) beim nächsten DNS-Server nach und reicht die Antwort weiter.
+   * chain sammelt die IDs der befragten DNS-Server.
+   */
+  function askDns(net, from, dnsIP, host, steps, chain, depth) {
+    const P = 'UDP · Port 53';
+    const fwd = depth > 0;
+    const rt = roundTrip(net, from.id, dnsIP);
+    steps.push({ kind: 'request', label: fwd ? 'DNS-Anfrage (weitergeleitet)' : 'DNS-Anfrage', proto: P,
+      text: fwd ? `${from.name} fragt weiter: „Welche IP-Adresse hat ${host}?"` : `Welche IP-Adresse hat ${host}?`,
+      note: natNote(net, rt, 'there'), path: rt.there.path, ok: rt.there.ok });
     if (!rt.ok) {
-      if (rt.back) steps.push({ kind: 'response', label: 'DNS-Antwort', proto: 'UDP · Port 53', text: '', path: rt.back.path, ok: false });
-      return { error: 'DNS-Server nicht erreichbar: ' + rt.error, hint: rt.hint };
+      if (rt.back) steps.push({ kind: 'response', label: 'DNS-Antwort', proto: P, text: '', path: rt.back.path, ok: false });
+      return { error: (fwd ? `${from.name} erreicht den nächsten DNS-Server (${ipStr(dnsIP)}) nicht: ` : 'DNS-Server nicht erreichbar: ') + rt.error, hint: rt.hint };
     }
     const ds = rt.target;
-    if (!svcOn(ds, 'dns'))
+    const answer = (text, extra) => steps.push(Object.assign({ kind: 'response', label: 'DNS-Antwort', proto: P, text, note: natNote(net, rt, 'back'), path: rt.back.path, ok: true }, extra || {}));
+    if (!isDnsServer(ds)) {
+      if (TYPES[ds.type].router) return { error: `Unter ${ipStr(dnsIP)} (${ds.name}) läuft kein DNS-Server.`, hint: `Schalte beim Router ${ds.name} „DNS-Anfragen weiterleiten" ein oder trage einen anderen DNS-Server ein.` };
       return { error: `Unter ${ipStr(dnsIP)} (${ds.name}) läuft kein DNS-Server.`, hint: 'Prüfe die DNS-Adresse oder schalte beim Server den DNS-Dienst ein.' };
-    const entry = (ds.services.dns.entries || []).find(e => (e.name || '').trim().toLowerCase() === host);
-    if (!entry || parseIP(entry.ip) === null) {
-      steps.push({ kind: 'response', label: 'DNS-Antwort', proto: 'UDP · Port 53', text: `Den Namen ${host} kenne ich nicht.`, path: rt.back.path, ok: true, bad: true });
-      return { error: `Der DNS-Server kennt den Namen ${host} nicht.`, hint: 'Prüfe die Schreibweise der Adresse oder ergänze den Eintrag beim DNS-Server.' };
     }
-    const ip = parseIP(entry.ip);
-    steps.push({ kind: 'response', label: 'DNS-Antwort', proto: 'UDP · Port 53', text: `${host} hat die IP-Adresse ${ipStr(ip)}`, note: natNote(net, rt, 'back'), path: rt.back.path, ok: true });
-    return { ip };
+    if (chain.includes(ds.id) || depth >= 5) {
+      answer('Fehler: Die Anfrage läuft im Kreis.', { bad: true });
+      return { error: `Die DNS-Anfrage läuft im Kreis: ${ds.name} wurde schon gefragt.`, hint: 'Ein DNS-Server darf eine Anfrage nicht an sich selbst oder zurück an einen DNS-Server weiterleiten, der ihn selbst fragt.' };
+    }
+    chain.push(ds.id);
+    const own = svcOn(ds, 'dns') ? (ds.services.dns.entries || []).find(e => (e.name || '').trim().toLowerCase() === host && parseIP(e.ip) !== null) : null;
+    if (own) {
+      const ip = parseIP(own.ip);
+      answer(`${host} hat die IP-Adresse ${ipStr(ip)}`);
+      return { ip, by: ds.id };
+    }
+    const up = dnsUpstream(ds);
+    const isR = TYPES[ds.type].router;
+    if (up === null) {
+      if (isR) {
+        answer('Fehler: Ich kenne keinen DNS-Server, den ich fragen kann.', { bad: true });
+        return { error: `${ds.name} soll DNS-Anfragen weiterleiten, kennt aber selbst keinen DNS-Server.`, hint: 'Fordere beim Router am Internet-Anschluss (WAN) eine Adresse vom Internetanbieter an – dann kennt er dessen DNS-Server – oder trage dort einen DNS-Server ein.' };
+      }
+      answer(`Den Namen ${host} kenne ich nicht.`, { bad: true });
+      return { error: `${fwd ? 'Auch ' + ds.name : 'Der DNS-Server'} kennt den Namen ${host} nicht.`, hint: fwd ? `Ergänze den Eintrag bei ${ds.name}.` : 'Prüfe die Schreibweise der Adresse, ergänze den Eintrag beim DNS-Server oder lass ihn unbekannte Namen an einen anderen DNS-Server weiterleiten.' };
+    }
+    const r = askDns(net, ds, up, host, steps, chain, depth + 1);
+    if (r.error) {
+      answer(`${ds.name}: „Den Namen ${host} konnte ich nicht herausfinden."`, { bad: true });
+      return r;
+    }
+    const by = dev(net, r.by);
+    answer(`${host} hat die IP-Adresse ${ipStr(r.ip)} (${ds.name} reicht die Antwort von ${by ? by.name : 'einem anderen DNS-Server'} weiter)`);
+    return r;
   }
 
   const plural = (n, one, many) => n === 1 ? `1 ${one}` : `${n} ${many}`;
@@ -1001,7 +1066,7 @@
       ? { error: `„${target || ''}" ist keine gültige Adresse (URL).`, hint: 'Beispiel: http://www.beispiel.de' }
       : { error: (target || '').trim() ? `„${target}" ist kein gültiger Name und keine IP-Adresse.` : 'Gib zuerst den Namen oder die IP-Adresse des Servers ein.', hint: 'Beispiel: mail.beispiel.de' });
     const r = resolveHost(net, src, u.host, steps);
-    if (r.error) return res(false, { error: r.error, hint: r.hint });
+    if (r.error) return res(false, { error: r.error, hint: r.hint, dns: r.dns });
     const ip = r.ip;
     const port = A.port || S.port;
     const proto = `${S.proto} · Port ${port}`;
@@ -1029,7 +1094,7 @@
     const msgs = MESSAGES[action](src, srv, u);
     const ex = exchange(net, rt, src, srv, msgs, proto, details);
     steps.push(...ex.steps);
-    const extra = { target: srv.id, nat: natInfo(net, rt), lost: !!ex.lost, resent: !!ex.lost && S.proto === 'TCP', tcp: details, proto: S.proto, host: u.host };
+    const extra = { dns: r.dns, target: srv.id, nat: natInfo(net, rt), lost: !!ex.lost, resent: !!ex.lost && S.proto === 'TCP', tcp: details, proto: S.proto, host: u.host };
     let page = null, n = 0;
     if (action === 'web') {
       page = { host: u.host, ip: ipStr(ip), title: srv.services.web.title || '', text: srv.services.web.text || '' };
@@ -1144,8 +1209,9 @@
       steps.push({ kind: 'response', label: 'DHCP-Offer', proto: P_RESP, text: `${r.name}: „Tut mir leid, alle Adressen sind vergeben."`, path: back, ok: true, bad: true });
       return res(false, { error: `Der DHCP-Server von ${r.name} hat keine freie Adresse mehr (${ipStr(range.from)} bis ${ipStr(range.to)}).`, hint: ispSrv ? 'Verbinde das Gerät mit einem anderen Internetanbieter.' : 'Vergrößere beim Router den Adressbereich.' });
     }
-    // DNS-Server: beim Internetanbieter eingestellt; ein Heimrouter gibt sonst den DNS-Server seines Anbieters weiter
-    const dnsIP = ispSrv ? parseIP(r.dns || '') : firstIP(dhcpOf(r.ports[port]).dns, r.ports[WAN].dns);
+    // DNS-Server: beim Internetanbieter eingestellt; ein Heimrouter gibt den eingetragenen DNS-Server weiter,
+    // sonst sich selbst (wenn er DNS-Anfragen weiterleitet) oder den DNS-Server seines Anbieters
+    const dnsIP = ispSrv ? parseIP(r.dns || '') : firstIP(dhcpOf(r.ports[port]).dns, r.dnsRelay ? r.ports[port].ip : '', r.ports[WAN].dns);
     const lease = { ip: ipStr(ip), mask: ipStr(maskOf(ra.prefix)), gw: ipStr(ra.ip), dns: dnsIP === null ? '' : ipStr(dnsIP) };
     steps.push({ kind: 'response', label: 'DHCP-Offer', proto: P_RESP, text: `${r.name}: „Du kannst die Adresse ${lease.ip} haben."`, path: back, ok: true });
     steps.push({ kind: 'request', label: 'DHCP-Request', proto: P_REQ + ' · an alle', text: `${h.name} an alle: „Ich nehme die Adresse ${lease.ip} von ${r.name}!"`, paths: bcPaths, path: srv.path, ok: true });
@@ -1188,11 +1254,12 @@
   /**
    * Nach einer Änderung des DNS-Servers beim Internetanbieter: Router und Geräte, die ihre
    * Adresse per DHCP bekommen haben, übernehmen den neuen DNS-Server (wie bei einer Verlängerung).
+   * hostsOnly: Router behalten ihren DNS-Server (z. B. weil er gerade von Hand eingetragen wurde).
    * Liefert die Zahl der geänderten Geräte.
    */
-  function refreshDns(net) {
+  function refreshDns(net, hostsOnly) {
     let n = 0;
-    const order = net.devices.filter(d => TYPES[d.type].router).concat(net.devices.filter(d => TYPES[d.type].host && d.dhcp));
+    const order = net.devices.filter(d => !hostsOnly && TYPES[d.type].router).concat(net.devices.filter(d => TYPES[d.type].host && d.dhcp));
     for (const d of order) {
       const cur = TYPES[d.type].router ? d.ports[WAN] : d;
       const own = parseIP(cur.ip || '');
@@ -1232,8 +1299,11 @@
       if (router && parseIP(h.gw || '') !== router.a.ip) out.gw = ipStr(router.a.ip);
     }
     if (!(h.dns || '').trim()) {
+      // Zuerst ein Router im eigenen Netz, der DNS-Anfragen weiterleitet, sonst ein DNS-Server
+      const relay = eps.find(e => TYPES[e.dev.type].router && e.dev.dnsRelay && ifaceAddr(e.dev, e.port));
       const ds = net.devices.find(d => d !== h && d.services && d.services.dns && d.services.dns.on && parseIP(d.ip) !== null);
-      if (ds) out.dns = ds.ip.trim();
+      if (relay) out.dns = ipStr(ifaceAddr(relay.dev, relay.port).ip);
+      else if (ds) out.dns = ds.ip.trim();
     }
     return out;
   }
@@ -1681,7 +1751,7 @@
     emptyNetwork, createDevice, dev, linksOf, portOf, canLink, addLink, removeDevice, removeLink,
     allLinksOf, filesOf, fileStore, newFile, sendFile, getFiles, btPartners, playMusic, NET_KINDS, netKinds,
     ifaceAddr, l2Endpoints, route, roundTrip, ping, browse, parseURL, logEvent, topology, topologies, TOPOLOGY_INFO, ringOf, activeFaults, setFault, clone, newId,
-    useService, SERVICES, ACTIONS, defaultServices, svcOn, linkBetween,
+    useService, SERVICES, ACTIONS, defaultServices, svcOn, linkBetween, isDnsServer, dnsUpstream,
     parseIP6, ip6Str, net6Str, isLinkLocal6, ip6Map, ip6Of, route6, ping6,
     dhcpOf, dhcpRange, dhcpDefaultRange, dhcp, applyLease, refreshDns, suggest, suggestPortIP, iface, ifaceName, replug, WAN, LAN, wlanHub, setRouterWlan, isApipa, setModem, ispOf,
   };

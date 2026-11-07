@@ -9,7 +9,7 @@
  * Aufgabe:
  *   { id, title, intro, tip, think, manual, show, goals: [Ziel, …], start: Netzwerk, solution: Netzwerk|null }
  * Ziel:
- *   { type: 'geraete' | 'verbindung' | 'ip-netz' | 'dhcp' | 'ping' | 'webseite' | 'dienst' | 'topologie' | 'netzart',
+ *   { type: 'geraete' | 'verbindung' | 'ip-netz' | 'dhcp' | 'ping' | 'webseite' | 'dns-eintrag' | 'dns-weg' | 'dienst' | 'topologie' | 'netzart',
  *     …Einstellungen, text?: eigener Text }
  */
 (function (root) {
@@ -23,9 +23,9 @@
   const LIMITS = { tasks: 60, goals: 15, devices: 80, links: 160, events: 40, title: 80, intro: 1500, tip: 1000, goalText: 300 };
 
   // ---------------------------------------------------------------- Geräte-Auswahl in Zielen
-  const PLURAL = { pc: 'PCs', tablet: 'Tablets', smartphone: 'Smartphones', headset: 'Kopfhörer', server: 'Server', switch: 'Switches', ap: 'Access Points', router: 'Router', isp: 'Internetanbieter', bus: 'Bus-Kabel' };
-  const ARTICLE = { pc: 'einem PC', tablet: 'einem Tablet', smartphone: 'einem Smartphone', headset: 'Kopfhörern', server: 'einem Server', switch: 'einem Switch', ap: 'einem Access Point', router: 'einem Router', isp: 'einem Internetanbieter', bus: 'einem Bus-Kabel' };
-  const AKK = { pc: 'einen PC', tablet: 'ein Tablet', smartphone: 'ein Smartphone', headset: 'Kopfhörer', server: 'einen Server', switch: 'einen Switch', ap: 'einen Access Point', router: 'einen Router', isp: 'einen Internetanbieter', bus: 'ein Bus-Kabel' };
+  const PLURAL = { pc: 'PCs', tablet: 'Tablets', smartphone: 'Smartphones', headset: 'Kopfhörer', server: 'Server', switch: 'Switches', ap: 'Access Points', router: 'Router', isp: 'Internetanbieter', rz: 'Rechenzentren', bus: 'Bus-Kabel' };
+  const ARTICLE = { pc: 'einem PC', tablet: 'einem Tablet', smartphone: 'einem Smartphone', headset: 'Kopfhörern', server: 'einem Server', switch: 'einem Switch', ap: 'einem Access Point', router: 'einem Router', isp: 'einem Internetanbieter', rz: 'einem Rechenzentrum', bus: 'einem Bus-Kabel' };
+  const AKK = { pc: 'einen PC', tablet: 'ein Tablet', smartphone: 'ein Smartphone', headset: 'Kopfhörer', server: 'einen Server', switch: 'einen Switch', ap: 'einen Access Point', router: 'einen Router', isp: 'einen Internetanbieter', rz: 'ein Rechenzentrum', bus: 'ein Bus-Kabel' };
   // Sammelbegriffe zusätzlich zu den Gerätetypen
   const ENDGERAETE = ['pc', 'tablet', 'smartphone'];
   const GROUP_LABEL = { endgeraet: ['Endgerät', 'Endgeräte', 'einem Endgerät', 'ein Endgerät'], geraet: ['Gerät', 'Geräte', 'einem Gerät', 'ein Gerät'] };
@@ -44,6 +44,13 @@
   const SVC_ACTIONS = ['mail', 'mailget', 'video', 'call', 'game'];
   const SVC_TEXT = { mail: 'Schicke{w} eine E-Mail{h}.', mailget: 'Rufe{w} E-Mails{h} ab.', video: 'Sieh dir{w} ein Video{h} an.', call: 'Starte{w} einen Videoanruf{h}.', game: 'Spiele{w} online{h}.' };
   const TOPO_LABEL = { stern: 'Sterntopologie', bus: 'Bustopologie', ring: 'Ringtopologie' };
+
+  // Wie der Name aufgelöst werden soll (Liste der befragten DNS-Server → erfüllt?)
+  const DNS_VIA = {
+    eigener: { label: 'über einen selbst eingerichteten DNS-Server', text: 'Den Namen soll ein DNS-Server übersetzen, den du selbst eingerichtet hast.', check: list => list.some(d => !d.locked && NW.svcOn(d, 'dns')) },
+    router: { label: 'der Router leitet die DNS-Anfrage weiter', text: 'Der Router soll dabei die DNS-Anfrage weiterleiten.', check: list => list.some(d => T[d.type].router) && list.length > 1 },
+    weiter: { label: 'mit Weiterleitung zu einem zweiten DNS-Server', text: 'Der erste DNS-Server soll den Namen nicht selbst kennen, sondern bei einem anderen DNS-Server nachfragen.', check: list => list.length > 1 },
+  };
 
   // ---------------------------------------------------------------- Ziel-Bausteine
   // fields: Einstellungen mit Art und erlaubten Werten (für Prüfung und Formular)
@@ -91,6 +98,18 @@
       text: g => `Rufe im Browser die Seite http://${g.host} auf.`,
       check: g => c => c.webOk(g.host),
     },
+    'dns-eintrag': {
+      label: 'DNS-Eintrag anlegen',
+      fields: { host: { label: 'Name (z. B. www.schule.de)', host: true, def: 'www.schule.de' }, ip: { label: 'IP-Adresse (leer = egal)', ip: true, def: '' } },
+      text: g => `Richte einen DNS-Server ein, der den Namen ${g.host} ${g.ip ? `in die IP-Adresse ${g.ip}` : 'in eine IP-Adresse'} übersetzt.`,
+      check: g => c => c.byType('server').some(d => NW.svcOn(d, 'dns') && (d.services.dns.entries || []).some(e => (e.name || '').trim().toLowerCase() === g.host && NW.parseIP(e.ip) !== null && (!g.ip || NW.parseIP(e.ip) === NW.parseIP(g.ip)))),
+    },
+    'dns-weg': {
+      label: 'Webseite über eigenen DNS',
+      fields: { host: { label: 'Adresse (z. B. www.schule.de)', host: true, def: 'www.netzwerkstatt.de' }, via: { label: 'Namensauflösung', options: Object.keys(DNS_VIA), def: 'eigener' } },
+      text: g => `Rufe im Browser die Seite http://${g.host} auf. ${DNS_VIA[g.via].text}`,
+      check: g => c => c.webDnsOk(g.host, DNS_VIA[g.via].check),
+    },
     dienst: {
       label: 'Internetdienst nutzen',
       fields: { action: { label: 'Dienst', options: SVC_ACTIONS, def: 'mail' }, from: { label: 'auf', options: HOST_SEL, def: 'geraet' }, host: { label: 'Server-Name (leer = egal)', host: true, optional: true, def: '' } },
@@ -116,6 +135,7 @@
     if (field === 'kind' && TOPO_LABEL[v]) return TOPO_LABEL[v];
     if (field === 'kind' && NW.NET_KINDS[v]) return v + ' – ' + NW.NET_KINDS[v].name;
     if (field === 'action') return NW.ACTIONS[v].label;
+    if (field === 'via' && DNS_VIA[v]) return DNS_VIA[v].label;
     if (GROUP_LABEL[v]) return v === 'endgeraet' ? 'alle Endgeräte (PC, Tablet, Smartphone)' : 'beliebiges Gerät';
     if (T[v]) return T[v].label;
     return v;
@@ -332,8 +352,23 @@
     for (const tp of NW.topologies(solution)) {
       if (tp.ok && (tp.kind !== 'ring' || tp.closed) && !NW.topologies(start).some(s => s.kind === tp.kind)) add({ type: 'topologie', kind: tp.kind });
     }
+    const known = (net, name) => net.devices.some(d => NW.svcOn(d, 'dns') && (d.services.dns.entries || []).some(e => (e.name || '').trim().toLowerCase() === name));
+    for (const d of solution.devices) {
+      if (!NW.svcOn(d, 'dns')) continue;
+      for (const e of d.services.dns.entries || []) {
+        const name = normHost(e.name);
+        if (name && NW.parseIP(e.ip) !== null && !known(start, name)) add({ type: 'dns-eintrag', host: name, ip: e.ip.trim() });
+      }
+    }
     for (const e of solution.events || []) {
       if (!e.ok) continue;
+      if (e.type === 'web' && e.host && NW.parseIP(e.host) === null) {
+        const s = NW.dev(solution, e.src);
+        const r = s ? NW.browse(solution, s.id, 'http://' + e.host) : null;
+        const list = r && r.ok ? (r.dns || []).map(id => NW.dev(solution, id)).filter(Boolean) : [];
+        const via = ['router', 'weiter', 'eigener'].find(k => list.length && DNS_VIA[k].check(list));
+        if (via) add({ type: 'dns-weg', host: normHost(e.host), via });
+      }
       if (e.type === 'ping' && !e.v6 && typeOf(e.src) && typeOf(e.target)) add({ type: 'ping', from: typeOf(e.src), to: typeOf(e.target) });
       if (e.type === 'web' && e.host) add({ type: 'webseite', host: normHost(e.host) });
       if (e.type === 'svc' && SVC_ACTIONS.includes(e.action)) add({ type: 'dienst', action: e.action, from: typeOf(e.src) || 'geraet', host: e.host ? normHost(e.host) : '' });

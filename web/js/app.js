@@ -218,13 +218,21 @@
   const PALETTE = [
     ['Endgeräte', [['pc', 'PC'], ['tablet', 'Tablet'], ['smartphone', 'Smartphone'], ['headset', 'Kopfhörer', 'pan']]],
     ['Verteiler', [['switch', 'Switch'], ['bus', 'Bus-Kabel', 'topologie'], ['ap', 'Access Point', 'wlan'], ['router', 'Router']]],
-    ['Internet', [['server', 'Server'], ['isp', 'Internet\u00adanbieter', 'internet']]],
+    ['Server', [['server', 'Server'], ['server:web', 'Webserver', 'web'], ['server:dns', 'DNS-Server', 'web'], ['server:mail', 'Mailserver', 'dienste'], ['server:video', 'Videoserver', 'dienste']]],
+    ['Internet', [['isp', 'Internet\u00adanbieter', 'internet'], ['rz', 'Rechen\u00adzentrum', 'internet']]],
   ];
+  // Server mit eingeschaltetem Dienst (Name und Dienst ab Werk)
+  const SERVER_PRESETS = {
+    web: { name: 'Webserver', title: 'Willkommen!' },
+    dns: { name: 'DNS-Server' },
+    mail: { name: 'Mailserver' },
+    video: { name: 'Videoserver' },
+  };
   const palette = $('palette');
   function renderPalette() {
     const groups = PALETTE.map(([title, items]) => [title, items.filter(([, , f]) => !f || has(f))]);
     const html = groups.map(([title, items]) => `<div class="palette-title">${esc(title)}</div>` +
-      items.map(([t, l]) => `<button class="pal-btn" data-type="${t}" title="${esc(l.replace('\u00ad', ''))} hinzufügen">${NWView.iconSVG(t, 34)}<span>${esc(l)}</span></button>`).join('')).join('');
+      items.map(([t, l]) => `<button class="pal-btn" data-type="${t}" title="${esc(l.replace('\u00ad', ''))} hinzufügen">${NWView.iconSVG(t.split(':')[0], 34)}<span>${esc(l)}</span></button>`).join('')).join('');
     if (palette.dataset.sig !== html) { palette.innerHTML = html; palette.dataset.sig = html; }
   }
   /** Werkzeuge, Geräte und Anzeigen passend zur Aufgabe ein- und ausblenden. */
@@ -241,8 +249,16 @@
   palette.addEventListener('click', ev => {
     const b = ev.target.closest('.pal-btn');
     if (!b || readOnly()) return;
-    const p = NWView.freeSpot(S.net, b.dataset.type);
-    const d = NW.createDevice(S.net, b.dataset.type, p.x, p.y);
+    const [type, preset] = b.dataset.type.split(':');
+    const p = NWView.freeSpot(S.net, type);
+    const d = NW.createDevice(S.net, type, p.x, p.y);
+    if (preset && SERVER_PRESETS[preset]) {
+      const names = new Set(S.net.devices.map(o => o.name));
+      let k = 1;
+      while (names.has(SERVER_PRESETS[preset].name + ' ' + k)) k++;
+      d.name = SERVER_PRESETS[preset].name + ' ' + k;
+      d.services[preset].on = true;
+    }
     // In Aufgaben, in denen Adressen von Hand vergeben werden, ist DHCP aus
     if (S.task.manual) NWTasks.manualize({ devices: [d] });
     S.selected = d.id;
@@ -559,6 +575,19 @@
    * Einklappbarer Abschnitt. Grundfunktionen (feat leer) sind anfangs offen, ebenso
    * Abschnitte zum Thema der Aufgabe. Im freien Bauen sind Zusatzthemen anfangs zu.
    */
+  /** Vorschläge für die Weiterleitung eines DNS-Servers: DNS-Server des Anbieters und andere DNS-Server. */
+  function dnsForwardChips(d) {
+    const own = NW.parseIP(d.ip || '');
+    const vals = new Map();
+    for (const o of S.net.devices) {
+      if (o === d) continue;
+      if (T[o.type].isp && NW.parseIP(o.dns || '') !== null) vals.set(o.dns.trim(), `DNS-Server von ${o.name}`);
+      else if (NW.svcOn(o, 'dns') && NW.parseIP(o.ip || '') !== null) vals.set(o.ip.trim(), o.name);
+    }
+    const list = [...vals].filter(([ip]) => NW.parseIP(ip) !== own).slice(0, 3);
+    return list.length ? `<div class="chips">${list.map(([ip, who]) => `<button class="chip suggest" data-act="dns-forward" data-val="${esc(ip)}">💡 ${esc(who)} (${esc(ip)}) fragen</button>`).join('')}</div>` : '';
+  }
+
   function sec(key, title, body, feat, cls) {
     if (!body) return '';
     let open = feat ? !S.task.free && NWTasks.showOf(S.task).includes(feat) : true;
@@ -747,6 +776,11 @@
           });
           b += '</div>';
           if (!dis) b += '<button class="btn small" data-act="dns-add">+ Eintrag</button>';
+          b += field('Unbekannte Namen weiterfragen bei (DNS-Server)', 'services.dns.forward', n.forward || '', 'dnsfwd', { disabled: dis, placeholder: 'leer = nicht weiterfragen' });
+          b += `<p class="muted small">${(n.forward || '').trim()
+            ? `Kennt ${esc(d.name)} einen Namen nicht selbst, fragt er beim DNS-Server ${esc(n.forward.trim())} nach und reicht die Antwort weiter – wie die DNS-Server im echten Internet.`
+            : 'Kennt dieser DNS-Server einen Namen nicht, antwortet er „kenne ich nicht“. Mit einer Weiterleitung fragt er stattdessen bei einem anderen DNS-Server nach.'}</p>`;
+          if (!dis && !(n.forward || '').trim()) b += dnsForwardChips(d);
         }
       }
       if (has('dienste')) {
@@ -821,10 +855,23 @@
           b += `<p class="dhcp-info">Der Router selbst hat die feste Adresse <b>${esc(p.ip.trim())}</b>. Geräte auf „Automatisch (DHCP)" bekommen von ihm eine freie Adresse von ${esc(NW.ipStr(rg.from))} bis ${esc(NW.ipStr(rg.to))}, die Subnetzmaske und ${esc(p.ip.trim())} als Gateway.</p>`;
           b += `<details class="desc"><summary>DHCP genauer einstellen</summary>
             <div class="port-fields">${field('Adressen von', `ports.${i}.dhcp.from`, dh.from, 'range', { disabled: dis, placeholder: NW.ipStr(rg.from) })}${field('bis', `ports.${i}.dhcp.to`, dh.to, 'range', { disabled: dis, placeholder: NW.ipStr(rg.to) })}</div>
-            ${field('DNS-Server für die Geräte', `ports.${i}.dhcp.dns`, dh.dns, 'dns', { disabled: dis, placeholder: 'leer = kein DNS-Server' })}</details>`;
+            ${has('web') ? '' : field('DNS-Server für die Geräte', `ports.${i}.dhcp.dns`, dh.dns, 'dns', { disabled: dis, placeholder: 'leer = kein DNS-Server' })}</details>`;
         }
       }
       h += sec('lan', 'Heimnetz (LAN)', b);
+      // Namensauflösung (DNS)
+      if (has('web')) {
+        const lanIP = (p.ip || '').trim(), up = (d.ports[NW.WAN].dns || '').trim();
+        b = `<label class="toggle"><input type="checkbox" data-path="dnsRelay" ${d.dnsRelay ? 'checked' : ''} ${dis ? 'disabled' : ''}> DNS-Anfragen weiterleiten (Router als DNS-Server)</label>
+          <p class="muted small">${d.dnsRelay
+            ? `Geräte im Heimnetz fragen den Router${lanIP ? ` (${esc(lanIP)})` : ''} nach Namen. Er fragt beim DNS-Server ${up ? esc(up) : 'des Anbieters'} nach und reicht die Antwort weiter – so machen es die meisten Heimrouter.`
+            : 'Aus: Die Geräte im Heimnetz fragen selbst direkt einen DNS-Server, z. B. den des Internetanbieters oder einen eigenen Server.'}</p>`;
+        if (d.dnsRelay && !up) b += '<p class="fhint warn">Der Router kennt noch keinen DNS-Server, bei dem er nachfragen kann. Er bekommt ihn mit seiner Adresse vom Internetanbieter, oder du trägst ihn unten ein.</p>';
+        b += field('DNS-Server, den der Router fragt', `ports.${NW.WAN}.dns`, d.ports[NW.WAN].dns || '', 'dns', { disabled: dis, placeholder: 'kommt vom Internetanbieter' });
+        if (dh.on && has('dhcp')) b += field('DNS-Server, den der DHCP-Server verteilt', `ports.${i}.dhcp.dns`, dh.dns, 'dns', { disabled: dis,
+          placeholder: d.dnsRelay && lanIP ? 'leer = der Router selbst' : up ? `leer = ${up}` : 'leer = kein DNS-Server' });
+        h += sec('dns', 'Namensauflösung (DNS)', b, 'web');
+      }
       // Internet (WAN)
       if (has('internet') || wanConns.length) {
         const w = d.ports[NW.WAN];
@@ -846,11 +893,13 @@
     // ---- Internetanbieter
     if (t.isp) {
       const a = NW.ifaceAddr(d, 0);
-      let b = `<p class="muted small">Der Internetanbieter verteilt öffentliche (externe) IP-Adressen an alle Router und Server, die an seine Leitung angeschlossen werden – automatisch per DHCP.</p>
-        <div class="port-fields">${field('IP-Adresse des Anbieters', 'ip', d.ip, 'ip', { disabled: dis })}${field('Subnetzmaske', 'mask', d.mask, 'mask', { disabled: dis })}</div>`;
+      let b = `<p class="muted small">${t.rz
+        ? 'Das Rechenzentrum hat ein eigenes öffentliches Netz. Server, die hier angeschlossen werden, bekommen automatisch per DHCP eine Adresse daraus. Verbinde das Rechenzentrum per Kabel mit einem Internetanbieter, damit seine Server im Internet erreichbar sind.'
+        : 'Der Internetanbieter verteilt öffentliche (externe) IP-Adressen an alle Router und Server, die an seine Leitung angeschlossen werden – automatisch per DHCP.'}</p>
+        <div class="port-fields">${field(t.rz ? 'IP-Adresse des Rechenzentrums' : 'IP-Adresse des Anbieters', 'ip', d.ip, 'ip', { disabled: dis })}${field('Subnetzmaske', 'mask', d.mask, 'mask', { disabled: dis })}</div>`;
       if (a) { const rg = NW.dhcpDefaultRange(a.ip, a.prefix); b += `<p class="small">Angeschlossene Geräte bekommen eine Adresse von ${esc(NW.ipStr(rg.from))} bis ${esc(NW.ipStr(rg.to))} und ${esc(d.ip.trim())} als Gateway.</p>`; }
       if (has('web') || (d.dns || '').trim()) {
-        b += field('DNS-Server für die Kunden', 'dns', d.dns || '', 'dns', { disabled: dis, placeholder: 'leer = kein DNS-Server' });
+        b += field(t.rz ? 'DNS-Server für die Server' : 'DNS-Server für die Kunden', 'dns', d.dns || '', 'dns', { disabled: dis, placeholder: 'leer = kein DNS-Server' });
         if (!dis && !(d.dns || '').trim()) {
           const ds = S.net.devices.find(o => o.services && o.services.dns && o.services.dns.on && NW.parseIP(o.ip) !== null && !NW.isPrivate(NW.parseIP(o.ip)));
           if (ds) b += `<div class="chips"><button class="chip suggest" data-act="isp-dns" data-val="${esc(ds.ip.trim())}">💡 ${esc(ds.name)} (${esc(ds.ip.trim())}) als DNS-Server übernehmen</button></div>`;
@@ -858,9 +907,9 @@
       }
       const cust = NW.l2Endpoints(S.net, d.id, 0).map(e => {
         const x = NW.ifaceAddr(e.dev, e.port);
-        return `<li>${esc(e.dev.name)}${T[e.dev.type].isp ? ' <span class="muted">(anderer Internetanbieter)</span>' : ''} – ${x ? esc(NW.ipStr(x.ip)) : '<span class="muted">noch keine Adresse</span>'}</li>`;
+        return `<li>${esc(e.dev.name)}${T[e.dev.type].isp ? ` <span class="muted">(${T[e.dev.type].rz ? 'Rechenzentrum' : 'anderer Internetanbieter'})</span>` : ''} – ${x ? esc(NW.ipStr(x.ip)) : '<span class="muted">noch keine Adresse</span>'}</li>`;
       });
-      b += `<h4>Angeschlossen</h4>${cust.length ? `<ul class="conn">${cust.join('')}</ul>` : '<p class="muted small">Noch nichts. Verbinde einen Router (Internet-Anschluss) oder einen Server per Kabel.</p>'}`;
+      b += `<h4>Angeschlossen</h4>${cust.length ? `<ul class="conn">${cust.join('')}</ul>` : `<p class="muted small">${t.rz ? 'Noch nichts. Verbinde Server und einen Internetanbieter per Kabel.' : 'Noch nichts. Verbinde einen Router (Internet-Anschluss), ein Rechenzentrum oder einen Server per Kabel.'}</p>`}`;
       h += sec('isp', 'Öffentliche Adressen', b);
     }
 
@@ -942,6 +991,9 @@
         if (a && g === a.ip) return ['bad', 'Das ist die eigene Adresse – hier gehört die Adresse des Routers hin.'];
         return ['', ''];
       }
+      case 'dnsfwd':
+        if (v && NW.parseIP(v) !== null && NW.parseIP(v) === NW.parseIP(d.ip || '')) return ['bad', 'Das ist die eigene Adresse. Trage einen anderen DNS-Server ein.'];
+        // weiter wie bei 'dns'
       case 'dns':
       case 'dnsip':
         if (!v) return ['', ''];
@@ -982,6 +1034,11 @@
       if (n) toast(`WLAN aus: ${n === 1 ? 'Ein Gerät wurde' : n + ' Geräte wurden'} getrennt.`);
     }
     if (T[d.type].isp && inp.dataset.path === 'dns' && (NW.parseIP(val) !== null || !val.trim())) NW.refreshDns(S.net);
+    // Router: geänderter DNS-Server im Heimnetz → Geräte mit DHCP übernehmen ihn (wie bei einer Verlängerung)
+    if (T[d.type].router && (inp.dataset.path === 'dnsRelay' || /^ports\.\d+\.(dhcp\.)?dns$/.test(inp.dataset.path)) && (typeof val === 'boolean' || NW.parseIP(val) !== null || !val.trim())) {
+      const n = NW.refreshDns(S.net, true);
+      if (n) toast(`${n === 1 ? 'Ein Gerät hat' : n + ' Geräte haben'} den neuen DNS-Server per DHCP übernommen.`, 'ok');
+    }
     if (inp.type === 'checkbox') renderInspector(); else updateHints();
     renderCanvas(); renderGoals(); scheduleSave();
     if (dm && val) autoDhcp();
@@ -1108,6 +1165,8 @@
         d.dns = b.dataset.val;
         { const n = NW.refreshDns(S.net); if (n) toast(`${n === 1 ? 'Ein Gerät hat' : n + ' Geräte haben'} den neuen DNS-Server per DHCP übernommen.`, 'ok'); }
         renderAll(); scheduleSave(); break;
+      case 'dns-forward':
+        d.services.dns.forward = b.dataset.val; renderInspector(); renderGoals(); scheduleSave(); break;
       case 'dns-add':
         d.services.dns.entries.push({ name: '', ip: '' }); renderInspector(); scheduleSave(); break;
       case 'dns-del':
