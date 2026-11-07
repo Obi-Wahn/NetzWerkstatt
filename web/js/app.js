@@ -869,7 +869,7 @@
         if (d.dnsRelay && !up) b += '<p class="fhint warn">Der Router kennt noch keinen DNS-Server, bei dem er nachfragen kann. Er bekommt ihn mit seiner Adresse vom Internetanbieter, oder du trägst ihn unten ein.</p>';
         b += field('DNS-Server, den der Router fragt', `ports.${NW.WAN}.dns`, d.ports[NW.WAN].dns || '', 'dns', { disabled: dis, placeholder: 'kommt vom Internetanbieter' });
         if (dh.on && has('dhcp')) b += field('DNS-Server, den der DHCP-Server verteilt', `ports.${i}.dhcp.dns`, dh.dns, 'dns', { disabled: dis,
-          placeholder: d.dnsRelay && lanIP ? `leer = ${lanIP} (der Router selbst)` : up ? `leer = ${up}` : 'leer = kein DNS-Server' });
+          placeholder: d.dnsRelay && lanIP ? 'leer = der Router selbst' : up ? `leer = ${up}` : 'leer = kein DNS-Server' });
         h += sec('dns', 'Namensauflösung (DNS)', b, 'web');
       }
       // Internet (WAN)
