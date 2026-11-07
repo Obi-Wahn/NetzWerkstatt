@@ -81,6 +81,7 @@ p { margin: 0 0 .7em; }
   padding: 9px 16px; border-radius: 10px; cursor: pointer; min-height: 42px; touch-action: manipulation;
 }
 .btn:hover { border-color: var(--line-strong); }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .btn:disabled { opacity: .55; cursor: default; }
 .btn.primary { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); font-weight: 600; }
 .btn.primary:hover { filter: brightness(1.08); }

@@ -234,6 +234,16 @@
   // ---------------------------------------------------------------- Baukasten der Lehrkraft
   // Öffnet die Schüleransicht mit einem eigenen Zugang der Lehrkraft. Dort sind alle Aufgaben
   // sichtbar; Gebautes lässt sich im Aufgaben-Editor als Start oder Musterlösung übernehmen.
+  // Freies Bauen: im selben Fenster in den Baukasten wechseln und gleich das freie Bauen öffnen.
+  // Oben links führt „← Lehreransicht“ wieder hierher zurück (die Anmeldung bleibt bestehen).
+  $('btn-free').addEventListener('click', async () => {
+    try {
+      const r = await api('POST', '/api/teacher/workshop', undefined, S.token);
+      store.set('nw_token', r.token);
+      location.href = '/?frei=1';
+    } catch (e) { toast(e.message, 'error'); }
+  });
+
   $('btn-workshop').addEventListener('click', async () => {
     const win = window.open('about:blank', '_blank');
     try {
