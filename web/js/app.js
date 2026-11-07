@@ -108,7 +108,7 @@
     $('task-think').textContent = task.think || '';
     $('task-think-wrap').hidden = !task.think;
     $('btn-submit').hidden = !!task.free;
-    $('log').innerHTML = '<div class="log-empty">Hier erscheinen die Datenpakete, sobald du einen Ping sendest oder eine Webseite aufrufst.</div>';
+    $('log').innerHTML = '<div class="log-empty">Hier erscheinen die Datenpakete, sobald du einen Ping sendest, eine Webseite aufrufst oder per DHCP eine Adresse anforderst.</div>';
     $('save-state').textContent = '';
     show('editor');
     updateSolutionButton();
@@ -269,6 +269,11 @@
         else { toast(S.tool === 'kabel' ? 'Kabel verbunden.' : 'WLAN verbunden.', 'ok'); scheduleSave(); }
         S.pending = null; $('tool-hint').textContent = HINTS[S.tool];
         renderGoals(); renderInspector();
+        if (r.ok) {
+          // Ein Gerät auf „Automatisch (DHCP)" fragt sofort nach einer Adresse, wie in echt
+          const waiting = [r.link.a, r.link.b].map(x => NW.dev(S.net, x)).find(x => T[x.type].host && x.dhcp && NW.parseIP(x.ip) === null);
+          if (waiting) { renderCanvas(); doDhcp(waiting); return; }
+        }
       }
       renderCanvas();
       return;
@@ -367,11 +372,26 @@
     if (d.locked) h += '<p class="locked-note">🔒 Dieses Gerät gehört zur Aufgabe. Du kannst es ansehen und benutzen, aber nicht ändern.</p>';
 
     if (t.host) {
-      h += '<div class="group"><h4>Netzwerk-Einstellungen</h4>';
-      h += field('IP-Adresse', 'ip', d.ip, 'ip', { disabled: dis, placeholder: 'z. B. 192.168.1.10' });
-      h += field('Subnetzmaske', 'mask', d.mask, 'mask', { disabled: dis, placeholder: '255.255.255.0' });
-      h += field('Gateway (Router)', 'gw', d.gw, 'gw', { disabled: dis, placeholder: 'nur nötig für andere Netze' });
-      h += field('DNS-Server', 'dns', d.dns, 'dns', { disabled: dis, placeholder: 'nur nötig für Namen wie www…' });
+      const auto = !!d.dhcp;
+      h += `<div class="group"><h4>Netzwerk-Einstellungen</h4>
+        <div class="seg" role="group" aria-label="Art der Einstellung">
+          <button class="${auto ? '' : 'on'}" data-act="mode-manual" ${dis ? 'disabled' : ''} aria-pressed="${!auto}">Von Hand</button>
+          <button class="${auto ? 'on' : ''}" data-act="mode-dhcp" ${dis ? 'disabled' : ''} aria-pressed="${auto}">Automatisch (DHCP)</button>
+        </div>`;
+      if (auto) {
+        h += `<p class="muted small">Diese Einstellungen bekommt ${esc(d.name)} vom DHCP-Server (meist im Router).</p>`;
+        if (!dis) h += '<button class="btn primary small dhcp-btn" data-act="dhcp">Adresse per DHCP anfordern</button>';
+      }
+      const sg = auto || dis ? {} : NW.suggest(S.net, d.id);
+      const chip = (act, txt) => `<div class="chips"><button class="chip suggest" data-act="${act}">💡 ${esc(txt)}</button></div>`;
+      const fdis = dis || auto;
+      h += field('IP-Adresse', 'ip', d.ip, 'ip', { disabled: fdis, placeholder: auto ? 'kommt per DHCP' : 'z. B. 192.168.1.10' });
+      if (sg.ip) h += chip('suggest-ip', `Vorschlag: ${sg.ip} übernehmen`);
+      h += field('Subnetzmaske', 'mask', d.mask, 'mask', { disabled: fdis, placeholder: '255.255.255.0' });
+      h += field('Gateway (Router)', 'gw', d.gw, 'gw', { disabled: fdis, placeholder: auto ? 'kommt per DHCP' : 'nur nötig für andere Netze' });
+      if (sg.gw) h += chip('suggest-gw', `Router ${sg.gw} als Gateway übernehmen`);
+      h += field('DNS-Server', 'dns', d.dns, 'dns', { disabled: fdis, placeholder: auto ? 'kommt per DHCP' : 'nur nötig für Namen wie www…' });
+      if (sg.dns) h += chip('suggest-dns', `DNS-Server ${sg.dns} übernehmen`);
       h += '</div>';
     }
     if (t.services) {
@@ -401,7 +421,19 @@
         const l = NW.linksOf(S.net, d.id).find(x => NW.portOf(x, d.id) === i);
         const other = l ? NW.dev(S.net, l.a === d.id ? l.b : l.a) : null;
         h += `<div class="port"><div class="port-head">Anschluss ${i + 1} <span class="muted small">${other ? '→ ' + esc(other.name) : '(frei)'}</span></div>
-          <div class="port-fields">${field('IP-Adresse', `ports.${i}.ip`, p.ip, 'portip', { disabled: dis })}${field('Subnetzmaske', `ports.${i}.mask`, p.mask, 'mask', { disabled: dis })}</div></div>`;
+          <div class="port-fields">${field('IP-Adresse', `ports.${i}.ip`, p.ip, 'portip', { disabled: dis })}${field('Subnetzmaske', `ports.${i}.mask`, p.mask, 'mask', { disabled: dis })}</div>`;
+        const dh = NW.dhcpOf(p);
+        h += `<label class="toggle"><input type="checkbox" data-path="ports.${i}.dhcp.on" ${dh.on ? 'checked' : ''} ${dis ? 'disabled' : ''}> DHCP-Server für dieses Netz</label>`;
+        if (dh.on) {
+          const rg = NW.dhcpRange(d, i);
+          if (!rg) h += '<p class="fhint warn">Trage zuerst eine gültige IP-Adresse für diesen Anschluss ein.</p>';
+          else {
+            h += `<div class="port-fields">${field('Adressen von', `ports.${i}.dhcp.from`, dh.from, 'range', { disabled: dis, placeholder: NW.ipStr(rg.from) })}${field('bis', `ports.${i}.dhcp.to`, dh.to, 'range', { disabled: dis, placeholder: NW.ipStr(rg.to) })}</div>`;
+            h += field('DNS-Server für die Geräte', `ports.${i}.dhcp.dns`, dh.dns, 'dns', { disabled: dis, placeholder: 'leer = kein DNS-Server' });
+            h += `<p class="muted small">Geräte in diesem Netz, die auf „Automatisch (DHCP)" stehen, bekommen eine freie Adresse von ${esc(NW.ipStr(rg.from))} bis ${esc(NW.ipStr(rg.to))}, die Subnetzmaske und ${esc(p.ip.trim())} als Gateway.</p>`;
+          }
+        }
+        h += '</div>';
       });
       h += '</div>';
     }
@@ -430,9 +462,19 @@
     o[parts[parts.length - 1]] = value;
   }
 
-  function hintFor(d, check, value) {
+  function hintFor(d, check, value, path) {
     const v = (value || '').trim();
     switch (check) {
+      case 'range': {
+        if (!v) return ['', ''];
+        const x = NW.parseIP(v);
+        if (x === null) return ['bad', 'Keine gültige IPv4-Adresse.'];
+        const i = Number(path.split('.')[1]);
+        const a = NW.ifaceAddr(d, i);
+        if (a && !NW.sameNet(x, a.ip, a.prefix)) return ['bad', 'Die Adresse muss im Netz dieses Anschlusses liegen. Sonst gilt der Standardbereich.'];
+        if (a && NW.ipProblem(v, d.ports[i].mask)) return ['bad', NW.ipProblem(v, d.ports[i].mask)];
+        return ['', ''];
+      }
       case 'ip':
       case 'portip':
         if (!v) return check === 'ip' ? ['warn', 'Noch keine IP-Adresse.'] : ['', ''];
@@ -469,7 +511,7 @@
     insp.querySelectorAll('input[data-check]').forEach(inp => {
       const check = inp.dataset.check;
       if (!check) return;
-      const [cls, txt] = hintFor(d, check, inp.value);
+      const [cls, txt] = hintFor(d, check, inp.value, inp.dataset.path);
       const hEl = insp.querySelector(`.fhint[data-for="${CSS.escape(inp.dataset.path)}"]`);
       inp.classList.toggle('invalid', cls === 'bad');
       if (hEl) { hEl.textContent = txt; hEl.className = 'fhint ' + cls; }
@@ -509,6 +551,29 @@
         NW.removeDevice(S.net, d.id); S.selected = null; renderAll(); scheduleSave(); break;
       case 'del-link':
         NW.removeLink(S.net, S.selected); S.selected = null; renderAll(); scheduleSave(); break;
+      case 'mode-manual':
+        if (!d.dhcp) break;
+        d.dhcp = false; renderAll(); scheduleSave(); break;
+      case 'mode-dhcp':
+        if (d.dhcp) break;
+        d.dhcp = true; d.ip = ''; d.gw = ''; d.dns = '';
+        renderAll(); scheduleSave(); doDhcp(d); break;
+      case 'dhcp': doDhcp(d); break;
+      case 'suggest-ip': {
+        const sg = NW.suggest(S.net, d.id);
+        if (sg.ip) { d.ip = sg.ip; d.mask = sg.mask; }
+        renderAll(); scheduleSave(); break;
+      }
+      case 'suggest-gw': {
+        const sg = NW.suggest(S.net, d.id);
+        if (sg.gw) d.gw = sg.gw;
+        renderAll(); scheduleSave(); break;
+      }
+      case 'suggest-dns': {
+        const sg = NW.suggest(S.net, d.id);
+        if (sg.dns) d.dns = sg.dns;
+        renderAll(); scheduleSave(); break;
+      }
       case 'dns-add':
         d.services.dns.entries.push({ name: '', ip: '' }); renderInspector(); scheduleSave(); break;
       case 'dns-del':
@@ -555,6 +620,19 @@
     } else logResult(false, res.error, res.hint);
     NW.logEvent(S.net, { type: 'ping', src: d.id, target: res.target, ok: !!res.ok });
     renderGoals(); scheduleSave();
+  }
+
+  async function doDhcp(d) {
+    if (S.busy || !d) return;
+    const res = NW.dhcp(S.net, d.id);
+    if (res.steps.length) await runSteps(res.steps);
+    if (res.ok) {
+      NW.applyLease(d, res.lease);
+      const srv = NW.dev(S.net, res.server);
+      logResult(true, `${d.name} hat von ${srv ? srv.name : 'dem DHCP-Server'} die Adresse ${res.lease.ip} bekommen.`);
+    } else logResult(false, res.error, res.hint);
+    NW.logEvent(S.net, { type: 'dhcp', src: d.id, ok: !!res.ok });
+    renderAll(); scheduleSave();
   }
 
   async function doBrowse() {

@@ -65,4 +65,66 @@ test('Subnetzmaske und Sonderadressen', () => {
   assert.strictEqual(NW.ipProblem('192.168.1.5', '255.255.255.0'), null);
 });
 
+// ---------------------------------------------------------------- DHCP
+function dhcpNet() {
+  const net = NW.emptyNetwork();
+  const r = NW.createDevice(net, 'router', 0, 0, { id: 'r' });
+  r.ports[0].ip = '192.168.0.1';
+  NW.createDevice(net, 'switch', 0, 0, { id: 'sw' });
+  NW.createDevice(net, 'pc', 0, 0, { id: 'a' });
+  NW.createDevice(net, 'pc', 0, 0, { id: 'b' });
+  NW.addLink(net, 'r', 'sw', 'kabel'); NW.addLink(net, 'a', 'sw', 'kabel'); NW.addLink(net, 'b', 'sw', 'kabel');
+  return net;
+}
+
+test('DHCP: ohne eingeschalteten Server antwortet niemand', () => {
+  const net = dhcpNet();
+  const r = NW.dhcp(net, 'a');
+  assert.ok(!r.ok);
+  assert.strictEqual(r.steps.length, 1);
+  assert.strictEqual(r.steps[0].label, 'DHCP-Discover');
+  assert.strictEqual(r.steps[0].paths.length, 2, 'Discover geht an alle');
+  assert.match(r.hint, /DHCP-Server ein/);
+});
+
+test('DHCP: Discover, Offer, Request, Ack und freie Adressen', () => {
+  const net = dhcpNet();
+  NW.dev(net, 'r').ports[0].dhcp.on = true;
+  NW.dev(net, 'r').ports[0].dhcp.dns = '192.168.0.53';
+  const ra = NW.dhcp(net, 'a');
+  assert.ok(ra.ok, ra.error);
+  assert.deepStrictEqual(ra.steps.map(s => s.label), ['DHCP-Discover', 'DHCP-Offer', 'DHCP-Request', 'DHCP-Ack']);
+  assert.deepStrictEqual(ra.lease, { ip: '192.168.0.100', mask: '255.255.255.0', gw: '192.168.0.1', dns: '192.168.0.53' });
+  NW.applyLease(NW.dev(net, 'a'), ra.lease);
+  const rb = NW.dhcp(net, 'b');
+  assert.strictEqual(rb.lease.ip, '192.168.0.101', 'vergebene Adresse wird nicht doppelt verteilt');
+  NW.applyLease(NW.dev(net, 'b'), rb.lease);
+  assert.strictEqual(NW.dhcp(net, 'a').lease.ip, '192.168.0.100', 'eigene Adresse bleibt erhalten');
+  assert.ok(NW.ping(net, 'a', '192.168.0.101').ok);
+});
+
+test('DHCP: voller Adressbereich wird gemeldet', () => {
+  const net = dhcpNet();
+  Object.assign(NW.dev(net, 'r').ports[0].dhcp, { on: true, from: '192.168.0.100', to: '192.168.0.100' });
+  NW.applyLease(NW.dev(net, 'a'), NW.dhcp(net, 'a').lease);
+  const rb = NW.dhcp(net, 'b');
+  assert.ok(!rb.ok);
+  assert.match(rb.error, /keine freie Adresse/);
+});
+
+test('Vorschläge für IP-Adresse, Gateway und DNS', () => {
+  const net = dhcpNet();
+  NW.dev(net, 'b').ip = '192.168.0.10';
+  const s = NW.suggest(net, 'a');
+  assert.strictEqual(s.ip, '192.168.0.11');
+  assert.strictEqual(s.mask, '255.255.255.0');
+  assert.strictEqual(s.gw, '192.168.0.1');
+  assert.strictEqual(s.dns, null);
+  NW.dev(net, 'a').ip = '192.168.0.11';
+  NW.dev(net, 'a').gw = '192.168.0.1';
+  assert.deepStrictEqual(NW.suggest(net, 'a'), { ip: null, mask: null, gw: null, dns: null });
+  const lone = NW.createDevice(net, 'pc', 0, 0);
+  assert.strictEqual(NW.suggest(net, lone.id).ip, null, 'ohne Verbindung kein Vorschlag');
+});
+
 console.log(`\n${n} Tests bestanden.`);
