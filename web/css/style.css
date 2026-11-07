@@ -161,6 +161,30 @@ input:disabled { background: #f0f2f6; color: var(--muted); }
 .fail-mark path { stroke: #fff; stroke-width: 3.5; stroke-linecap: round; }
 .busy .canvas { cursor: progress; }
 
+/* Bus-Kabel, Ausfälle und Topologie */
+.device.type-bus .box { fill: #f6f7fa; stroke: #c3ccda; }
+.device.type-bus.selected .box { stroke: var(--brand); stroke-width: 4; }
+.bus-line { stroke: var(--cable); stroke-width: 7; stroke-linecap: round; fill: none; pointer-events: none; }
+.bus-end { fill: #5d6b80; pointer-events: none; }
+.device.off .box { fill: #eceef2; stroke: var(--bad); stroke-dasharray: 5 4; }
+.device.off .glyph { opacity: .35; }
+.link.broken .wire { stroke: var(--bad); stroke-dasharray: 10 6; }
+.break-mark { pointer-events: none; }
+.break-mark circle { fill: var(--bad); stroke: #fff; stroke-width: 2.5; }
+.break-mark path { fill: #fff; }
+.topo-badge { cursor: pointer; }
+.topo-badge rect { fill: var(--brand-soft); stroke: #a8c4ea; }
+.topo-badge text { font-size: 13px; font-weight: 700; fill: var(--brand); }
+.topo-badge.bad rect { fill: var(--bad-soft); stroke: #e6a29c; }
+.topo-badge.bad text { fill: var(--bad); }
+.fault-note { background: var(--bad-soft); color: var(--bad); border-radius: 8px; padding: 7px 9px; font-size: .9em; font-weight: 600; }
+.topo-card { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; margin: 10px 0; }
+.topo-card h3 { margin: 0 0 4px; }
+.topo-pc { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.topo-pc h4 { margin: 6px 0 2px; }
+.topo-pc ul { margin: 0; padding-left: 18px; }
+@media (max-width: 640px) { .topo-pc { grid-template-columns: 1fr; } }
+
 /* Paket-Protokoll */
 .log { height: 150px; overflow-y: auto; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 8px; font-size: .9em; flex: none; }
 .log-empty { color: var(--muted); padding: 6px; }

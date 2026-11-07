@@ -181,14 +181,14 @@
   // ---------------------------------------------------------------- Palette und Werkzeuge
   const PALETTE = [
     ['pc', 'PC'], ['tablet', 'Tablet'], ['smartphone', 'Smartphone'], ['server', 'Server'],
-    ['switch', 'Switch'], ['ap', 'Access Point'], ['router', 'Router'], ['isp', 'Internet\u00adanbieter'],
+    ['switch', 'Switch'], ['bus', 'Bus-Kabel'], ['ap', 'Access Point'], ['router', 'Router'], ['isp', 'Internet\u00adanbieter'],
   ];
   const palette = $('palette');
   palette.innerHTML = '<div class="palette-title">Geräte</div>' + PALETTE.map(([t, l]) => `<button class="pal-btn" data-type="${t}" title="${esc(l)} hinzufügen">${NWView.iconSVG(t, 34)}<span>${esc(l)}</span></button>`).join('');
   palette.addEventListener('click', ev => {
     const b = ev.target.closest('.pal-btn');
     if (!b || readOnly()) return;
-    const p = NWView.freeSpot(S.net);
+    const p = NWView.freeSpot(S.net, b.dataset.type);
     const d = NW.createDevice(S.net, b.dataset.type, p.x, p.y);
     // In Aufgaben, in denen Adressen von Hand vergeben werden, ist DHCP aus
     if (S.task.manual) NWTasks.manualize({ devices: [d] });
@@ -249,6 +249,7 @@
   const canvas = $('canvas');
   canvas.addEventListener('pointerdown', ev => {
     if (S.busy) return;
+    if (ev.target.closest('[data-topo]')) { showTopoInfo(); return; }
     const devEl = ev.target.closest('[data-dev]');
     const linkEl = ev.target.closest('[data-link]');
     const p = NWView.toWorld(canvas, ev);
@@ -306,7 +307,7 @@
     if (readOnly()) return;
     dr.moved = true;
     const d = NW.dev(S.net, dr.id);
-    const c = NWView.clampPos(dr.ox + p.x - dr.sx, dr.oy + p.y - dr.sy);
+    const c = NWView.clampPos(dr.ox + p.x - dr.sx, dr.oy + p.y - dr.sy, d.type);
     d.x = Math.round(c.x); d.y = Math.round(c.y);
     renderCanvas();
   });
@@ -319,6 +320,22 @@
   }
   canvas.addEventListener('pointerup', endDrag);
   canvas.addEventListener('pointercancel', endDrag);
+
+  // ---------------------------------------------------------------- Topologie erklären
+  function showTopoInfo() {
+    const list = NW.topologies(S.net);
+    const kinds = ['stern', 'bus', 'ring'].filter(k => list.some(t => t.kind === k));
+    const li = a => a.map(x => `<li>${esc(x)}</li>`).join('');
+    const parts = kinds.map(k => {
+      const info = NW.TOPOLOGY_INFO[k];
+      const probs = list.filter(t => t.kind === k && !t.ok).map(t => t.problem);
+      return `<div class="topo-card"><h3>${esc(info.name)}</h3><p>${esc(info.text)}</p>
+        ${probs.length ? `<p class="fault-note">⚡ Gerade gestört: ${esc(probs.join(', '))}</p>` : ''}
+        <div class="topo-pc"><div><h4>Vorteile</h4><ul>${li(info.pro)}</ul></div><div><h4>Nachteile</h4><ul>${li(info.con)}</ul></div></div>
+        <p class="small"><b>Probiere aus:</b> ${esc(info.try)}</p></div>`;
+    });
+    openModal(`<h2 class="modal-title">Erkannte Topologie</h2>${parts.join('')}`, { wide: true });
+  }
 
   // ---------------------------------------------------------------- Einstellungen (rechte Spalte)
   const insp = $('inspector');
@@ -411,9 +428,11 @@
         if (toIsp) plug += '<p class="muted small">Das ist die Leitung zum Internetanbieter (z. B. DSL oder Kabel). Sie gehört immer in den Internet-Anschluss.</p>';
         if (link.kind === 'kabel' && !ro && !link.locked && !toIsp) plug += `<button class="btn small" data-act="replug" data-dev="${esc(r.id)}">Umstecken: ${isWan ? 'in einen LAN-Anschluss' : 'in den Internet-Anschluss (WAN)'}</button>`;
       }
+      const brk = link.kind !== 'kabel' ? '' : (link.broken ? '<p class="fault-note">⚡ Kabelbruch: Dieses Kabel überträgt keine Daten mehr.</p>' : '')
+        + (ro ? '' : `<div class="group"><h4>Ausfall testen</h4><button class="btn small ${link.broken ? 'primary' : ''}" data-act="fault">${link.broken ? 'Kabel reparieren' : '⚡ Kabelbruch simulieren'}</button></div>`);
       insp.innerHTML = `<h3>${link.kind === 'kabel' ? 'Netzwerkkabel' : 'WLAN-Verbindung'}</h3>
         <p>zwischen <b>${esc(a.name)}</b> und <b>${esc(b.name)}</b></p>${plug}
-        <p class="muted small">${link.kind === 'kabel' ? 'Ein Kabel (passive Netzwerkkomponente) überträgt die Daten als elektrische Signale.' : 'Per WLAN werden die Daten als Funkwellen übertragen.'}</p>
+        <p class="muted small">${link.kind === 'kabel' ? 'Ein Kabel (passive Netzwerkkomponente) überträgt die Daten als elektrische Signale.' : 'Per WLAN werden die Daten als Funkwellen übertragen.'}</p>${brk}
         ${!ro && !link.locked ? '<button class="btn danger" data-act="del-link">Verbindung löschen</button>' : ''}`;
       return;
     }
@@ -425,6 +444,8 @@
       <input class="insp-name" data-path="name" value="${esc(d.name)}" ${dis ? 'disabled' : ''} maxlength="24" aria-label="Name"></div></div>`;
     h += `<details class="desc"><summary>Wozu dient dieses Gerät?</summary><p>${esc(d.cloud ? 'Hier vereinfacht: Das Internet ist ein riesiger Zusammenschluss vieler Netze. Viele Router leiten die Pakete Schritt für Schritt weiter.' : NW.DESCRIPTIONS[d.type])}</p></details>`;
     if (d.locked) h += '<p class="locked-note">🔒 Dieses Gerät gehört zur Aufgabe. Du kannst es ansehen und benutzen, aber nicht ändern.</p>';
+    if (d.off) h += `<p class="fault-note">✕ ${esc(d.name)} ist ausgefallen. Es sendet, empfängt und leitet nichts weiter.</p>`;
+    if (t.bus && d.broken) h += '<p class="fault-note">⚡ Kabelbruch im Bus-Kabel: Das ganze Busnetz ist gestört.</p>';
 
     if (t.host) {
       const auto = !!d.dhcp;
@@ -538,7 +559,13 @@
       h += `<h4>IPv6</h4><p class="small">IPv6-Adressbereich: <code>${esc(v6.net.replace('::/64', '::/48'))}</code>. Jeder angeschlossene Router bekommt daraus ein eigenes Netz für sein Heimnetz, Server direkt beim Anbieter liegen in <code>${esc(v6.net)}</code>. Der Anbieter selbst hat <code>${esc(v6.gua)}</code>.</p>`;
       h += `<h4>Angeschlossen</h4>${cust.length ? `<ul class="conn">${cust.join('')}</ul>` : '<p class="muted small">Noch nichts. Verbinde einen Router (Internet-Anschluss) oder einen Server per Kabel.</p>'}</div>`;
     }
-    if (t.l2) h += `<p class="muted small">Ein ${esc(t.label)} braucht keine IP-Adresse – er leitet die Pakete nur weiter.</p>`;
+    if (t.bus) h += '<p class="muted small">Das Bus-Kabel braucht keine IP-Adresse. Schließe alle Geräte mit einem Kabel daran an.</p>';
+    else if (t.l2) h += `<p class="muted small">Ein ${esc(t.label)} braucht keine IP-Adresse – er leitet die Pakete nur weiter.</p>`;
+    if (!ro) {
+      const on = t.bus ? !!d.broken : !!d.off;
+      const label = t.bus ? (on ? 'Bus-Kabel reparieren' : '⚡ Kabelbruch im Bus-Kabel simulieren') : (on ? 'Wieder einschalten' : '✕ Ausfall simulieren (ausschalten)');
+      h += `<div class="group"><h4>Ausfall testen</h4><button class="btn small ${on ? 'primary' : ''}" data-act="fault">${label}</button></div>`;
+    }
 
     h += `<div class="group"><h4>Verbindungen</h4>${connectionsHTML(d)}</div>`;
 
@@ -657,8 +684,8 @@
       // ohne Adresse: fragen (notfalls APIPA); mit Notfall-Adresse: erneut fragen, sobald ein DHCP-Server da ist
       const h = S.net.devices.find(x => {
         // Router: externe Adresse holen, sobald der Internet-Anschluss angeschlossen ist
-        if (T[x.type].router) return NW.parseIP(x.ports[NW.WAN].ip || '') === null && !!NW.ispOf(S.net, x) && NW.dhcp(S.net, x.id).ok;
-        if (!T[x.type].host || !x.dhcp || !NW.linksOf(S.net, x.id).length) return false;
+        if (T[x.type].router) return !x.off && NW.parseIP(x.ports[NW.WAN].ip || '') === null && !!NW.ispOf(S.net, x) && NW.dhcp(S.net, x.id).ok;
+        if (!T[x.type].host || !x.dhcp || x.off || !NW.linksOf(S.net, x.id).length) return false;
         const ip = NW.parseIP(x.ip);
         if (ip === null) return true;
         return NW.isApipa(ip) && NW.dhcp(S.net, x.id).ok;
@@ -685,6 +712,15 @@
     const d = NW.dev(S.net, S.selected);
     switch (b.dataset.act) {
       case 'ping': doPing(); break;
+      case 'fault': {
+        const id = S.selected;
+        const l = S.net.links.find(x => x.id === id);
+        const was = l ? !!l.broken : T[d.type].bus ? !!d.broken : !!d.off;
+        NW.setFault(S.net, id, !was);
+        renderAll(); scheduleSave();
+        if (was) autoDhcp();
+        break;
+      }
       case 'browse': doBrowse(); break;
       case 'del-dev':
         NW.removeDevice(S.net, d.id); S.selected = null; renderAll(); scheduleSave(); break;
@@ -771,7 +807,7 @@
       if (res.v6) logResult(true, `Ping per IPv6 erfolgreich: ${t.name} (${target}) hat geantwortet.` + (res.linkLocal ? ' Link-Local-Adressen funktionieren nur im eigenen Netz.' : res.viaRouter ? ` Kein NAT: ${t.name} hat die echte Adresse ${res.seenSrc} von ${d.name} gesehen.` : ''));
       else logResult(true, `Ping erfolgreich: ${t.name} (${target}) hat geantwortet.` + natText(res.nat));
     } else logResult(false, res.error, res.hint);
-    NW.logEvent(S.net, Object.assign({ type: 'ping', src: d.id, target: res.target, ok: !!res.ok }, res.v6 ? { v6: true, ll: !!res.linkLocal } : {}));
+    NW.logEvent(S.net, Object.assign({ type: 'ping', src: d.id, target: res.target, ok: !!res.ok, fault: res.fault || '', faults: NW.activeFaults(S.net) }, res.v6 ? { v6: true, ll: !!res.linkLocal } : {}));
     renderGoals(); scheduleSave();
   }
 
