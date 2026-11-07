@@ -818,7 +818,7 @@
     mail:  { label: 'E-Mail-Server', server: 'E-Mail-Server', proto: 'TCP', port: 25,
       why: 'Eine E-Mail muss vollständig ankommen, kein Buchstabe darf fehlen. Deshalb TCP. Senden heißt SMTP (Port 25), Abrufen heißt IMAP (Port 143). Der Server bewahrt die E-Mails auf, bis sie abgerufen werden.' },
     video: { label: 'Video-Streaming', server: 'Video-Server', proto: 'TCP', port: 80,
-      why: 'Ein Video auf Abruf (z. B. aus einer Mediathek) wird über HTTP und TCP ein paar Sekunden im Voraus in einen Puffer geladen. Geht ein Paket verloren, wird es neu gesendet, bevor es gebraucht wird.' },
+      why: 'Ein Video auf Abruf (z. B. aus einer Mediathek) wird über HTTP und TCP ein paar Sekunden im Voraus in einen Puffer geladen. Geht ein Paket verloren, wird es neu gesendet, bevor es gebraucht wird. HTTP bringt der Video-Server selbst mit – ein zusätzlicher Webserver ist nicht nötig. Angesehen wird das Video mit „Video ansehen", nicht im Browser.' },
     call:  { label: 'Video- und Audio-Telefonie', server: 'Telefonie-Server', proto: 'UDP', port: 5004,
       why: 'Im Gespräch zählt jede Zehntelsekunde. Ein neu gesendetes Paket käme zu spät. Deshalb UDP: Fehlt ein Paket, ruckelt das Bild kurz, aber das Gespräch läuft weiter.' },
     game:  { label: 'Spiele-Server (Online-Spiel)', server: 'Spiele-Server', proto: 'UDP', port: 7777,
@@ -1154,7 +1154,7 @@
         const m = msgs ? msgs[0] : MESSAGES[action](src, { name: srv.name, services: {} }, u)[0];
         steps.push({ kind: 'request', label: m.label, proto, text: m.text, note: natNote(net, rt, 'there'), path: rt.there.path, ok: true });
       }
-      return res(false, { error: `Unter ${ipStr(ip)} (${srv.name}) läuft kein ${S.server}.`, hint: TYPES[srv.type].services ? `Schalte beim Server den Dienst „${S.label}" ein.` : `${srv.name} ist kein Server. Dienste wie ${S.label} bieten nur Server an.` });
+      return res(false, { error: `Unter ${ipStr(ip)} (${srv.name}) läuft kein ${S.server}.`, hint: missingServiceHint(srv, action, S) });
     }
     // HTTP (Webseite, Video): Der Browser schickt den Namen mit (Host). Hat der Server einen anderen Namen, kennt er die Seite nicht.
     const own = svcHost(srv, A.svc);
@@ -1177,6 +1177,28 @@
     if (action === 'mailget') { extra.mails = ((srv.services.mail || {}).box || []).slice(); n = extra.mails.length; }
     extra.message = serviceMessage(action, srv, page, ex.lost, n);
     return res(true, extra);
+  }
+
+  /**
+   * Tipp, wenn der angefragte Dienst auf dem Ziel nicht läuft.
+   * Ein Server, der zur Aufgabe gehört (gesperrt), kann nicht umgestellt werden:
+   * Dann zeigt der Tipp, welchen Dienst er stattdessen anbietet und welcher Knopf passt.
+   */
+  function missingServiceHint(srv, action, S) {
+    if (!TYPES[srv.type].services) return `${srv.name} ist kein Server. Dienste wie ${S.label} bieten nur Server an.`;
+    const offered = Object.keys(ACTIONS).filter(a => a !== action && svcOn(srv, ACTIONS[a].svc));
+    const svcs = [...new Set(offered.map(a => ACTIONS[a].svc))];
+    const where = a => a === 'web' ? 'im Browser' : `unter „Internetdienste nutzen" mit dem Knopf „${ACTIONS[a].label}"`;
+    let alt = '';
+    if (svcs.length) {
+      const list = svcs.map(k => `„${SERVICES[k].label}"`).join(' und ');
+      const use = offered.filter((a, i, arr) => arr.findIndex(b => ACTIONS[b].svc === ACTIONS[a].svc) === i).map(a => `${where(a)}`).join(' bzw. ');
+      alt = `${srv.name} bietet ${list} an. ` + (action === 'web' && svcs.includes('video')
+        ? `Ein Video öffnest du nicht im Browser, sondern ${where('video')}.`
+        : `Probiere es ${use}.`);
+    }
+    if (srv.locked) return alt || `${srv.name} gehört zur Aufgabe und bietet keinen ${S.server} an. Prüfe, ob du den richtigen Server gewählt hast.`;
+    return (alt ? alt + ' Oder s' : 'S') + `chalte beim Server den Dienst „${S.label}" ein.`;
   }
 
   function browse(net, srcId, url, opts) { return useService(net, srcId, 'web', url, opts); }
