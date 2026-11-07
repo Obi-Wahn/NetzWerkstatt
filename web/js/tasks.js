@@ -42,7 +42,24 @@
     });
     const pings = () => (net.events || []).filter(e => e.type === 'ping');
     const topos = kind => NW.topologies(net).filter(t => t.kind === kind);
-    return { net, byType, hosts, neighbors, linked, inNet, distinctIPs, pingOk, ping6Ok, hasGua, webOk, pings, topos };
+    // Wurde eine Datei erfolgreich getauscht, und liegt sie noch beim Empfänger?
+    const fileOk = (mode, dir, srcId, targetId) => (net.events || []).some(e => {
+      if (e.type !== 'file' || !e.ok || e.mode !== mode || e.dir !== dir) return false;
+      if ((srcId && e.src !== srcId) || (targetId && e.target !== targetId)) return false;
+      const s = NW.dev(net, e.src), t = NW.dev(net, e.target);
+      if (!s || !t) return false;
+      const recv = dir === 'send' ? t : s;
+      const have = mode === 'server' && dir === 'send' ? NW.fileStore(recv).files : NW.filesOf(recv);
+      return (e.files || []).length > 0 && e.files.every(f => have.includes(f));
+    });
+    const musicOk = srcFilter => (net.events || []).some(e => {
+      if (e.type !== 'music' || !e.ok) return false;
+      const s = NW.dev(net, e.src);
+      return s && srcFilter(s) && NW.playMusic(net, s.id).ok;
+    });
+    const kinds = NW.netKinds(net);
+    const hasKind = (kind, id) => kinds.some(k => k.kind === kind && (!id || k.devices.includes(id)));
+    return { net, byType, hosts, neighbors, linked, inNet, distinctIPs, pingOk, ping6Ok, hasGua, webOk, fileOk, musicOk, kinds, hasKind, pings, topos };
   }
 
   const isType = t => d => d.type === t;
@@ -311,6 +328,101 @@
       },
     },
     {
+      id: 'dateien',
+      title: 'Dateien teilen: Peer-to-Peer und Client-Server',
+      level: 2,
+      manual: true,
+      intro: 'Lena möchte das Klassenfoto mit Tom und Mia teilen. Das geht auf zwei Arten: direkt von Gerät zu Gerät (Peer-to-Peer) oder über einen zentralen Server, die Schul-Cloud (Client-Server). Probiere beide Wege aus. Die Netzwerk-Einstellungen sind schon fertig.',
+      tip: 'Tippe einen PC an. Unter „Dateien“ kannst du eine Datei an eine IP-Adresse schicken oder von dort holen. Bei Peer-to-Peer muss der Empfänger mitmachen: Schalte bei ihm „Dateien direkt tauschen (Peer-to-Peer)“ ein. Für den Weg über den Server schaltest du beim Server die Dateiablage ein.',
+      think: 'Lösche das Kabel von Lenas PC. Kann Mia das Foto jetzt noch bekommen – über den Server? Und direkt von Lena? Wer ist beim Peer-to-Peer der Client und wer der Server? Was passiert mit allen Dateien, wenn der Server ausfällt?',
+      goals: [
+        { text: 'Peer-to-Peer: Schicke das Klassenfoto von Lenas PC direkt an Toms PC.', check: c => c.fileOk('p2p', 'send', 'lena', 'tom') },
+        { text: 'Client-Server: Schalte beim Server die Dateiablage ein und lade das Klassenfoto von Lenas PC hoch.', check: c => c.fileOk('server', 'send', 'lena', 'srv') },
+        { text: 'Hole das Klassenfoto auf Mias PC vom Server.', check: c => c.fileOk('server', 'get', 'mia', 'srv') },
+      ],
+      start: () => filesStart(),
+      solution: () => {
+        const net = filesStart();
+        NW.dev(net, 'tom').share = true;
+        NW.fileStore(NW.dev(net, 'srv')).on = true;
+        const ev = (src, dst, dir, r) => NW.logEvent(net, { type: 'file', src, target: r.target, mode: r.mode, dir, files: r.files, ok: r.ok });
+        ev('lena', 'tom', 'send', NW.sendFile(net, 'lena', '192.168.20.12', 'Klassenfoto.jpg'));
+        ev('lena', 'srv', 'send', NW.sendFile(net, 'lena', '192.168.20.2', 'Klassenfoto.jpg'));
+        ev('mia', 'srv', 'get', NW.getFiles(net, 'mia', '192.168.20.2'));
+        return net;
+      },
+    },
+    {
+      id: 'pan',
+      title: 'Musik über Bluetooth (PAN)',
+      level: 1,
+      intro: 'Jonas hört mit kabellosen Kopfhörern Musik vom Smartphone. Kopfhörer und Smartphone bilden zusammen ein winziges Netz: ein PAN (Personal Area Network). Gleichzeitig ist das Smartphone im WLAN des Heimnetzes (LAN). Achte unten auf der Arbeitsfläche auf die Anzeige der Netzarten.',
+      tip: 'Nimm das Werkzeug „Bluetooth“ und tippe auf das Smartphone und auf die Kopfhörer. Danach findest du beim Smartphone den Knopf „Musik abspielen“. Für das Heimnetz nimmst du das Werkzeug „WLAN“.',
+      think: 'Warum brauchen die Kopfhörer keine IP-Adresse? Kann der PC die Kopfhörer anpingen? Wie weit reicht Bluetooth ungefähr – und wie weit WLAN?',
+      goals: [
+        { text: 'Kopple die Kopfhörer per Bluetooth mit dem Smartphone.', check: c => c.byType('headset').some(h => c.byType('smartphone').some(s => c.linked(h, s, 'bluetooth'))) },
+        { text: 'Spiele auf dem Smartphone Musik über die Kopfhörer ab.', check: c => c.musicOk(isType('smartphone')) },
+        { text: 'Verbinde das Smartphone per WLAN mit dem Heimrouter.', check: c => c.byType('smartphone').some(s => c.hasKind('PAN', s.id) && c.hasKind('LAN', s.id) && c.neighbors(s.id).some(n => n.kind === 'wlan')) },
+        { text: 'Teste mit einem Ping vom Smartphone zum PC.', check: c => c.pingOk(isType('smartphone'), isType('pc')) },
+      ],
+      start: () => panStart(),
+      solution: () => {
+        const net = panStart();
+        NW.addLink(net, 'sp', 'hs', 'bluetooth');
+        NW.logEvent(net, { type: 'music', src: 'sp', target: 'hs', ok: true });
+        NW.addLink(net, 'r', 'sp', 'wlan');
+        NW.applyLease(NW.dev(net, 'sp'), NW.dhcp(net, 'sp').lease);
+        evPing(net, 'sp', 'pc');
+        return net;
+      },
+    },
+    {
+      id: 'man',
+      title: 'Stadtnetz für zwei Schulgebäude (MAN)',
+      level: 2,
+      manual: true,
+      intro: 'Die Schule hat eine Außenstelle am anderen Ende der Stadt. Beide Gebäude haben schon ein eigenes lokales Netz (LAN). Die Stadtwerke verlegen eine Glasfaserleitung zwischen den Gebäuden. Verbinde die beiden LANs zu einem Stadtnetz (MAN), damit die Außenstelle den Vertretungsplan vom Schulserver abrufen kann.',
+      tip: 'Verbinde die beiden Switches mit einem Kabel. Tippe das Kabel danach an und kreuze „Glasfaserleitung quer durch die Stadt“ an. Die Adressen sind schon eingetragen: Alle Geräte liegen im Netz 10.10.0.0/24.',
+      think: 'Woran erkennt man, dass hier zwei LANs und ein MAN entstanden sind? Wie müsste das Netz aussehen, wenn die Außenstelle in einer anderen Stadt oder einem anderen Land läge?',
+      goals: [
+        { text: 'Verbinde die Switches der beiden Gebäude mit einem Kabel.', check: c => c.linked(NW.dev(c.net, 'swa') || {}, NW.dev(c.net, 'swb') || {}, 'kabel') },
+        { text: 'Mache aus dem Kabel eine Glasfaserleitung durch die Stadt, sodass ein MAN entsteht.', check: c => c.hasKind('MAN', 'swa') && c.hasKind('MAN', 'swb') },
+        { text: 'Rufe am PC in der Außenstelle den Vertretungsplan auf: http://10.10.0.2', check: c => (c.net.events || []).some(e => e.type === 'web' && e.ok && e.src === 'pcb' && e.host === '10.10.0.2') && c.webOk('10.10.0.2') },
+      ],
+      start: () => manStart(),
+      solution: () => {
+        const net = manStart();
+        NW.addLink(net, 'swa', 'swb', 'kabel').link.stadt = true;
+        NW.logEvent(net, { type: 'web', src: 'pcb', host: '10.10.0.2', ok: true });
+        return net;
+      },
+    },
+    {
+      id: 'netzarten',
+      title: 'Vom PAN bis zum WAN',
+      level: 2,
+      intro: 'Vom Kopfhörer bis ins Internet: Baue ein Netz, in dem alle Netzarten vorkommen. Kopfhörer und Smartphone bilden ein PAN, das Heimnetz ist ein LAN, und über den Internetanbieter geht es ins Internet, das größte WAN. Die Anzeige unten auf der Arbeitsfläche zeigt dir, welche Netzarten schon da sind.',
+      tip: 'Tippe in der Anzeige auf eine Netzart: Dann leuchten die Geräte auf, die dazugehören. Am einfachsten verbindest du zuerst den Heimrouter mit dem Internetanbieter und danach das Smartphone mit dem WLAN – dann bekommt es per DHCP auch gleich den DNS-Server.',
+      think: 'Zu welchen Netzarten gehört das Smartphone gleichzeitig? Welche Netzart hat die größte Reichweite, welche die kleinste?',
+      goals: [
+        { text: 'PAN: Kopple die Kopfhörer per Bluetooth mit dem Smartphone.', check: c => c.byType('smartphone').some(s => c.hasKind('PAN', s.id) && c.byType('headset').some(h => c.hasKind('PAN', h.id))) },
+        { text: 'LAN: Verbinde das Smartphone per WLAN mit dem Heimrouter.', check: c => c.byType('smartphone').some(s => c.byType('router').some(r => c.kinds.some(k => k.kind === 'LAN' && k.devices.includes(s.id) && k.devices.includes(r.id)))) },
+        { text: 'WAN: Schließe den Heimrouter an den Internetanbieter an.', check: c => c.byType('router').some(r => c.hasKind('WAN', r.id) && c.hasKind('LAN', r.id)) },
+        { text: 'Rufe auf dem Smartphone die Seite http://www.netzwerkstatt.de auf.', check: c => c.webOk('www.netzwerkstatt.de') && (c.net.events || []).some(e => e.type === 'web' && e.ok && NW.dev(c.net, e.src) && NW.dev(c.net, e.src).type === 'smartphone') },
+      ],
+      start: () => kindsStart(),
+      solution: () => {
+        const net = kindsStart();
+        NW.addLink(net, 'r', 'inet', 'kabel');
+        NW.applyLease(NW.dev(net, 'r'), NW.dhcp(net, 'r').lease);
+        NW.addLink(net, 'sp', 'hs', 'bluetooth');
+        NW.addLink(net, 'r', 'sp', 'wlan');
+        NW.applyLease(NW.dev(net, 'sp'), NW.dhcp(net, 'sp').lease);
+        NW.logEvent(net, { type: 'web', src: 'sp', host: 'www.netzwerkstatt.de', ok: true });
+        return net;
+      },
+    },
+    {
       id: 'frei',
       title: 'Freies Bauen',
       level: 0,
@@ -349,6 +461,58 @@
       add('g2', 'pc', 840, 300, Object.assign({ name: 'Ring 2', ip: '192.168.3.2' }, L));
       add('g3', 'pc', 670, 300, Object.assign({ name: 'Ring 3', ip: '192.168.3.3' }, L));
       link('g1', 'g2', 'kabel', L); link('g2', 'g3', 'kabel', L); link('g3', 'g1', 'kabel', L);
+    });
+  }
+
+  function filesStart() {
+    return build(({ add, link }) => {
+      const pc = (id, name, x, y, ip, extra) => add(id, 'pc', x, y, Object.assign({ name, ip }, extra || {}));
+      add('sw', 'switch', 420, 290, { name: 'Switch 1' });
+      pc('lena', 'Lenas PC', 160, 140, '192.168.20.11', { files: ['Klassenfoto.jpg'] });
+      pc('tom', 'Toms PC', 160, 440, '192.168.20.12');
+      pc('mia', 'Mias PC', 680, 440, '192.168.20.13');
+      add('srv', 'server', 680, 140, { name: 'Schul-Cloud', ip: '192.168.20.2' });
+      ['lena', 'tom', 'mia', 'srv'].forEach(id => link(id, 'sw'));
+    });
+  }
+
+  function panStart() {
+    return build(({ net, add, link }) => {
+      add('r', 'router', 220, 300, { name: 'Heimrouter' });
+      add('pc', 'pc', 220, 110, { name: 'PC' });
+      add('sp', 'smartphone', 560, 300, { name: 'Smartphone von Jonas' });
+      add('hs', 'headset', 760, 430, { name: 'Kopfhörer' });
+      link('r', 'pc');
+      NW.applyLease(NW.dev(net, 'pc'), NW.dhcp(net, 'pc').lease);
+    });
+  }
+
+  function manStart() {
+    return build(({ add, link }) => {
+      add('swa', 'switch', 230, 300, { name: 'Switch Hauptgebäude' });
+      add('srv', 'server', 90, 140, { name: 'Schulserver', ip: '10.10.0.2',
+        services: { web: { on: true, title: 'Vertretungsplan', text: 'Heute: Informatik in Raum 112 statt 104.' }, dns: { on: false, entries: [] }, files: { on: false, files: [] } } });
+      add('pca', 'pc', 90, 450, { name: 'PC Lehrerzimmer', ip: '10.10.0.10' });
+      add('swb', 'switch', 670, 300, { name: 'Switch Außenstelle' });
+      add('pcb', 'pc', 810, 140, { name: 'PC Außenstelle', ip: '10.10.0.20' });
+      add('pcc', 'pc', 810, 450, { name: 'PC Bibliothek', ip: '10.10.0.21' });
+      link('srv', 'swa'); link('pca', 'swa');
+      link('pcb', 'swb'); link('pcc', 'swb');
+    });
+  }
+
+  function kindsStart() {
+    return build(({ add, link }) => {
+      add('r', 'router', 360, 300, { name: 'Heimrouter' });
+      add('sp', 'smartphone', 130, 170, { name: 'Smartphone 1' });
+      add('hs', 'headset', 130, 420, { name: 'Kopfhörer' });
+      add('inet', 'isp', 590, 300, { name: 'Internetanbieter', locked: true, ip: '203.0.113.1', dns: '203.0.113.53' });
+      add('dns', 'server', 790, 160, { name: 'DNS-Server', locked: true, ip: '203.0.113.53', gw: '203.0.113.1', dhcp: false,
+        services: { web: { on: false, title: '', text: '' }, dns: { on: true, entries: [{ name: 'www.netzwerkstatt.de', ip: '203.0.113.80' }] }, files: { on: false, files: [] } } });
+      add('web', 'server', 790, 430, { name: 'Webserver', locked: true, ip: '203.0.113.80', gw: '203.0.113.1', dhcp: false,
+        services: { web: { on: true, title: 'Vom PAN bis zum WAN', text: 'Diese Seite kam über das Internet (WAN), dein Heimnetz (LAN) und dein Smartphone – die Musik läuft derweil im PAN weiter.' }, dns: { on: false, entries: [] }, files: { on: false, files: [] } } });
+      link('inet', 'dns', 'kabel', { locked: true });
+      link('inet', 'web', 'kabel', { locked: true });
     });
   }
 

@@ -495,4 +495,49 @@ test('Ausgefallener Router: kein DHCP, Gateway nicht erreichbar', () => {
   assert.ok(!NW.dhcp(net, 'pc').ok);
 });
 
+// ---------------------------------------------------------------- Peer-to-Peer, Client-Server, Bluetooth, Netzarten
+test('Peer-to-Peer klappt nur, wenn der Empfänger mitmacht', () => {
+  const net = TASKS.find(t => t.id === 'dateien').start();
+  let r = NW.sendFile(net, 'lena', '192.168.20.12', 'Klassenfoto.jpg');
+  assert.ok(!r.ok);
+  assert.match(r.hint, /zugleich Client und Server/);
+  NW.dev(net, 'tom').share = true;
+  r = NW.sendFile(net, 'lena', '192.168.20.12', 'Klassenfoto.jpg');
+  assert.ok(r.ok, r.error);
+  assert.strictEqual(r.mode, 'p2p');
+  assert.ok(NW.dev(net, 'tom').files.includes('Klassenfoto.jpg'));
+});
+
+test('Client-Server: Datei bleibt auf dem Server, auch wenn der Absender weg ist', () => {
+  const net = TASKS.find(t => t.id === 'dateien').start();
+  NW.fileStore(NW.dev(net, 'srv')).on = true;
+  assert.ok(NW.sendFile(net, 'lena', '192.168.20.2', 'Klassenfoto.jpg').ok);
+  NW.removeDevice(net, 'lena');
+  const r = NW.getFiles(net, 'mia', '192.168.20.2');
+  assert.ok(r.ok, r.error);
+  assert.strictEqual(r.mode, 'server');
+  assert.deepStrictEqual(r.files, ['Klassenfoto.jpg']);
+});
+
+test('Bluetooth-Kopfhörer: kein Kabel, kein IP-Netz, nur ein Partner', () => {
+  const net = NW.emptyNetwork();
+  const sp = NW.createDevice(net, 'smartphone', 0, 0), hs = NW.createDevice(net, 'headset', 0, 0), sw = NW.createDevice(net, 'switch', 0, 0);
+  const pc = NW.createDevice(net, 'pc', 0, 0);
+  assert.ok(!NW.canLink(net, hs.id, sw.id, 'kabel').ok);
+  assert.ok(!NW.canLink(net, sw.id, sp.id, 'bluetooth').ok);
+  assert.ok(NW.addLink(net, sp.id, hs.id, 'bluetooth').ok);
+  assert.ok(!NW.canLink(net, pc.id, hs.id, 'bluetooth').ok);
+  assert.strictEqual(NW.linksOf(net, sp.id).length, 0);
+  assert.ok(NW.playMusic(net, sp.id).ok);
+  assert.ok(!NW.playMusic(net, pc.id).ok);
+});
+
+test('Netzarten werden erkannt', () => {
+  const kinds = id => NW.netKinds(TASKS.find(t => t.id === id).solution()).map(k => k.kind);
+  assert.deepStrictEqual(kinds('stern'), ['LAN']);
+  assert.deepStrictEqual(kinds('man'), ['LAN', 'LAN', 'MAN']);
+  assert.deepStrictEqual(kinds('netzarten'), ['PAN', 'LAN', 'WAN']);
+  assert.deepStrictEqual(NW.netKinds(TASKS.find(t => t.id === 'man').start()).map(k => k.kind), ['LAN', 'LAN']);
+});
+
 console.log(`\n${n} Tests bestanden.`);

@@ -66,6 +66,8 @@
           <svg viewBox="0 0 24 24" class="ti"><path d="M4 20c4 0 4-8 8-8s4-8 8-8"/><rect x="2" y="17" width="5" height="5" rx="1"/><rect x="17" y="2" width="5" height="5" rx="1"/></svg><span>Kabel</span></button>
         <button class="tool" data-tool="wlan" title="Gerät per WLAN mit einem Access Point verbinden">
           <svg viewBox="0 0 24 24" class="ti"><path d="M2 9a15 15 0 0 1 20 0M5.5 12.5a10 10 0 0 1 13 0M9 16a5 5 0 0 1 6 0"/><circle cx="12" cy="19.5" r="1.2"/></svg><span>WLAN</span></button>
+        <button class="tool" data-tool="bluetooth" title="Gerät per Bluetooth mit Kopfhörern koppeln">
+          <svg viewBox="0 0 24 24" class="ti"><path d="M7 7l10 10-5 4V3l5 4L7 17"/></svg><span>Bluetooth</span></button>
         <button class="tool" data-tool="delete" title="Gerät oder Verbindung löschen">
           <svg viewBox="0 0 24 24" class="ti"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg><span>Löschen</span></button>
         <div id="tool-hint" class="tool-hint"></div>
@@ -76,6 +78,7 @@
       </div>
       <div class="canvas-wrap">
         <svg id="canvas" class="canvas" role="img" aria-label="Arbeitsfläche mit dem Netzwerk"></svg>
+        <div id="netkinds" class="netkinds" aria-live="polite"></div>
         <div id="readonly-banner" class="readonly-banner" hidden>
           Abgegeben – du kannst nichts mehr ändern. <button id="btn-unsubmit" class="btn small">Abgabe zurücknehmen</button>
         </div>

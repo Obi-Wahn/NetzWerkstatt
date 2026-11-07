@@ -16,6 +16,7 @@
     switch: '<rect x="3" y="11" width="34" height="18" rx="2"/><path d="M8 24v-3M13 24v-3M18 24v-3M23 24v-3M28 24v-3M33 24v-3"/><path d="M8 16h8l-2-2M32 16h-8l2 2"/>',
     ap: '<rect x="8" y="25" width="24" height="9" rx="2"/><path d="M20 25v-6"/><path d="M14 15a8 8 0 0 1 12 0M10.5 11.5a13 13 0 0 1 19 0"/><circle cx="20" cy="19" r="1.5"/>',
     router: '<circle cx="20" cy="20" r="15"/><path d="M20 8v9M20 32v-9M8 20h9M32 20h-9"/><path d="M17 11l3-3 3 3M17 29l3 3 3-3M11 17l-3 3 3 3M29 17l3 3-3 3"/>',
+    headset: '<path d="M7 25v-5a13 13 0 0 1 26 0v5"/><rect x="5" y="23" width="7" height="12" rx="3" class="fill"/><rect x="5" y="23" width="7" height="12" rx="3"/><rect x="28" y="23" width="7" height="12" rx="3" class="fill"/><rect x="28" y="23" width="7" height="12" rx="3"/>',
     isp: '<circle cx="20" cy="20" r="15"/><path d="M5 20h30M20 5a22 22 0 0 1 0 30M20 5a22 22 0 0 0 0 30M8 12h24M8 28h24"/>',
     bus: '<path d="M3 20h34"/><path d="M3 15v10M37 15v10"/><path d="M11 20v-9M20 20v9M29 20v-9"/><circle cx="11" cy="10" r="2"/><circle cx="20" cy="30" r="2"/><circle cx="29" cy="10" r="2"/>',
     cloud: '<path d="M11 30h19a7 7 0 0 0 0-14 9 9 0 0 0-17-2 7.5 7.5 0 0 0-2 16z"/>',
@@ -105,7 +106,7 @@
     for (const l of net.links) {
       const a = NW.dev(net, l.a), b = NW.dev(net, l.b);
       if (!a || !b) continue;
-      const g = el('g', { class: 'link ' + l.kind + (opts.selected === l.id ? ' selected' : '') + (l.broken ? ' broken' : ''), 'data-link': l.id }, gLinks);
+      const g = el('g', { class: 'link ' + l.kind + (opts.selected === l.id ? ' selected' : '') + (l.broken ? ' broken' : '') + (l.stadt ? ' stadt' : ''), 'data-link': l.id }, gLinks);
       const pa = anchor(a, b), pb = anchor(b, a);
       el('line', { x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y, class: 'hit' }, g);
       el('line', { x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y, class: 'wire' }, g);
@@ -115,6 +116,14 @@
         const bm = el('g', { class: 'break-mark', transform: `translate(${mx},${my})` }, g);
         el('circle', { r: 12 }, bm);
         el('path', { d: 'M2 -8L-4 1h5l-3 8 7-10h-5l3-7z' }, bm);
+      }
+            // Glasfaser quer durch die Stadt: Beschriftung in der Mitte der Leitung
+      if (l.stadt) {
+        const txt = 'Glasfaser · Stadt';
+        const lab = el('g', { class: 'port-label stadt-label' }, g);
+        const w = txt.length * 6.6 + 10, x = (pa.x + pb.x) / 2, y = (pa.y + pb.y) / 2;
+        el('rect', { x: x - w / 2, y: y - 9, width: w, height: 18, rx: 9 }, lab);
+        el('text', { x, y: y + 4, 'text-anchor': 'middle' }, lab).textContent = txt;
       }
       // Kabel am Internet-Anschluss (WAN) des Routers kennzeichnen; die IP-Adressen stehen unter dem Router
       for (const [d, other, port] of [[a, b, l.aPort], [b, a, l.bPort]]) {

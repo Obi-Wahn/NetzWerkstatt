@@ -100,7 +100,7 @@
     S.net = saved && saved.network ? saved.network : task.start();
     if (!S.net.events) S.net.events = [];
     S.submitted = !!(saved && saved.submitted);
-    S.selected = null; S.pending = null;
+    S.selected = null; S.pending = null; S.netKind = null;
     setTool('move');
     $('task-title').textContent = task.title;
     $('task-intro').textContent = task.intro;
@@ -180,7 +180,7 @@
 
   // ---------------------------------------------------------------- Palette und Werkzeuge
   const PALETTE = [
-    ['pc', 'PC'], ['tablet', 'Tablet'], ['smartphone', 'Smartphone'], ['server', 'Server'],
+    ['pc', 'PC'], ['tablet', 'Tablet'], ['smartphone', 'Smartphone'], ['headset', 'Kopfhörer'], ['server', 'Server'],
     ['switch', 'Switch'], ['bus', 'Bus-Kabel'], ['ap', 'Access Point'], ['router', 'Router'], ['isp', 'Internet\u00adanbieter'],
   ];
   const palette = $('palette');
@@ -202,6 +202,7 @@
     move: '',
     kabel: 'Tippe nacheinander auf die zwei Geräte, die du mit einem Kabel verbinden willst.',
     wlan: 'Tippe auf einen Access Point oder Router und dann auf ein Tablet oder Smartphone.',
+    bluetooth: 'Tippe auf ein Smartphone, Tablet oder einen PC und dann auf die Kopfhörer.',
     delete: 'Tippe auf ein Gerät oder eine Verbindung, um es zu löschen.',
   };
   function setTool(t) {
@@ -226,8 +227,38 @@
 
   // ---------------------------------------------------------------- Zeichnen
   function renderCanvas() {
-    NWView.render($('canvas'), S.net, { selected: S.selected, pending: S.pending, v6: S.v6 });
+    const kinds = NW.netKinds(S.net);
+    if (S.netKind && !kinds.some(k => k.kind === S.netKind)) S.netKind = null;
+    const highlight = new Set();
+    kinds.filter(k => k.kind === S.netKind).forEach(k => k.devices.forEach(id => highlight.add(id)));
+    NWView.render($('canvas'), S.net, { selected: S.selected, pending: S.pending, highlight, v6: S.v6 });
+    renderNetKinds(kinds);
   }
+
+  /** Anzeige unten auf der Arbeitsfläche: Welche Netzarten (PAN, LAN, MAN, WAN) stecken im Aufbau? */
+  function renderNetKinds(kinds) {
+    const box = $('netkinds');
+    const order = ['PAN', 'LAN', 'MAN', 'WAN'].filter(k => kinds.some(x => x.kind === k));
+    let h = '<span class="nk-title">Netzarten:</span>';
+    if (!order.length) h += '<span class="nk-none">noch keine – verbinde Geräte miteinander</span>';
+    h += order.map(k => {
+      const n = kinds.filter(x => x.kind === k).length;
+      return `<button class="nk-chip nk-${k}${S.netKind === k ? ' on' : ''}" data-kind="${k}" aria-pressed="${S.netKind === k}">${k}${n > 1 ? ' ×' + n : ''}</button>`;
+    }).join('');
+    if (S.netKind) {
+      const info = NW.NET_KINDS[S.netKind];
+      const why = kinds.filter(x => x.kind === S.netKind).map(x => esc(x.why)).join('<br>');
+      h += `<div class="nk-info"><b>${S.netKind} – ${esc(info.name)}</b><br>${esc(info.text)}<br><span class="nk-why">${why}</span></div>`;
+    }
+    const sig = h;
+    if (box.dataset.sig !== sig) { box.innerHTML = h; box.dataset.sig = sig; }
+  }
+  $('netkinds').addEventListener('click', ev => {
+    const b = ev.target.closest('[data-kind]');
+    if (!b) return;
+    S.netKind = S.netKind === b.dataset.kind ? null : b.dataset.kind;
+    renderCanvas();
+  });
 
   function renderAll() {
     renderCanvas();
@@ -266,7 +297,7 @@
       }
       return;
     }
-    if (S.tool === 'kabel' || S.tool === 'wlan') {
+    if (S.tool === 'kabel' || S.tool === 'wlan' || S.tool === 'bluetooth') {
       if (!devEl) { S.pending = null; $('tool-hint').textContent = HINTS[S.tool]; renderCanvas(); return; }
       const id = devEl.dataset.dev;
       if (!S.pending) {
@@ -277,7 +308,7 @@
       } else {
         const r = NW.addLink(S.net, S.pending, id, S.tool);
         if (!r.ok) toast(r.reason, 'error');
-        else { toast(S.tool === 'kabel' ? 'Kabel verbunden.' : 'WLAN verbunden.', 'ok'); scheduleSave(); }
+        else { toast({ kabel: 'Kabel verbunden.', wlan: 'WLAN verbunden.', bluetooth: 'Per Bluetooth gekoppelt.' }[S.tool], 'ok'); scheduleSave(); }
         S.pending = null; $('tool-hint').textContent = HINTS[S.tool];
         renderGoals(); renderInspector();
         if (r.ok) { renderCanvas(); autoDhcp(); return; }
@@ -348,13 +379,27 @@
       <span class="fhint" data-for="${path}"></span></label>`;
   }
 
+  const KIND_LABEL = { kabel: 'Kabel', wlan: 'WLAN', bluetooth: 'Bluetooth' };
+  function kindLabel(l) { return l.kind === 'kabel' && l.stadt ? 'Glasfaser' : KIND_LABEL[l.kind] || l.kind; }
+
   function connectionsHTML(d) {
-    const ls = NW.linksOf(S.net, d.id);
+    const ls = NW.allLinksOf(S.net, d.id);
     if (!ls.length) return '<p class="muted small">Noch mit nichts verbunden.</p>';
     return '<ul class="conn">' + ls.map(l => {
       const o = NW.dev(S.net, l.a === d.id ? l.b : l.a);
-      return `<li><span class="kind ${l.kind}">${l.kind === 'kabel' ? 'Kabel' : 'WLAN'}</span> ${esc(o.name)}</li>`;
+      return `<li><span class="kind ${l.kind}${l.stadt ? ' stadt' : ''}">${kindLabel(l)}</span> ${esc(o.name)}</li>`;
     }).join('') + '</ul>';
+  }
+
+  /** Knöpfe, die die IP-Adresse eines Partners für den Dateitausch eintragen. */
+  function fileChips(d) {
+    const chips = S.net.devices.filter(o => o !== d && T[o.type].host && NW.parseIP(o.ip) !== null)
+      .map(o => `<button class="chip" data-fill="file" data-val="${esc(o.ip.trim())}">${esc(o.name)}${T[o.type].services ? ' (Server)' : ''}</button>`);
+    return chips.length ? `<div class="chips">${chips.join('')}</div>` : '';
+  }
+
+  function fileListHTML(list) {
+    return list.length ? `<ul class="files">${list.map(f => `<li>📄 ${esc(f)}</li>`).join('')}</ul>` : '<p class="muted small">Noch keine Dateien.</p>';
   }
 
   function otherHostChips(d) {
@@ -430,9 +475,20 @@
       }
       const brk = link.kind !== 'kabel' ? '' : (link.broken ? '<p class="fault-note">⚡ Kabelbruch: Dieses Kabel überträgt keine Daten mehr.</p>' : '')
         + (ro ? '' : `<div class="group"><h4>Ausfall testen</h4><button class="btn small ${link.broken ? 'primary' : ''}" data-act="fault">${link.broken ? 'Kabel reparieren' : '⚡ Kabelbruch simulieren'}</button></div>`);
-      insp.innerHTML = `<h3>${link.kind === 'kabel' ? 'Netzwerkkabel' : 'WLAN-Verbindung'}</h3>
-        <p>zwischen <b>${esc(a.name)}</b> und <b>${esc(b.name)}</b></p>${plug}
-        <p class="muted small">${link.kind === 'kabel' ? 'Ein Kabel (passive Netzwerkkomponente) überträgt die Daten als elektrische Signale.' : 'Per WLAN werden die Daten als Funkwellen übertragen.'}</p>${brk}
+      const title = { kabel: link.stadt ? 'Glasfaserleitung' : 'Netzwerkkabel', wlan: 'WLAN-Verbindung', bluetooth: 'Bluetooth-Kopplung' }[link.kind];
+      const about = {
+        kabel: link.stadt
+          ? 'Eine Glasfaserleitung (passive Netzwerkkomponente) überträgt die Daten als Lichtsignale – auch über viele Kilometer, z. B. quer durch die Stadt.'
+          : 'Ein Kabel (passive Netzwerkkomponente) überträgt die Daten als elektrische Signale.',
+        wlan: 'Per WLAN werden die Daten als Funkwellen übertragen.',
+        bluetooth: 'Bluetooth ist Funk für kurze Strecken (etwa 10 Meter). Damit verbinden sich die Geräte einer Person, z. B. Smartphone und Kopfhörer, zu einem persönlichen Netz (PAN). Über Bluetooth laufen hier keine IP-Pakete.',
+      }[link.kind];
+      const fiber = link.kind === 'kabel'
+        ? `<label class="toggle"><input type="checkbox" data-act="stadt" ${link.stadt ? 'checked' : ''} ${ro || link.locked ? 'disabled' : ''}> Glasfaserleitung quer durch die Stadt (mehrere Kilometer)</label>`
+        : '';
+      insp.innerHTML = `<h3>${title}</h3>
+        <p>zwischen <b>${esc(a.name)}</b> und <b>${esc(b.name)}</b></p>${plug}${fiber}
+        <p class="muted small">${about}</p>${brk}
         ${!ro && !link.locked ? '<button class="btn danger" data-act="del-link">Verbindung löschen</button>' : ''}`;
       return;
     }
@@ -479,6 +535,9 @@
         h += field('Titel der Webseite', 'services.web.title', w.title, '', { disabled: dis });
         h += field('Text der Webseite', 'services.web.text', w.text, '', { disabled: dis });
       }
+      const fs = NW.fileStore(d);
+      h += `<label class="toggle"><input type="checkbox" data-path="services.files.on" ${fs.on ? 'checked' : ''} ${dis ? 'disabled' : ''}> Dateiablage (Cloud-Speicher)</label>`;
+      if (fs.on) h += `<p class="muted small">Endgeräte laden hier Dateien hoch und holen sie später wieder ab (Client-Server).</p>${fileListHTML(fs.files)}`;
       h += `<label class="toggle"><input type="checkbox" data-path="services.dns.on" ${n.on ? 'checked' : ''} ${dis ? 'disabled' : ''}> DNS-Server</label>`;
       if (n.on) {
         h += '<div class="dns-table"><div class="dns-row head"><span>Name</span><span>IP-Adresse</span><span></span></div>';
@@ -566,6 +625,7 @@
       const label = t.bus ? (on ? 'Bus-Kabel reparieren' : '⚡ Kabelbruch im Bus-Kabel simulieren') : (on ? 'Wieder einschalten' : '✕ Ausfall simulieren (ausschalten)');
       h += `<div class="group"><h4>Ausfall testen</h4><button class="btn small ${on ? 'primary' : ''}" data-act="fault">${label}</button></div>`;
     }
+    if (t.btOnly) h += '<p class="muted small">Kopfhörer brauchen keine IP-Adresse. Sie werden per Bluetooth mit einem Gerät in der Nähe gekoppelt (Werkzeug „Bluetooth“).</p>';
 
     h += `<div class="group"><h4>Verbindungen</h4>${connectionsHTML(d)}</div>`;
 
@@ -577,6 +637,27 @@
         <label class="field">Browser: Adresse (URL)
           <div class="inline"><input id="url-target" placeholder="http://www.beispiel.de" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn primary" data-act="browse">Öffnen</button></div></label>
         ${urlChips()}</div>`;
+      const bt = NW.btPartners(S.net, d.id);
+      if (bt.length) {
+        h += `<div class="group"><h4>Bluetooth (PAN)</h4><p class="small">Gekoppelt mit ${bt.map(o => '<b>' + esc(o.name) + '</b>').join(', ')}</p>`;
+        if (bt.some(o => T[o.type].btOnly)) h += '<button class="btn primary small" data-act="music">♪ Musik abspielen</button>';
+        h += '</div>';
+      }
+      if (!t.services) {
+        const files = NW.filesOf(d);
+        h += `<div class="group"><h4>Dateien</h4>${fileListHTML(files)}`;
+        if (!ro) h += '<button class="btn small" data-act="new-file">+ Neue Datei</button>';
+        h += `<label class="toggle"><input type="checkbox" data-path="share" ${d.share ? 'checked' : ''} ${dis ? 'disabled' : ''}> Dateien direkt tauschen (Peer-to-Peer)</label>
+          <p class="muted small">${d.share ? `Andere Endgeräte können ${esc(d.name)} direkt Dateien schicken und seine Dateien holen. ${esc(d.name)} ist damit Client und Server zugleich.` : 'Aus: Andere Endgeräte können mit diesem Gerät keine Dateien direkt tauschen.'}</p>`;
+        if (!ro) {
+          h += `<label class="field">Partner (IP-Adresse eines Endgeräts oder Servers)
+            <input id="file-target" placeholder="z. B. 192.168.1.12" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+            ${fileChips(d)}`;
+          if (files.length) h += `<label class="field">Datei<select id="file-pick">${files.map(f => `<option>${esc(f)}</option>`).join('')}</select></label>`;
+          h += `<div class="row">${files.length ? '<button class="btn primary small" data-act="send-file">Datei senden</button>' : ''}<button class="btn small" data-act="get-files">Dateien holen</button></div>`;
+        }
+        h += '</div>';
+      }
     }
     if (!dis) h += '<button class="btn danger" data-act="del-dev">Gerät löschen</button>';
     insp.innerHTML = h;
@@ -705,8 +786,15 @@
     const b = ev.target.closest('[data-act], [data-fill]');
     if (!b) return;
     if (b.dataset.fill) {
-      const target = $(b.dataset.fill === 'ping' ? 'ping-target' : 'url-target');
+      const target = $({ ping: 'ping-target', url: 'url-target', file: 'file-target' }[b.dataset.fill]);
       target.value = b.dataset.val;
+      return;
+    }
+    if (b.dataset.act === 'stadt') {
+      const l = S.net.links.find(x => x.id === S.selected);
+      if (!l || l.locked || readOnly()) return;
+      l.stadt = !!b.checked;
+      renderAll(); scheduleSave();
       return;
     }
     const d = NW.dev(S.net, S.selected);
@@ -721,6 +809,14 @@
         if (was) autoDhcp();
         break;
       }
+      case 'music': doMusic(d); break;
+      case 'new-file': {
+        const f = NW.newFile(d);
+        toast(`Neue Datei „${f}“ angelegt.`, 'ok');
+        renderInspector(); scheduleSave(); break;
+      }
+      case 'send-file': doFile(d, 'send'); break;
+      case 'get-files': doFile(d, 'get'); break;
       case 'browse': doBrowse(); break;
       case 'del-dev':
         NW.removeDevice(S.net, d.id); S.selected = null; renderAll(); scheduleSave(); break;
@@ -818,13 +914,43 @@
     if (res.ok) {
       NW.applyLease(d, res.lease);
       const srv = NW.dev(S.net, res.server);
-      if (T[d.type].router) logResult(true, `${d.name} hat von ${srv ? srv.name : 'dem Internetanbieter'} die externe (öffentliche) Adresse ${res.lease.ip} bekommen. Damit ist das Heimnetz mit dem Internet verbunden.`);
+      if (T[d.type].router) {
+        logResult(true, `${d.name} hat von ${srv ? srv.name : 'dem Internetanbieter'} die externe (öffentliche) Adresse ${res.lease.ip} bekommen. Damit ist das Heimnetz mit dem Internet verbunden.`);
+        NW.refreshDns(S.net); // Geräte im Heimnetz erfahren beim Verlängern den DNS-Server des Anbieters
+      }
       else logResult(true, `${d.name} hat von ${srv ? srv.name : 'dem DHCP-Server'} die Adresse ${res.lease.ip} bekommen.`);
     } else if (res.apipa) {
       NW.applyLease(d, res.apipa);
       logResult(false, `${res.error} ${d.name} gibt sich deshalb selbst die Notfall-Adresse ${res.apipa.ip} (APIPA). Damit erreicht es nur Geräte, die direkt im selben Netz auch eine 169.254-Adresse haben – ohne Gateway, also nicht das Internet.`, res.hint);
     } else logResult(false, res.error, res.hint);
     NW.logEvent(S.net, { type: 'dhcp', src: d.id, ok: !!res.ok });
+    renderAll(); scheduleSave();
+  }
+
+  async function doMusic(d) {
+    if (S.busy || !d) return;
+    const res = NW.playMusic(S.net, d.id);
+    if (res.steps.length) await runSteps(res.steps);
+    if (res.ok) logResult(true, `${NW.dev(S.net, res.target).name} spielen die Musik von ${d.name}. Die Töne kommen per Bluetooth – ohne IP-Adresse, ohne Router, nur über wenige Meter (PAN).`);
+    else logResult(false, res.error, res.hint);
+    NW.logEvent(S.net, { type: 'music', src: d.id, target: res.target || null, ok: !!res.ok });
+    renderGoals(); scheduleSave();
+  }
+
+  async function doFile(d, dir) {
+    if (S.busy || !d) return;
+    const target = ($('file-target') || {}).value || '';
+    const file = ($('file-pick') || {}).value || '';
+    const res = dir === 'send' ? NW.sendFile(S.net, d.id, target.trim(), file) : NW.getFiles(S.net, d.id, target.trim());
+    if (res.steps.length) await runSteps(res.steps);
+    const t = res.target ? NW.dev(S.net, res.target) : null;
+    if (res.ok) {
+      const how = res.mode === 'server'
+        ? `Client-Server: ${d.name} ist der Client, ${t.name} der Server. Die Datei liegt zentral auf dem Server und kann dort jederzeit abgeholt werden – auch wenn der Absender nicht mehr da ist.`
+        : `Peer-to-Peer: ${d.name} und ${t.name} tauschen direkt, ohne Server. Beide sind gleichberechtigt – jedes Gerät kann Dateien anbieten und holen. Dafür müssen beide gleichzeitig erreichbar sein.`;
+      logResult(true, (dir === 'send' ? `„${res.files[0]}“ ist bei ${t.name} angekommen. ` : `${d.name} hat ${res.files.map(f => '„' + f + '“').join(', ')} von ${t.name} bekommen. `) + how);
+    } else logResult(false, res.error, res.hint);
+    NW.logEvent(S.net, { type: 'file', src: d.id, target: res.target || null, mode: res.mode || null, dir, files: res.files || [], ok: !!res.ok });
     renderAll(); scheduleSave();
   }
 
