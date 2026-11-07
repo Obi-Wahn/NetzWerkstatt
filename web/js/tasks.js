@@ -59,7 +59,17 @@
     });
     const kinds = NW.netKinds(net);
     const hasKind = (kind, id) => kinds.some(k => k.kind === kind && (!id || k.devices.includes(id)));
-    return { net, byType, hosts, neighbors, linked, inNet, distinctIPs, pingOk, ping6Ok, hasGua, webOk, fileOk, musicOk, kinds, hasKind, pings, topos };
+    // Wurde ein Internetdienst erfolgreich genutzt (und klappt das auch jetzt noch)? opts: {host, lost}
+    const svcOk = (action, srcFilter, opts) => (net.events || []).some(e => {
+      opts = opts || {};
+      if (e.type !== 'svc' || e.action !== action || !e.ok) return false;
+      if (opts.host && e.host !== opts.host) return false;
+      if (opts.lost && !e.lost) return false;
+      const s = NW.dev(net, e.src);
+      return s && srcFilter(s) && NW.useService(net, s.id, action, e.host).ok;
+    });
+    const svcKinds = () => new Set((net.events || []).filter(e => e.ok && (e.type === 'web' || e.type === 'svc')).map(e => e.type === 'web' ? 'web' : e.action === 'mailget' ? 'mail' : e.action));
+    return { net, byType, hosts, neighbors, linked, inNet, distinctIPs, pingOk, ping6Ok, hasGua, webOk, fileOk, musicOk, kinds, hasKind, pings, topos, svcOk, svcKinds };
   }
 
   const isType = t => d => d.type === t;
@@ -76,6 +86,20 @@
 
   function evPing(net, src, target) { NW.logEvent(net, { type: 'ping', src, target, ok: true }); }
   function evPing6(net, src, target, ll) { NW.logEvent(net, { type: 'ping', v6: true, ll: !!ll, src, target, ok: true }); }
+
+  function evSvc(net, src, action, host, lost) { NW.logEvent(net, { type: 'svc', action, src, host, ok: true, lost: !!lost }); }
+
+  /** Holt für die genannten Geräte eine Adresse per DHCP (für Startnetze und Musterlösungen). */
+  function lease(net, ...ids) {
+    for (const id of ids) { const r = NW.dhcp(net, id); if (!r.ok) throw new Error(r.error); NW.applyLease(NW.dev(net, id), r.lease); }
+  }
+
+  /** Server mit festen Einstellungen und den angegebenen Diensten. */
+  function server(add, id, x, y, name, ip, on, extra) {
+    const services = NW.defaultServices();
+    for (const k of on) services[k].on = true;
+    return add(id, 'server', x, y, Object.assign({ name, ip, gw: '203.0.113.1', dhcp: false, locked: true, services }, extra || {}));
+  }
 
   // ---------------------------------------------------------------- Aufgaben
   const TASKS = [
@@ -423,6 +447,85 @@
       },
     },
     {
+      id: 'tcp-udp',
+      title: 'TCP und UDP im Vergleich',
+      level: 3,
+      intro: 'Im Internet stehen ein Video-Server und ein Server für Videokonferenzen. Verbinde das Tablet mit dem WLAN des Heimrouters, sieh dir ein Video an und starte einen Videoanruf. Danach störst du das WLAN – und beobachtest genau, was mit einem verlorenen Paket passiert.',
+      tip: 'Tippe das Tablet an: Unter „Testen" findest du die Internetdienste. Tippe einen der Namen an, damit er im Feld „Server" steht. Um das WLAN zu stören, tippst du die gestrichelte WLAN-Linie an und schaltest „Gestörte Verbindung" ein. Schalte auch einmal „TCP genau zeigen" ein.',
+      think: 'Beim Video wurde das verlorene Paket neu gesendet, beim Videoanruf nicht. Warum ist das jeweils sinnvoll? Welche drei Pakete gehen dem Video voraus, wenn du „TCP genau zeigen" einschaltest – und warum fehlen sie beim Videoanruf?',
+      goals: [
+        { text: 'Verbinde das Tablet per WLAN mit dem Heimrouter.', check: c => c.byType('tablet').some(t => c.neighbors(t.id).some(n => n.kind === 'wlan' && n.dev.type === 'router')) },
+        { text: 'Sieh dir auf dem Tablet das Video von video.netzwerkstatt.de an (Video-Streaming über TCP).', check: c => c.svcOk('video', isType('tablet'), { host: 'video.netzwerkstatt.de' }) },
+        { text: 'Starte vom Tablet einen Videoanruf über konferenz.netzwerkstatt.de (Videotelefonie über UDP).', check: c => c.svcOk('call', isType('tablet'), { host: 'konferenz.netzwerkstatt.de' }) },
+        { text: 'Schalte bei der WLAN-Verbindung „Gestörte Verbindung" ein. Sieh dir dann noch einmal das Video an und telefoniere noch einmal.', check: c => c.svcOk('video', isType('tablet'), { lost: true }) && c.svcOk('call', isType('tablet'), { lost: true }) },
+      ],
+      start: () => tcpUdpStart(),
+      solution: () => {
+        const net = tcpUdpStart();
+        NW.addLink(net, 'r', 'tb', 'wlan').link.loss = true;
+        lease(net, 'tb');
+        evSvc(net, 'tb', 'video', 'video.netzwerkstatt.de');
+        evSvc(net, 'tb', 'call', 'konferenz.netzwerkstatt.de');
+        evSvc(net, 'tb', 'video', 'video.netzwerkstatt.de', true);
+        evSvc(net, 'tb', 'call', 'konferenz.netzwerkstatt.de', true);
+        return net;
+      },
+    },
+    {
+      id: 'dienste-sortieren',
+      title: 'Dienste einordnen: TCP oder UDP?',
+      level: 2,
+      intro: 'Im Internet stehen Server für Webseiten, E-Mail, Videos, Videoanrufe und ein Online-Spiel. Probiere die Dienste am PC aus und beobachte im Protokoll, ob sie TCP oder UDP benutzen. Ordne danach die Anwendungen rechts zu.',
+      tip: 'TCP baut zuerst eine Verbindung auf, bestätigt jedes Paket und sendet verlorene Pakete neu: Alles kommt vollständig an. UDP schickt einfach los – ohne Verbindungsaufbau und ohne Bestätigung: Das ist schneller, aber verlorene Pakete bleiben verloren. Frage dich bei jeder Anwendung: Was ist wichtiger – vollständig oder schnell?',
+      think: 'Eine Sprachnachricht und ein Telefonanruf übertragen beide deine Stimme. Warum nutzen sie trotzdem verschiedene Protokolle?',
+      goals: [
+        { text: 'Probiere am PC mindestens drei verschiedene Internetdienste aus (z. B. Webseite, E-Mail, Video, Videoanruf, Online-Spiel).', check: c => c.svcKinds().size >= 3 },
+        { text: 'Ordne alle Anwendungen richtig zu: TCP oder UDP?', check: c => QUIZ.items.every(it => (c.net.quiz || {})[it.id] === it.answer) },
+      ],
+      quiz: null, // wird unten gesetzt
+      start: () => diensteStart(),
+      solution: () => {
+        const net = diensteStart();
+        evSvc(net, 'pc', 'mail', 'mail.netzwerkstatt.de');
+        evSvc(net, 'pc', 'video', 'video.netzwerkstatt.de');
+        evSvc(net, 'pc', 'game', 'spiel.netzwerkstatt.de');
+        net.quiz = {};
+        for (const it of QUIZ.items) net.quiz[it.id] = it.answer;
+        return net;
+      },
+    },
+    {
+      id: 'dienste',
+      title: 'Eigene Internetdienste anbieten',
+      level: 3,
+      intro: 'Die Schule möchte einen eigenen E-Mail-Server und einen Spiele-Server für die Pause betreiben. Stelle die Server ins Internet, trage ihre Namen beim DNS-Server ein und teste sie: Vom PC geht eine E-Mail los, auf dem Smartphone wird sie abgerufen.',
+      tip: 'Ein Server, den du per Kabel an den Internetanbieter anschließt, bekommt automatisch eine öffentliche Adresse. Ein Server kann auch mehrere Dienste gleichzeitig anbieten. Beim DNS-Server ergänzt du unter „+ Eintrag" den Namen und die IP-Adresse deines Servers.',
+      think: 'Die E-Mail ging zuerst vom PC zum E-Mail-Server und erst später vom Server zum Smartphone. Warum schickt der PC die E-Mail nicht direkt an das Smartphone? Und warum nutzt der Spiele-Server UDP, der E-Mail-Server aber TCP?',
+      goals: [
+        { text: 'Schließe einen neuen Server an den Internetanbieter an und schalte bei ihm den E-Mail-Server ein.', check: c => mailServers(c).length > 0 },
+        { text: 'Trage beim DNS-Server den Namen mail.schule.de mit der IP-Adresse deines E-Mail-Servers ein.', check: c => mailServers(c).some(s => dnsHas(c, 'mail.schule.de', s.ip)) },
+        { text: 'Schicke vom PC eine E-Mail über mail.schule.de.', check: c => c.svcOk('mail', isType('pc'), { host: 'mail.schule.de' }) },
+        { text: 'Rufe die E-Mails auf dem Smartphone über mail.schule.de ab.', check: c => c.svcOk('mailget', isType('smartphone'), { host: 'mail.schule.de' }) },
+        { text: 'Biete auch einen Spiele-Server unter dem Namen spiel.schule.de an und spiele vom PC aus online.', check: c => c.svcOk('game', isType('pc'), { host: 'spiel.schule.de' }) },
+      ],
+      start: () => eigeneStart(),
+      solution: () => {
+        const net = eigeneStart();
+        const srv = NW.createDevice(net, 'server', 680, 440, { id: 'srv', name: 'Schulserver' });
+        NW.addLink(net, 'srv', 'inet', 'kabel');
+        lease(net, 'srv');
+        srv.services.mail.on = true;
+        srv.services.game.on = true;
+        srv.services.mail.box.push({ from: 'PC 1', text: 'Hallo! Viele Grüße von PC 1' });
+        const entries = NW.dev(net, 'dns').services.dns.entries;
+        entries.push({ name: 'mail.schule.de', ip: srv.ip }, { name: 'spiel.schule.de', ip: srv.ip });
+        evSvc(net, 'pc', 'mail', 'mail.schule.de');
+        evSvc(net, 'sp', 'mailget', 'mail.schule.de');
+        evSvc(net, 'pc', 'game', 'spiel.schule.de');
+        return net;
+      },
+    },
+    {
       id: 'frei',
       title: 'Freies Bauen',
       level: 0,
@@ -514,6 +617,83 @@
       link('inet', 'dns', 'kabel', { locked: true });
       link('inet', 'web', 'kabel', { locked: true });
     });
+  }
+
+  const QUIZ = {
+    title: 'TCP oder UDP?',
+    options: ['TCP', 'UDP'],
+    items: [
+      { id: 'web', text: 'Eine Webseite aufrufen', answer: 'TCP' },
+      { id: 'mail', text: 'Eine E-Mail verschicken', answer: 'TCP' },
+      { id: 'download', text: 'Eine Datei herunterladen', answer: 'TCP' },
+      { id: 'voice', text: 'Eine Sprachnachricht im Messenger verschicken', answer: 'TCP' },
+      { id: 'call', text: 'Ein Videoanruf mit Freunden', answer: 'UDP' },
+      { id: 'phone', text: 'Ein Telefonat über das Internet', answer: 'UDP' },
+      { id: 'game', text: 'Ein schnelles Online-Rennspiel', answer: 'UDP' },
+      { id: 'dns', text: 'Eine DNS-Anfrage (Name → IP-Adresse)', answer: 'UDP' },
+    ],
+  };
+  byId('dienste-sortieren').quiz = QUIZ;
+
+  /** Heimrouter, Internetanbieter und DNS-Server – Grundlage für die Dienste-Aufgaben. */
+  function serviceBase(add, link, dnsLocked) {
+    const r = add('r', 'router', 300, 280, { name: 'Heimrouter', locked: true });
+    Object.assign(r.ports[0], { ip: '203.0.113.10', gw: '203.0.113.1', dns: '203.0.113.53' });
+    r.ports[1].ip = '192.168.178.1';
+    add('inet', 'isp', 500, 280, { name: 'Internetanbieter', locked: true, ip: '203.0.113.1', dns: '203.0.113.53' });
+    server(add, 'dns', 700, 90, 'DNS-Server', '203.0.113.53', ['dns'], { locked: dnsLocked });
+    link('r', 'inet', 'kabel', { locked: true });
+    link('inet', 'dns', 'kabel', { locked: true });
+  }
+
+  function tcpUdpStart() {
+    return build(({ net, add, link }) => {
+      serviceBase(add, link, true);
+      add('tb', 'tablet', 110, 280, { name: 'Tablet 1' });
+      server(add, 'video', 780, 280, 'Video-Server', '203.0.113.81', ['video']);
+      server(add, 'konf', 700, 470, 'Konferenz-Server', '203.0.113.82', ['call']);
+      link('inet', 'video', 'kabel', { locked: true });
+      link('inet', 'konf', 'kabel', { locked: true });
+      NW.dev(net, 'dns').services.dns.entries.push({ name: 'video.netzwerkstatt.de', ip: '203.0.113.81' }, { name: 'konferenz.netzwerkstatt.de', ip: '203.0.113.82' });
+    });
+  }
+
+  function diensteStart() {
+    return build(({ net, add, link }) => {
+      serviceBase(add, link, true);
+      add('pc', 'pc', 110, 280, { name: 'PC 1', locked: true });
+      server(add, 'web', 790, 200, 'Webserver', '203.0.113.80', ['web'], { services: Object.assign(NW.defaultServices(), { web: { on: true, title: 'Willkommen in der NetzWerkstatt!', text: 'Diese Seite kam per HTTP über TCP.' } }) });
+      server(add, 'mail', 790, 360, 'E-Mail-Server', '203.0.113.25', ['mail']);
+      server(add, 'video', 640, 470, 'Video-Server', '203.0.113.81', ['video']);
+      server(add, 'konf', 440, 480, 'Konferenz-Server', '203.0.113.82', ['call']);
+      server(add, 'spiel', 250, 480, 'Spiele-Server', '203.0.113.77', ['game']);
+      for (const id of ['web', 'mail', 'video', 'konf', 'spiel']) link('inet', id, 'kabel', { locked: true });
+      link('pc', 'r', 'kabel', { locked: true });
+      NW.dev(net, 'dns').services.dns.entries.push(
+        { name: 'www.netzwerkstatt.de', ip: '203.0.113.80' }, { name: 'mail.netzwerkstatt.de', ip: '203.0.113.25' },
+        { name: 'video.netzwerkstatt.de', ip: '203.0.113.81' }, { name: 'konferenz.netzwerkstatt.de', ip: '203.0.113.82' },
+        { name: 'spiel.netzwerkstatt.de', ip: '203.0.113.77' });
+      lease(net, 'pc');
+    });
+  }
+
+  function eigeneStart() {
+    return build(({ net, add, link }) => {
+      serviceBase(add, link, false);
+      add('pc', 'pc', 110, 180, { name: 'PC 1' });
+      add('sp', 'smartphone', 110, 420, { name: 'Smartphone 1' });
+      link('pc', 'r');
+      link('r', 'sp', 'wlan');
+      lease(net, 'pc', 'sp');
+    });
+  }
+
+  /** Server mit E-Mail-Dienst, die am Internetanbieter hängen. */
+  function mailServers(c) {
+    return c.byType('server').filter(s => NW.svcOn(s, 'mail') && NW.parseIP(s.ip) !== null && NW.l2Endpoints(c.net, s.id, 0).some(e => NW.TYPES[e.dev.type].isp));
+  }
+  function dnsHas(c, name, ip) {
+    return c.byType('server').some(d => NW.svcOn(d, 'dns') && (d.services.dns.entries || []).some(e => (e.name || '').trim().toLowerCase() === name && NW.parseIP(e.ip) !== null && NW.parseIP(e.ip) === NW.parseIP(ip)));
   }
 
   function dhcpStart() {

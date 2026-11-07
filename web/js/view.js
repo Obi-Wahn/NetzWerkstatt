@@ -106,10 +106,16 @@
     for (const l of net.links) {
       const a = NW.dev(net, l.a), b = NW.dev(net, l.b);
       if (!a || !b) continue;
-      const g = el('g', { class: 'link ' + l.kind + (opts.selected === l.id ? ' selected' : '') + (l.broken ? ' broken' : '') + (l.stadt ? ' stadt' : ''), 'data-link': l.id }, gLinks);
+      const g = el('g', { class: 'link ' + l.kind + (opts.selected === l.id ? ' selected' : '') + (l.broken ? ' broken' : '') + (l.stadt ? ' stadt' : '') + (l.loss ? ' lossy' : ''), 'data-link': l.id }, gLinks);
       const pa = anchor(a, b), pb = anchor(b, a);
       el('line', { x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y, class: 'hit' }, g);
       el('line', { x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y, class: 'wire' }, g);
+      if (l.loss && !l.broken) {
+        // Gestörte Verbindung: Blitz in der Mitte
+        const z = el('g', { class: 'loss-badge', transform: `translate(${(pa.x + pb.x) / 2},${(pa.y + pb.y) / 2})` }, g);
+        el('circle', { r: 12 }, z);
+        el('path', { d: 'M2 -8L-4 1h4l-2 7 6-9h-4z' }, z);
+      }
       if (l.broken) {
         // Blitz in der Mitte: Kabelbruch
         const mx = (pa.x + pb.x) / 2, my = (pa.y + pb.y) / 2;
@@ -249,7 +255,14 @@
     const hop = speed || 420;
     // Ein Schritt kann mehrere Wege gleichzeitig haben (Broadcast „an alle")
     const one = (step, path, withLabel) => new Promise(resolve => {
-      const devs = path.map(id => NW.dev(net, id)).filter(Boolean);
+      // Ein Wegpunkt ist eine Geräte-ID oder {mid:[a, b]} (Mitte einer Verbindung, z. B. für verlorene Pakete)
+      const devs = path.map(p => {
+        if (!(p && p.mid)) return NW.dev(net, p);
+        const a = NW.dev(net, p.mid[0]), b = NW.dev(net, p.mid[1]);
+        if (!a || !b) return null;
+        const pa = anchor(a, b), pb = anchor(b, a);
+        return { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 };
+      }).filter(Boolean);
       const pts = [];
       devs.forEach((d, k) => {
         if (!isBus(d)) { pts.push({ x: d.x, y: d.y }); return; }
@@ -258,7 +271,7 @@
         if (devs[k + 1]) pts.push(anchor(d, devs[k + 1]));
         if (!devs[k - 1] && !devs[k + 1]) pts.push({ x: d.x, y: d.y });
       });
-      const g = el('g', { class: 'packet ' + (step.kind || 'request') }, overlay);
+      const g = el('g', { class: 'packet ' + (step.kind || 'request') + (step.tcp ? ' tcp' : '') }, overlay);
       el('circle', { r: 13 }, g);
       if (withLabel) {
         const label = el('g', { class: 'packet-label' }, g);

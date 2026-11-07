@@ -18,6 +18,7 @@
     saveTimer: null,
     drag: null,
     v6: false,   // Arbeitsfläche zeigt IPv6- statt IPv4-Adressen
+    tcp: store.get('nw_tcp') === '1', // TCP genau zeigen (Verbindungsaufbau, Bestätigungen)
   };
 
   // ---------------------------------------------------------------- Bildschirme
@@ -109,7 +110,7 @@
     $('task-think').textContent = task.think || '';
     $('task-think-wrap').hidden = !task.think;
     $('btn-submit').hidden = !!task.free;
-    $('log').innerHTML = '<div class="log-empty">Hier erscheinen die Datenpakete, sobald du einen Ping sendest, eine Webseite aufrufst oder per DHCP eine Adresse anforderst.</div>';
+    $('log').innerHTML = '<div class="log-empty">Hier erscheinen die Datenpakete, sobald du einen Ping sendest, eine Webseite aufrufst, einen Internetdienst nutzt oder per DHCP eine Adresse anforderst.</div>';
     $('save-state').textContent = '';
     show('editor');
     updateSolutionButton();
@@ -128,7 +129,7 @@
 
   $('btn-solution').addEventListener('click', () => {
     const sol = S.task.solution();
-    showNetwork('Musterlösung: ' + S.task.title, sol, '<p class="muted">Vergleiche mit deinem Netzwerk. Es gibt oft mehrere richtige Lösungen!</p>');
+    showNetwork('Musterlösung: ' + S.task.title, sol, '<p class="muted">Vergleiche mit deinem Netzwerk. Es gibt oft mehrere richtige Lösungen!</p>' + NWCommon.quizHTML(S.task, sol));
   });
 
   // ---------------------------------------------------------------- Speichern
@@ -274,7 +275,38 @@
     const res = NWTasks.evaluate(S.task, S.net);
     $('goals').innerHTML = S.task.goals.map((g, i) => `<li class="${res[i] ? 'done' : ''}">${esc(g.text)}</li>`).join('');
     $('all-done').hidden = !(S.task.goals.length && res.every(Boolean)) || readOnly();
+    renderQuiz();
   }
+
+  // ---------------------------------------------------------------- Zuordnungsaufgabe (z. B. TCP oder UDP?)
+  function renderQuiz() {
+    const q = S.task.quiz, box = $('quiz');
+    box.hidden = !q;
+    if (!q) return;
+    const ans = S.net.quiz || {};
+    const ro = readOnly();
+    let h = `<h4>${esc(q.title)}</h4>`;
+    for (const it of q.items) {
+      h += `<div class="quiz-row"><span>${esc(it.text)}</span><div class="seg" role="group" aria-label="${esc(it.text)}">` +
+        q.options.map(o => `<button class="${ans[it.id] === o ? 'on' : ''}" data-quiz="${esc(it.id)}" data-opt="${esc(o)}" aria-pressed="${ans[it.id] === o}" ${ro ? 'disabled' : ''}>${esc(o)}</button>`).join('') +
+        '</div></div>';
+    }
+    const done = q.items.filter(it => ans[it.id]).length;
+    const right = q.items.filter(it => ans[it.id] === it.answer).length;
+    if (done === q.items.length) h += right === done
+      ? '<div class="quiz-result ok">Alles richtig zugeordnet!</div>'
+      : `<div class="quiz-result">${right} von ${done} richtig. Überlege noch einmal: Was ist hier wichtiger – dass alles vollständig ankommt oder dass es schnell geht?</div>`;
+    else h += `<p class="muted small">${done} von ${q.items.length} zugeordnet.</p>`;
+    box.innerHTML = h;
+  }
+
+  $('quiz').addEventListener('click', ev => {
+    const b = ev.target.closest('[data-quiz]');
+    if (!b || readOnly()) return;
+    if (!S.net.quiz) S.net.quiz = {};
+    S.net.quiz[b.dataset.quiz] = b.dataset.opt;
+    renderGoals(); scheduleSave();
+  });
 
   // ---------------------------------------------------------------- Zeiger (Maus, Finger, Stift)
   const canvas = $('canvas');
@@ -454,6 +486,14 @@
     return names.size ? `<div class="chips">${[...names].map(n => `<button class="chip" data-fill="url" data-val="http://${esc(n)}">${esc(n)}</button>`).join('')}</div>` : '';
   }
 
+  /** Namen aus DNS-Einträgen und Server mit Diensten als Vorschläge für das Dienst-Ziel. */
+  function serverChips() {
+    const vals = new Set();
+    S.net.devices.forEach(o => o.services && o.services.dns && o.services.dns.on && (o.services.dns.entries || []).forEach(e => e.name && vals.add(e.name.trim())));
+    S.net.devices.forEach(o => { if (o.services && ['mail', 'video', 'call', 'game'].some(k => NW.svcOn(o, k)) && NW.parseIP(o.ip) !== null) vals.add(o.ip.trim()); });
+    return vals.size ? `<div class="chips">${[...vals].map(n => `<button class="chip" data-fill="svc" data-val="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : '';
+  }
+
   function renderInspector() {
     document.querySelector('.side').classList.toggle('has-sel', !!S.selected);
     const ro = readOnly();
@@ -488,7 +528,11 @@
         : '';
       insp.innerHTML = `<h3>${title}</h3>
         <p>zwischen <b>${esc(a.name)}</b> und <b>${esc(b.name)}</b></p>${plug}${fiber}
-        <p class="muted small">${about}</p>${brk}
+        <p class="muted small">${about}</p>
+        <label class="toggle"><input type="checkbox" data-act="loss" ${link.loss ? 'checked' : ''} ${ro ? 'disabled' : ''}> Gestörte Verbindung</label>
+        <p class="${link.loss ? 'loss-note' : 'muted small'}">${link.loss
+          ? 'Hier gehen Pakete verloren – wie bei schwachem WLAN oder einem Wackelkontakt. Vergleiche: Was machen TCP und UDP mit einem verlorenen Paket?'
+          : 'Schalte die Störung ein, um zu sehen, was mit verlorenen Paketen passiert.'}</p>${brk}
         ${!ro && !link.locked ? '<button class="btn danger" data-act="del-link">Verbindung löschen</button>' : ''}`;
       return;
     }
@@ -528,9 +572,15 @@
       h += v6HostHTML(d);
     }
     if (t.services) {
+      // Ältere Netzwerke kennen noch nicht alle Dienste
+      const def = NW.defaultServices();
+      for (const k in def) if (!d.services[k]) d.services[k] = def[k];
       const w = d.services.web, n = d.services.dns;
+      const info = k => { const sv = NW.SERVICES[k]; return `<p class="svc-info"><span class="proto-tag ${sv.proto.toLowerCase()}">${sv.proto} · Port ${sv.port}</span> ${esc(sv.why)}</p>`; };
+      const toggle = (k, label) => `<label class="toggle"><input type="checkbox" data-path="services.${k}.on" ${d.services[k].on ? 'checked' : ''} ${dis ? 'disabled' : ''}> ${esc(label)}</label>` + (d.services[k].on ? info(k) : '');
       h += `<div class="group"><h4>Dienste</h4>
-        <label class="toggle"><input type="checkbox" data-path="services.web.on" ${w.on ? 'checked' : ''} ${dis ? 'disabled' : ''}> Webserver (HTTP)</label>`;
+        <p class="muted small">Ein Server kann mehrere Dienste gleichzeitig anbieten. Die Endgeräte sind die Clients, die sie nutzen (Client-Server-Modell).</p>
+        ${toggle('web', 'Webserver (HTTP)')}`;
       if (w.on) {
         h += field('Titel der Webseite', 'services.web.title', w.title, '', { disabled: dis });
         h += field('Text der Webseite', 'services.web.text', w.text, '', { disabled: dis });
@@ -538,7 +588,7 @@
       const fs = NW.fileStore(d);
       h += `<label class="toggle"><input type="checkbox" data-path="services.files.on" ${fs.on ? 'checked' : ''} ${dis ? 'disabled' : ''}> Dateiablage (Cloud-Speicher)</label>`;
       if (fs.on) h += `<p class="muted small">Endgeräte laden hier Dateien hoch und holen sie später wieder ab (Client-Server).</p>${fileListHTML(fs.files)}`;
-      h += `<label class="toggle"><input type="checkbox" data-path="services.dns.on" ${n.on ? 'checked' : ''} ${dis ? 'disabled' : ''}> DNS-Server</label>`;
+      h += toggle('dns', 'DNS-Server');
       if (n.on) {
         h += '<div class="dns-table"><div class="dns-row head"><span>Name</span><span>IP-Adresse</span><span></span></div>';
         n.entries.forEach((e, i) => {
@@ -549,6 +599,14 @@
         h += '</div>';
         if (!dis) h += '<button class="btn small" data-act="dns-add">+ Eintrag</button>';
       }
+      h += toggle('mail', 'E-Mail-Server (SMTP, IMAP)');
+      if (d.services.mail.on) {
+        const nb = (d.services.mail.box || []).length;
+        h += `<p class="svc-info">Postfach: <b>${nb === 1 ? '1 E-Mail' : nb + ' E-Mails'}</b></p>`;
+      }
+      h += toggle('video', 'Video-Streaming');
+      h += toggle('call', 'Video- und Audio-Telefonie');
+      h += toggle('game', 'Spiele-Server (Online-Spiel)');
       h += '</div>';
     }
     if (t.router) {
@@ -631,12 +689,17 @@
 
     if (t.host) {
       h += `<div class="group test"><h4>Testen</h4>
+        <label class="toggle"><input type="checkbox" data-act="tcp-details" ${S.tcp ? 'checked' : ''}> TCP genau zeigen (Verbindungsaufbau und Bestätigungen)</label>
         <label class="field">Ping senden an (IPv4- oder IPv6-Adresse)
           <div class="inline"><input id="ping-target" placeholder="z. B. 192.168.1.2 oder fe80::…" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn primary" data-act="ping">Ping</button></div></label>
         ${otherHostChips(d)}${v6Chips(d)}
         <label class="field">Browser: Adresse (URL)
           <div class="inline"><input id="url-target" placeholder="http://www.beispiel.de" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn primary" data-act="browse">Öffnen</button></div></label>
-        ${urlChips()}</div>`;
+        ${urlChips()}
+        <label class="field">Internetdienste: Server (Name oder IP-Adresse)
+          <input id="svc-target" placeholder="z. B. mail.beispiel.de" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+        ${serverChips()}
+        <div class="svc-btns">${['mail', 'mailget', 'video', 'call', 'game'].map(a => `<button class="btn" data-act="svc" data-svc="${a}">${esc(NW.ACTIONS[a].label)}</button>`).join('')}</div></div>`;
       const bt = NW.btPartners(S.net, d.id);
       if (bt.length) {
         h += `<div class="group"><h4>Bluetooth (PAN)</h4><p class="small">Gekoppelt mit ${bt.map(o => '<b>' + esc(o.name) + '</b>').join(', ')}</p>`;
@@ -780,13 +843,14 @@
     if (ev.key !== 'Enter') return;
     if (ev.target.id === 'ping-target') { ev.preventDefault(); doPing(); }
     if (ev.target.id === 'url-target') { ev.preventDefault(); doBrowse(); }
+    if (ev.target.id === 'svc-target') { ev.preventDefault(); doService('mail'); }
   });
 
   insp.addEventListener('click', async ev => {
     const b = ev.target.closest('[data-act], [data-fill]');
     if (!b) return;
     if (b.dataset.fill) {
-      const target = $({ ping: 'ping-target', url: 'url-target', file: 'file-target' }[b.dataset.fill]);
+      const target = $({ ping: 'ping-target', url: 'url-target', file: 'file-target', svc: 'svc-target' }[b.dataset.fill]);
       target.value = b.dataset.val;
       return;
     }
@@ -818,6 +882,18 @@
       case 'send-file': doFile(d, 'send'); break;
       case 'get-files': doFile(d, 'get'); break;
       case 'browse': doBrowse(); break;
+      case 'svc': doService(b.dataset.svc); break;
+      case 'tcp-details':
+        S.tcp = b.checked; store.set('nw_tcp', S.tcp ? '1' : '0');
+        toast(S.tcp ? 'Bei TCP siehst du jetzt auch Verbindungsaufbau, Bestätigungen und Verbindungsabbau.' : 'TCP wird wieder kurz gezeigt.');
+        break;
+      case 'loss': {
+        const l = S.net.links.find(x => x.id === S.selected);
+        if (!l || readOnly()) break;
+        l.loss = b.checked;
+        if (!l.loss) delete l.loss;
+        renderAll(); scheduleSave(); break;
+      }
       case 'del-dev':
         NW.removeDevice(S.net, d.id); S.selected = null; renderAll(); scheduleSave(); break;
       case 'del-link':
@@ -871,8 +947,9 @@
     const empty = log.querySelector('.log-empty');
     if (empty) empty.remove();
     const div = document.createElement('div');
-    div.className = 'log-entry ' + (step.kind || '') + (step.ok === false ? ' failed' : '');
-    div.innerHTML = `<span class="log-label">${esc(step.label)}</span>${step.proto ? `<span class="log-proto">${esc(step.proto)}</span>` : ''}<span class="log-text">${esc(step.text || '')}</span>${step.note ? `<span class="log-note">↔ ${esc(step.note)}</span>` : ''}`;
+    div.className = 'log-entry ' + (step.kind || '') + (step.ok === false ? ' failed' : '') + (step.tcp ? ' tcp' : '');
+    const pc = /^TCP/.test(step.proto || '') ? ' tcp' : /^UDP/.test(step.proto || '') ? ' udp' : '';
+    div.innerHTML = `<span class="log-label">${esc(step.label)}</span>${step.proto ? `<span class="log-proto${pc}">${esc(step.proto)}</span>` : ''}<span class="log-text">${esc(step.text || '')}</span>${step.note ? `<span class="log-note">↔ ${esc(step.note)}</span>` : ''}`;
     log.prepend(div);
     while (log.children.length > 40) log.lastChild.remove();
   }
@@ -962,15 +1039,41 @@
     if (S.busy) return;
     const d = NW.dev(S.net, S.selected);
     const url = $('url-target').value.trim();
-    const res = NW.browse(S.net, d.id, url);
+    const res = NW.browse(S.net, d.id, url, { tcp: S.tcp });
     if (res.steps.length) await runSteps(res.steps);
     const u = NW.parseURL(url);
-    NW.logEvent(S.net, { type: 'web', src: d.id, host: u ? u.host : url, ok: !!res.ok });
+    NW.logEvent(S.net, { type: 'web', src: d.id, host: u ? u.host : url, ok: !!res.ok, lost: !!res.lost, tcp: !!res.tcp });
     if (res.ok) {
-      logResult(true, `Webseite ${res.page.host} geladen (Server-IP ${res.page.ip}).` + natText(res.nat));
+      logResult(true, res.message + natText(res.nat));
       openModal(`<div class="browser"><div class="browser-bar"><span class="dots"><i></i><i></i><i></i></span><span class="browser-url">http://${esc(res.page.host)}/</span></div>
         <div class="browser-page"><h1>${esc(res.page.title || '(ohne Titel)')}</h1><p>${esc(res.page.text)}</p></div>
         <p class="muted small">Geladen auf ${esc(d.name)} · Server-IP ${esc(res.page.ip)} · über HTTP-Request und HTTP-Response</p></div>`);
+    } else logResult(false, res.error, res.hint);
+    renderGoals(); scheduleSave();
+  }
+
+  /** Internetdienst nutzen: E-Mail senden/abrufen, Video, Videoanruf, Online-Spiel. */
+  async function doService(action) {
+    if (S.busy) return;
+    const d = NW.dev(S.net, S.selected);
+    const target = $('svc-target').value.trim();
+    const res = NW.useService(S.net, d.id, action, target, { tcp: S.tcp });
+    if (res.steps.length) await runSteps(res.steps);
+    const u = NW.parseURL(target);
+    NW.logEvent(S.net, { type: 'svc', action, src: d.id, host: u ? u.host : target, ok: !!res.ok, lost: !!res.lost, tcp: !!res.tcp });
+    if (res.ok) {
+      const srv = NW.dev(S.net, res.target);
+      if (action === 'mail') {
+        const box = srv.services.mail.box || (srv.services.mail.box = []);
+        box.push(res.mail);
+        if (box.length > 20) box.splice(0, box.length - 20);
+      }
+      logResult(true, res.message + natText(res.nat));
+      if (action === 'mailget') {
+        openModal(`<h2 class="modal-title">Postfach auf ${esc(srv.name)}</h2>
+          ${res.mails.length ? `<ul class="mail-list">${res.mails.map(m => `<li><b>Von: ${esc(m.from)}</b><br>${esc(m.text)}</li>`).join('')}</ul>` : '<p>Das Postfach ist leer. Schicke zuerst von einem Gerät eine E-Mail an diesen Server.</p>'}
+          <p class="muted small">Abgerufen auf ${esc(d.name)} über IMAP (TCP · Port 143). Die E-Mails lagen auf dem Server, bis sie abgerufen wurden.</p>`);
+      }
     } else logResult(false, res.error, res.hint);
     renderGoals(); scheduleSave();
   }

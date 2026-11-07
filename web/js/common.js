@@ -78,8 +78,20 @@
   function goalsHTML(task, net) {
     if (!task || !task.goals.length) return '';
     const res = NWTasks.evaluate(task, net);
-    return '<ul class="goals compact">' + task.goals.map((g, i) => `<li class="${res[i] ? 'done' : ''}">${esc(g.text)}</li>`).join('') + '</ul>';
+    return '<ul class="goals compact">' + task.goals.map((g, i) => `<li class="${res[i] ? 'done' : ''}">${esc(g.text)}</li>`).join('') + '</ul>' + quizHTML(task, net);
   }
 
-  root.NWCommon = { store, api, esc, toast, openModal, closeModal, confirmBox, showNetwork, goalsHTML };
+  /** Antworten einer Zuordnungsaufgabe (für Lehrkraft und Musterlösung). */
+  function quizHTML(task, net) {
+    const q = task && task.quiz;
+    if (!q) return '';
+    const ans = (net && net.quiz) || {};
+    return `<div><b>${esc(q.title)}</b><ul class="quiz-answers">` + q.items.map(it => {
+      const a = ans[it.id];
+      const cls = !a ? 'muted' : a === it.answer ? 'ok' : 'bad';
+      return `<li class="${cls}">${a ? (a === it.answer ? '✓' : '✕') : '–'} ${esc(it.text)}: <b>${esc(a || 'offen')}</b></li>`;
+    }).join('') + '</ul></div>';
+  }
+
+  root.NWCommon = { store, api, esc, toast, openModal, closeModal, confirmBox, showNetwork, goalsHTML, quizHTML };
 })(window);
