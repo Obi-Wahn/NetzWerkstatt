@@ -350,3 +350,34 @@ table.cmp th, table.cmp td { text-align: left; vertical-align: top; padding: 4px
 table.cmp thead th { color: var(--brand); }
 table.cmp tbody th { color: var(--muted); font-weight: 600; }
 table.cmp col.k { width: 26%; }
+/* ---------------------------------------------------------------- TCP, UDP und Internetdienste */
+.link.lossy .wire { stroke: #c97a00; }
+.loss-badge circle { fill: #fff4d1; stroke: #c97a00; stroke-width: 2; }
+.loss-badge path { fill: #c97a00; }
+.packet.wait circle { fill: #8a96a8; }
+.packet.wait .packet-label rect { fill: #8a96a8; }
+.packet.tcp > circle { fill-opacity: .6; }
+.log-entry.wait .log-label { color: var(--warn); }
+.log-entry.tcp .log-label { font-weight: 600; }
+.log-proto.tcp { background: #e3eefb; color: var(--brand); }
+.log-proto.udp { background: #fdeede; color: #a8550b; }
+.svc-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+.svc-btns .btn { padding: 6px 8px; font-size: .88em; }
+.svc-info { font-size: .85em; color: var(--muted); margin: -4px 0 8px 30px; }
+.svc-info b { color: var(--ink); }
+.proto-tag { font-size: .75em; font-weight: 700; padding: 1px 7px; border-radius: 6px; font-family: ui-monospace, Consolas, monospace; }
+.proto-tag.tcp { background: #e3eefb; color: var(--brand); }
+.proto-tag.udp { background: #fdeede; color: #a8550b; }
+.loss-note { background: #fff4d1; border-radius: 8px; padding: 6px 9px; font-size: .88em; }
+.mail-list { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 6px; }
+.mail-list li { background: #f6f8fb; border-radius: 9px; padding: 8px 10px; }
+.quiz { display: grid; gap: 6px; margin: 0 0 10px; }
+.quiz h4 { font-size: .9em; margin: 4px 0 2px; }
+.quiz-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; background: #f6f8fb; border-radius: 9px; padding: 5px 6px 5px 10px; font-size: .9em; }
+.quiz-row .seg { margin: 0; }
+.quiz-row .seg button { min-height: 32px; padding: 4px 10px; flex: none; }
+.quiz-result { font-weight: 600; font-size: .9em; padding: 6px 10px; border-radius: 9px; background: #fff4d1; color: var(--warn); }
+.quiz-result.ok { background: var(--ok-soft); color: var(--ok); }
+.quiz-answers { list-style: none; padding: 0; margin: 0; display: grid; gap: 3px; font-size: .9em; }
+.quiz-answers .ok { color: var(--ok); }
+.quiz-answers .bad { color: var(--bad); }

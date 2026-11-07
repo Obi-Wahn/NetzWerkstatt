@@ -540,4 +540,69 @@ test('Netzarten werden erkannt', () => {
   assert.deepStrictEqual(NW.netKinds(TASKS.find(t => t.id === 'man').start()).map(k => k.kind), ['LAN', 'LAN']);
 });
 
+// ---------------------------------------------------------------- TCP, UDP und Internetdienste
+test('Video (TCP) und Videoanruf (UDP) ohne Störung', () => {
+  const net = TASKS.find(t => t.id === 'tcp-udp').solution();
+  net.links.forEach(l => delete l.loss);
+  const v = NW.useService(net, 'tb', 'video', 'video.netzwerkstatt.de');
+  assert.ok(v.ok, v.error);
+  assert.deepStrictEqual(v.steps.map(s => s.label), ['DNS-Anfrage', 'DNS-Antwort', 'Video-Anfrage', 'Videodaten 1/3', 'Videodaten 2/3', 'Videodaten 3/3']);
+  assert.match(v.steps[2].proto, /^TCP/);
+  const c = NW.useService(net, 'tb', 'call', 'konferenz.netzwerkstatt.de');
+  assert.ok(c.ok && !c.lost);
+  assert.ok(c.steps.slice(2).every(s => /^UDP/.test(s.proto)));
+});
+
+test('Gestörte Verbindung: TCP sendet neu, UDP nicht', () => {
+  const net = TASKS.find(t => t.id === 'tcp-udp').solution();
+  const v = NW.useService(net, 'tb', 'video', 'video.netzwerkstatt.de');
+  assert.ok(v.ok && v.lost && v.resent);
+  const labels = v.steps.map(s => s.label);
+  assert.ok(labels.includes('Keine Bestätigung'));
+  assert.ok(labels.includes('Videodaten 1/3 (neu gesendet)'));
+  const lostStep = v.steps.find(s => s.lost);
+  assert.deepStrictEqual(lostStep.path[lostStep.path.length - 1], { mid: ['r', 'tb'] });
+  const c = NW.useService(net, 'tb', 'call', 'konferenz.netzwerkstatt.de');
+  assert.ok(c.ok && c.lost && !c.resent);
+  assert.ok(!c.steps.some(s => /neu gesendet|Bestätigung/.test(s.label)));
+  assert.match(c.message, /nicht neu gesendet/);
+  assert.strictEqual(c.steps.filter(s => s.lost).length, 1, 'genau ein Paket geht verloren');
+});
+
+test('TCP genau zeigen: Verbindungsaufbau, Bestätigungen, Verbindungsabbau', () => {
+  const net = TASKS.find(t => t.id === 'webseite').solution();
+  const r = NW.browse(net, 'pc', 'www.netzwerkstatt.de', { tcp: true });
+  assert.ok(r.ok, r.error);
+  assert.deepStrictEqual(r.steps.map(s => s.label), ['DNS-Anfrage', 'DNS-Antwort', 'TCP: SYN', 'TCP: SYN-ACK', 'TCP: ACK',
+    'HTTP-Request', 'TCP: ACK', 'HTTP-Response', 'TCP: ACK', 'TCP: FIN', 'TCP: FIN-ACK']);
+  assert.match(r.steps[2].note, /NAT/, 'NAT-Hinweis beim ersten Paket');
+});
+
+test('Dienst nicht eingeschaltet: verständliche Meldung, mit TCP-Details ein RST', () => {
+  const net = TASKS.find(t => t.id === 'dienste-sortieren').solution();
+  const r = NW.useService(net, 'pc', 'game', 'mail.netzwerkstatt.de');
+  assert.ok(!r.ok);
+  assert.match(r.error, /läuft kein Spiele-Server/);
+  const m = NW.useService(net, 'pc', 'mail', 'www.netzwerkstatt.de', { tcp: true });
+  assert.strictEqual(m.steps[m.steps.length - 1].label, 'TCP: RST');
+});
+
+test('E-Mail: senden über SMTP, abrufen über IMAP', () => {
+  const net = TASKS.find(t => t.id === 'dienste').solution();
+  const s = NW.useService(net, 'pc', 'mail', 'mail.schule.de');
+  assert.ok(s.ok, s.error);
+  assert.match(s.steps[2].proto, /TCP · Port 25/);
+  const g = NW.useService(net, 'sp', 'mailget', 'mail.schule.de');
+  assert.ok(g.ok, g.error);
+  assert.match(g.steps[2].proto, /TCP · Port 143/);
+  assert.strictEqual(g.mails.length, 1);
+});
+
+test('Sortieraufgabe: falsche Zuordnung erfüllt das Ziel nicht', () => {
+  const t = TASKS.find(x => x.id === 'dienste-sortieren');
+  const net = t.solution();
+  net.quiz.call = 'TCP';
+  assert.deepStrictEqual(evaluate(t, net), [true, false]);
+});
+
 console.log(`\n${n} Tests bestanden.`);

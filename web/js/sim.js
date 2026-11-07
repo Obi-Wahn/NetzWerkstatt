@@ -26,7 +26,7 @@
     pc: 'Ein Endgerät. Es wird per Kabel angeschlossen und braucht eine IP-Adresse, um im Netz erreichbar zu sein. Für ein Ringnetz kann ein PC direkt mit zwei Nachbar-PCs verbunden werden.',
     tablet: 'Ein Endgerät ohne Netzwerkkabel. Es verbindet sich per WLAN mit einem Access Point.',
     smartphone: 'Ein Endgerät ohne Netzwerkkabel. Es verbindet sich per WLAN mit einem Access Point.',
-    server: 'Ein Rechner, der Dienste für andere anbietet (Server im Client-Server-Modell), z. B. Webseiten oder die Namensauflösung (DNS).',
+    server: 'Ein Rechner, der Dienste für andere anbietet (Server im Client-Server-Modell), z. B. Webseiten, E-Mail, Videos, Videotelefonie, Online-Spiele oder die Namensauflösung (DNS).',
     switch: 'Verbindet mehrere Geräte im selben Netz (LAN). Er leitet Pakete gezielt an das Gerät weiter, für das sie bestimmt sind. Er braucht keine IP-Adresse.',
     ap: 'Der Access Point (Zugangspunkt) bringt Geräte per Funk (WLAN) ins Kabelnetz. Er braucht keine IP-Adresse.',
     router: 'Verbindet verschiedene Netze miteinander, z. B. das Heimnetz mit dem Internet. Er hat drei LAN-Anschlüsse für das Heimnetz (wie ein eingebauter Switch) und einen Internet-Anschluss (WAN). In jedem der beiden Netze hat er eine eigene IP-Adresse. Endgeräte tragen ihn als Gateway ein.',
@@ -130,7 +130,7 @@
       d.modem = true;            // eingebautes Internet-Modem (DSL/Kabel)
     }
     if (t.isp) { d.ip = freeIspNet(net); d.mask = '255.255.255.0'; d.dns = ''; }
-    if (t.services) d.services = { web: { on: false, title: 'Willkommen!', text: 'Das ist meine erste Webseite.' }, dns: { on: false, entries: [] }, files: { on: false, files: [] } };
+    if (t.services) d.services = defaultServices();
     else if (t.host) { d.files = []; d.share = false; }
     Object.assign(d, extra || {});
     net.devices.push(d);
@@ -788,46 +788,260 @@
     return { scheme: (m[1] || 'http').toLowerCase(), host: m[2].toLowerCase(), path: m[4] || '/' };
   }
 
-  function browse(net, srcId, url) {
-    const src = dev(net, srcId);
-    const u = parseURL(url);
-    const steps = [];
-    const res = (ok, extra) => Object.assign({ ok, steps: steps.map(st => busSpread(net, st)) }, extra);
-    if (!u) return res(false, { error: `„${url}" ist keine gültige Adresse (URL).`, hint: 'Beispiel: http://www.beispiel.de' });
-    let ip = parseIP(u.host);
-    if (ip === null) {
-      // Namensauflösung über DNS
-      const dnsIP = parseIP(src.dns || '');
-      if (dnsIP === null) return res(false, { error: `${src.name} kennt keinen DNS-Server und kann den Namen ${u.host} nicht in eine IP-Adresse übersetzen.`, hint: 'Trage beim Gerät die IP-Adresse eines DNS-Servers ein.' });
-      const rt = roundTrip(net, srcId, dnsIP);
-      steps.push({ kind: 'request', label: 'DNS-Anfrage', proto: 'UDP · Port 53', text: `Welche IP-Adresse hat ${u.host}?`, note: natNote(net, rt, 'there'), path: rt.there.path, ok: rt.there.ok });
-      if (!rt.ok) {
-        if (rt.back) steps.push({ kind: 'response', label: 'DNS-Antwort', proto: 'UDP · Port 53', text: '', path: rt.back.path, ok: false });
-        return res(false, { error: 'DNS-Server nicht erreichbar: ' + rt.error, hint: rt.hint });
-      }
-      const ds = rt.target;
-      if (!(ds.services && ds.services.dns && ds.services.dns.on))
-        return res(false, { error: `Unter ${ipStr(dnsIP)} (${ds.name}) läuft kein DNS-Server.`, hint: 'Prüfe die DNS-Adresse oder schalte beim Server den DNS-Dienst ein.' });
-      const entry = (ds.services.dns.entries || []).find(e => (e.name || '').trim().toLowerCase() === u.host);
-      if (!entry || parseIP(entry.ip) === null) {
-        steps.push({ kind: 'response', label: 'DNS-Antwort', proto: 'UDP · Port 53', text: `Den Namen ${u.host} kenne ich nicht.`, path: rt.back.path, ok: true, bad: true });
-        return res(false, { error: `Der DNS-Server kennt den Namen ${u.host} nicht.`, hint: 'Prüfe die Schreibweise der Adresse oder ergänze den Eintrag beim DNS-Server.' });
-      }
-      ip = parseIP(entry.ip);
-      steps.push({ kind: 'response', label: 'DNS-Antwort', proto: 'UDP · Port 53', text: `${u.host} hat die IP-Adresse ${ipStr(ip)}`, note: natNote(net, rt, 'back'), path: rt.back.path, ok: true });
-    }
-    const rt = roundTrip(net, srcId, ip);
-    steps.push({ kind: 'request', label: 'HTTP-Request', proto: 'TCP · Port 80', text: `GET ${u.path} – „Schick mir bitte die Webseite ${u.host}"`, note: natNote(net, rt, 'there'), path: rt.there.path, ok: rt.there.ok });
-    if (!rt.ok) {
-      if (rt.back) steps.push({ kind: 'response', label: 'HTTP-Response', proto: 'TCP · Port 80', text: '', path: rt.back.path, ok: false });
-      return res(false, { error: 'Webserver nicht erreichbar: ' + rt.error, hint: rt.hint });
-    }
-    const ws = rt.target;
-    if (!(ws.services && ws.services.web && ws.services.web.on))
-      return res(false, { error: `Unter ${ipStr(ip)} (${ws.name}) läuft kein Webserver.`, hint: 'Schalte beim Server den Webserver-Dienst ein.' });
-    steps.push({ kind: 'response', label: 'HTTP-Response', proto: 'TCP · Port 80', text: '200 OK – hier ist die Webseite', note: natNote(net, rt, 'back'), path: rt.back.path, ok: true });
-    return res(true, { page: { host: u.host, ip: ipStr(ip), title: ws.services.web.title || '', text: ws.services.web.text || '' }, target: ws.id, nat: natInfo(net, rt) });
+  // ------------------------------------------------------------------ Internetdienste, TCP und UDP
+  /**
+   * Dienste, die ein Server anbieten kann.
+   * proto: Transportprotokoll, port: Port des Dienstes, why: Begründung für das Protokoll.
+   */
+  const SERVICES = {
+    web:   { label: 'Webserver (HTTP)', server: 'Webserver', proto: 'TCP', port: 80,
+      why: 'Eine Webseite muss vollständig und fehlerfrei ankommen. TCP bestätigt jedes Paket und sendet verlorene Pakete neu.' },
+    dns:   { label: 'DNS-Server', server: 'DNS-Server', proto: 'UDP', port: 53,
+      why: 'Eine DNS-Anfrage ist nur ein kleines Paket. UDP spart den Verbindungsaufbau. Kommt keine Antwort, fragt das Gerät einfach noch einmal.' },
+    mail:  { label: 'E-Mail-Server', server: 'E-Mail-Server', proto: 'TCP', port: 25,
+      why: 'Eine E-Mail muss vollständig ankommen, kein Buchstabe darf fehlen. Deshalb TCP. Senden heißt SMTP (Port 25), Abrufen heißt IMAP (Port 143). Der Server bewahrt die E-Mails auf, bis sie abgerufen werden.' },
+    video: { label: 'Video-Streaming', server: 'Video-Server', proto: 'TCP', port: 80,
+      why: 'Ein Video auf Abruf (z. B. aus einer Mediathek) wird über HTTP und TCP ein paar Sekunden im Voraus in einen Puffer geladen. Geht ein Paket verloren, wird es neu gesendet, bevor es gebraucht wird.' },
+    call:  { label: 'Video- und Audio-Telefonie', server: 'Telefonie-Server', proto: 'UDP', port: 5004,
+      why: 'Im Gespräch zählt jede Zehntelsekunde. Ein neu gesendetes Paket käme zu spät. Deshalb UDP: Fehlt ein Paket, ruckelt das Bild kurz, aber das Gespräch läuft weiter.' },
+    game:  { label: 'Spiele-Server (Online-Spiel)', server: 'Spiele-Server', proto: 'UDP', port: 7777,
+      why: 'Ein Online-Spiel schickt viele Male pro Sekunde die aktuellen Positionen. Geht ein Paket verloren, bringt das nächste ohnehin den neuesten Stand. Warten wäre schlimmer als ein fehlendes Paket.' },
+  };
+
+  /** Was ein Endgerät mit einem Dienst tun kann. */
+  const ACTIONS = {
+    web:     { svc: 'web',   label: 'Webseite öffnen' },
+    mail:    { svc: 'mail',  label: 'E-Mail senden', port: 25 },
+    mailget: { svc: 'mail',  label: 'E-Mails abrufen', port: 143 },
+    video:   { svc: 'video', label: 'Video ansehen' },
+    call:    { svc: 'call',  label: 'Videoanruf' },
+    game:    { svc: 'game',  label: 'Online spielen' },
+  };
+
+  function defaultServices() {
+    return {
+      web: { on: false, title: 'Willkommen!', text: 'Das ist meine erste Webseite.' },
+      dns: { on: false, entries: [] },
+      mail: { on: false, box: [] },
+      video: { on: false },
+      call: { on: false },
+      game: { on: false },
+      files: { on: false, files: [] },
+    };
   }
+
+  function svcOn(d, k) { return !!(d && d.services && d.services[k] && d.services[k].on); }
+
+  function linkBetween(net, a, b) {
+    return net.links.find(l => (l.a === a && l.b === b) || (l.a === b && l.b === a)) || null;
+  }
+
+  /** Erste gestörte Verbindung auf einem Weg: Index i (zwischen path[i] und path[i+1]) oder -1. */
+  function lossAt(net, path) {
+    for (let i = 0; i + 1 < path.length; i++) {
+      const l = linkBetween(net, path[i], path[i + 1]);
+      if (l && l.loss) return i;
+    }
+    return -1;
+  }
+
+  /** Name per DNS in eine IP-Adresse übersetzen (DNS-Schritte landen in steps). */
+  function resolveHost(net, src, host, steps) {
+    const direct = parseIP(host);
+    if (direct !== null) return { ip: direct };
+    const dnsIP = parseIP(src.dns || '');
+    if (dnsIP === null) return { error: `${src.name} kennt keinen DNS-Server und kann den Namen ${host} nicht in eine IP-Adresse übersetzen.`, hint: 'Trage beim Gerät die IP-Adresse eines DNS-Servers ein.' };
+    const rt = roundTrip(net, src.id, dnsIP);
+    steps.push({ kind: 'request', label: 'DNS-Anfrage', proto: 'UDP · Port 53', text: `Welche IP-Adresse hat ${host}?`, note: natNote(net, rt, 'there'), path: rt.there.path, ok: rt.there.ok });
+    if (!rt.ok) {
+      if (rt.back) steps.push({ kind: 'response', label: 'DNS-Antwort', proto: 'UDP · Port 53', text: '', path: rt.back.path, ok: false });
+      return { error: 'DNS-Server nicht erreichbar: ' + rt.error, hint: rt.hint };
+    }
+    const ds = rt.target;
+    if (!svcOn(ds, 'dns'))
+      return { error: `Unter ${ipStr(dnsIP)} (${ds.name}) läuft kein DNS-Server.`, hint: 'Prüfe die DNS-Adresse oder schalte beim Server den DNS-Dienst ein.' };
+    const entry = (ds.services.dns.entries || []).find(e => (e.name || '').trim().toLowerCase() === host);
+    if (!entry || parseIP(entry.ip) === null) {
+      steps.push({ kind: 'response', label: 'DNS-Antwort', proto: 'UDP · Port 53', text: `Den Namen ${host} kenne ich nicht.`, path: rt.back.path, ok: true, bad: true });
+      return { error: `Der DNS-Server kennt den Namen ${host} nicht.`, hint: 'Prüfe die Schreibweise der Adresse oder ergänze den Eintrag beim DNS-Server.' };
+    }
+    const ip = parseIP(entry.ip);
+    steps.push({ kind: 'response', label: 'DNS-Antwort', proto: 'UDP · Port 53', text: `${host} hat die IP-Adresse ${ipStr(ip)}`, note: natNote(net, rt, 'back'), path: rt.back.path, ok: true });
+    return { ip };
+  }
+
+  const plural = (n, one, many) => n === 1 ? `1 ${one}` : `${n} ${many}`;
+
+  /** Die Nachrichten eines Dienstes (ohne TCP-Verwaltungspakete). dir: 'up' = zum Server, 'down' = zurück. */
+  const MESSAGES = {
+    web: (src, srv, u) => [
+      { dir: 'up', label: 'HTTP-Request', short: 'Die Anfrage', text: `GET ${u.path} – „Schick mir bitte die Webseite ${u.host}"` },
+      { dir: 'down', label: 'HTTP-Response', short: 'Die Webseite', text: '200 OK – hier ist die Webseite' },
+    ],
+    mail: (src, srv) => [
+      { dir: 'up', label: 'SMTP: E-Mail', short: 'Die E-Mail', text: `${src.name} übergibt eine E-Mail: „Hallo! Viele Grüße von ${src.name}"` },
+      { dir: 'down', label: 'SMTP: 250 OK', short: 'Die Antwort', text: `${srv.name}: „E-Mail angenommen und im Postfach gespeichert."` },
+    ],
+    mailget: (src, srv) => {
+      const n = ((srv.services.mail || {}).box || []).length;
+      return [
+        { dir: 'up', label: 'IMAP: Abrufen', short: 'Die Anfrage', text: `${src.name}: „Gibt es E-Mails im Postfach?"` },
+        { dir: 'down', label: 'IMAP: E-Mails', short: 'Die Antwort', text: n ? `${srv.name}: „Hier sind ${plural(n, 'E-Mail', 'E-Mails')}."` : `${srv.name}: „Das Postfach ist leer."` },
+      ];
+    },
+    video: () => [
+      { dir: 'up', label: 'Video-Anfrage', short: 'Die Anfrage', text: 'GET /video – „Schick mir bitte das Video."' },
+      { dir: 'down', label: 'Videodaten 1/3', short: 'Teil 1', text: 'Teil 1 des Videos – kommt in den Puffer' },
+      { dir: 'down', label: 'Videodaten 2/3', short: 'Teil 2', text: 'Teil 2 des Videos – kommt in den Puffer' },
+      { dir: 'down', label: 'Videodaten 3/3', short: 'Teil 3', text: 'Teil 3 des Videos – kommt in den Puffer' },
+    ],
+    call: (src, srv) => [
+      { dir: 'up', label: 'Bild + Ton', short: 'Paket 1', text: `Paket 1: Bild und Ton von ${src.name}` },
+      { dir: 'down', label: 'Bild + Ton', short: 'Paket 2', text: `Paket 2: Bild und Ton der anderen Teilnehmer (über ${srv.name})` },
+      { dir: 'up', label: 'Bild + Ton', short: 'Paket 3', text: `Paket 3: Bild und Ton von ${src.name}` },
+      { dir: 'down', label: 'Bild + Ton', short: 'Paket 4', text: 'Paket 4: Bild und Ton der anderen Teilnehmer' },
+    ],
+    game: (src) => [
+      { dir: 'up', label: 'Spielzug', short: 'Update 1', text: `Update 1: Position und Aktion von ${src.name}` },
+      { dir: 'down', label: 'Spielstand', short: 'Update 2', text: 'Update 2: Positionen aller Spieler' },
+      { dir: 'up', label: 'Spielzug', short: 'Update 3', text: `Update 3: Position und Aktion von ${src.name}` },
+      { dir: 'down', label: 'Spielstand', short: 'Update 4', text: 'Update 4: Positionen aller Spieler' },
+    ],
+  };
+
+  /**
+   * Baut die Paketfolge eines Dienstes. TCP: auf Wunsch mit Verbindungsaufbau (SYN, SYN-ACK, ACK),
+   * Bestätigungen und Verbindungsabbau; verlorene Pakete werden neu gesendet. UDP: keine
+   * Verbindung, keine Bestätigung, verlorene Pakete bleiben verloren.
+   * Auf einem Weg mit gestörter Verbindung geht genau ein Datenpaket verloren
+   * (das zweite, wenn es über die Störung läuft, sonst das erste betroffene).
+   */
+  function exchange(net, rt, src, srv, msgs, proto, details) {
+    const steps = [];
+    const tcp = proto.startsWith('TCP');
+    const pathOf = dir => dir === 'up' ? rt.there.path : rt.back.path;
+    const noted = {};
+    const note = dir => { if (noted[dir]) return ''; noted[dir] = true; return natNote(net, rt, dir === 'up' ? 'there' : 'back'); };
+    const kindOf = dir => dir === 'up' ? 'request' : 'response';
+    const push = (dir, label, text, extra) => steps.push(Object.assign({ kind: kindOf(dir), label, proto, text, note: note(dir), path: pathOf(dir), ok: true }, extra || {}));
+    const ack = (dir, m) => push(dir === 'up' ? 'down' : 'up', 'TCP: ACK', `Bestätigung: „${m.short} ist angekommen."`, { tcp: true });
+
+    if (tcp && details) {
+      push('up', 'TCP: SYN', `Verbindungsaufbau 1/3 – ${src.name}: „Ich möchte eine Verbindung aufbauen."`, { tcp: true });
+      push('down', 'TCP: SYN-ACK', `Verbindungsaufbau 2/3 – ${srv.name}: „Einverstanden, ich bin bereit."`, { tcp: true });
+      push('up', 'TCP: ACK', `Verbindungsaufbau 3/3 – ${src.name}: „Alles klar, die Verbindung steht."`, { tcp: true });
+    }
+    const lossIdx = msgs.map(m => lossAt(net, pathOf(m.dir)));
+    const lostK = msgs.length > 1 && lossIdx[1] >= 0 ? 1 : lossIdx.findIndex(x => x >= 0);
+    let lost = null;
+    msgs.forEach((m, k) => {
+      if (k !== lostK) {
+        push(m.dir, m.label, m.text);
+        if (tcp && details) ack(m.dir, m);
+        return;
+      }
+      const p = pathOf(m.dir), i = lossIdx[k];
+      lost = m;
+      steps.push({ kind: kindOf(m.dir), label: m.label, proto, text: m.text + ' – geht unterwegs verloren!', note: note(m.dir),
+        path: p.slice(0, i + 1).concat([{ mid: [p[i], p[i + 1]] }]), ok: false, lost: true });
+      if (tcp) {
+        const sender = m.dir === 'up' ? src.name : srv.name;
+        steps.push({ kind: 'wait', label: 'Keine Bestätigung', proto, text: `${sender} wartet auf die Bestätigung (ACK) – vergeblich. Nach kurzer Wartezeit wird das Paket noch einmal gesendet.`, path: [p[0]], ok: true });
+        push(m.dir, m.label + ' (neu gesendet)', m.text);
+        ack(m.dir, m);
+      }
+    });
+    if (tcp && details) {
+      push('up', 'TCP: FIN', `Verbindungsabbau – ${src.name}: „Ich bin fertig."`, { tcp: true });
+      push('down', 'TCP: FIN-ACK', `Verbindungsabbau – ${srv.name}: „Verstanden, Verbindung beendet."`, { tcp: true });
+    }
+    return { steps, lost };
+  }
+
+  /** Erfolgsmeldung für das Protokoll. */
+  function serviceMessage(action, srv, page, lost, n) {
+    switch (action) {
+      case 'web':
+        return `Webseite ${page.host} geladen (Server-IP ${page.ip}).` + (lost ? ' Ein Paket ging unterwegs verloren und wurde neu gesendet (TCP). Die Seite ist trotzdem vollständig angekommen.' : '');
+      case 'mail':
+        return `E-Mail an ${srv.name} übergeben (SMTP über TCP). Der E-Mail-Server bewahrt sie im Postfach auf, bis sie jemand abruft.` + (lost ? ' Unterwegs ging ein Paket verloren und wurde neu gesendet.' : '');
+      case 'mailget':
+        return `${n ? plural(n, 'E-Mail', 'E-Mails') : 'Keine E-Mails'} von ${srv.name} abgerufen (IMAP über TCP).` + (lost ? ' Unterwegs ging ein Paket verloren und wurde neu gesendet.' : '');
+      case 'video':
+        return lost
+          ? `Das Video läuft ohne Aussetzer. ${lost.short} ging unterwegs verloren. Weil keine Bestätigung kam, wurde er noch einmal gesendet (TCP). Der Puffer hat die kurze Wartezeit überbrückt.`
+          : 'Das Video läuft. Alle Teile sind vollständig angekommen – dafür sorgt TCP mit Bestätigungen.';
+      case 'call':
+        return lost
+          ? `Der Videoanruf läuft – aber kurz ruckelt das Bild und der Ton knackt: ${lost.short} ging verloren und wurde nicht neu gesendet (UDP). Ein neu gesendetes Paket käme zu spät, denn im Gespräch zählt jede Zehntelsekunde.`
+          : `Der Videoanruf über ${srv.name} läuft. Bild und Ton gehen per UDP hin und her – ohne Verbindungsaufbau und ohne Bestätigungen. Das spart Zeit.`;
+      case 'game':
+        return lost
+          ? `Das Spiel läuft weiter. ${lost.short} ging verloren und wurde nicht neu gesendet (UDP). Das nächste Update bringt ohnehin den neuesten Stand.`
+          : `Du spielst online über ${srv.name}. Die Spielzüge gehen per UDP hin und her – schnell und ohne Wartezeit.`;
+    }
+    return '';
+  }
+
+  /**
+   * Ein Endgerät nutzt einen Internetdienst (Webseite, E-Mail, Video, Videoanruf, Online-Spiel).
+   * opts.tcp: TCP-Verbindungsaufbau und Bestätigungen zeigen.
+   * Das Netzwerk wird nicht verändert. Ergebnis: {ok, steps, error, hint, message, target, lost, ...}
+   */
+  function useService(net, srcId, action, target, opts) {
+    opts = opts || {};
+    const A = ACTIONS[action];
+    const steps = [];
+    const res = (ok, extra) => Object.assign({ ok, steps: steps.map(st => busSpread(net, st)), action }, extra);
+    if (!A) return res(false, { error: 'Unbekannter Dienst.' });
+    const S = SERVICES[A.svc];
+    const src = dev(net, srcId);
+    const u = parseURL(target);
+    if (!u) return res(false, action === 'web'
+      ? { error: `„${target || ''}" ist keine gültige Adresse (URL).`, hint: 'Beispiel: http://www.beispiel.de' }
+      : { error: (target || '').trim() ? `„${target}" ist kein gültiger Name und keine IP-Adresse.` : 'Gib zuerst den Namen oder die IP-Adresse des Servers ein.', hint: 'Beispiel: mail.beispiel.de' });
+    const r = resolveHost(net, src, u.host, steps);
+    if (r.error) return res(false, { error: r.error, hint: r.hint });
+    const ip = r.ip;
+    const port = A.port || S.port;
+    const proto = `${S.proto} · Port ${port}`;
+    const details = !!opts.tcp && S.proto === 'TCP';
+    const rt = roundTrip(net, srcId, ip);
+    if (!rt.ok) {
+      const ms = MESSAGES[action](src, { name: '', services: {} }, u);
+      const first = details ? { label: 'TCP: SYN', text: `Verbindungsaufbau 1/3 – ${src.name}: „Ich möchte eine Verbindung aufbauen."` } : ms[0];
+      steps.push({ kind: 'request', label: first.label, proto, text: first.text, note: natNote(net, rt, 'there'), path: rt.there.path, ok: rt.there.ok });
+      if (rt.back) steps.push({ kind: 'response', label: details ? 'TCP: SYN-ACK' : (ms.find(m => m.dir === 'down') || ms[0]).label, proto, text: '', path: rt.back.path, ok: false });
+      return res(false, { error: `${S.server} nicht erreichbar: ` + rt.error, hint: rt.hint });
+    }
+    const srv = rt.target;
+    if (!svcOn(srv, A.svc)) {
+      const msgs = srv.services ? MESSAGES[action](src, srv, u) : null;
+      if (details) {
+        steps.push({ kind: 'request', label: 'TCP: SYN', proto, text: `Verbindungsaufbau 1/3 – ${src.name}: „Ich möchte eine Verbindung aufbauen."`, note: natNote(net, rt, 'there'), path: rt.there.path, ok: true });
+        steps.push({ kind: 'response', label: 'TCP: RST', proto, text: `${srv.name}: „An Port ${port} läuft bei mir kein Dienst."`, path: rt.back.path, ok: true, bad: true });
+      } else {
+        const m = msgs ? msgs[0] : MESSAGES[action](src, { name: srv.name, services: {} }, u)[0];
+        steps.push({ kind: 'request', label: m.label, proto, text: m.text, note: natNote(net, rt, 'there'), path: rt.there.path, ok: true });
+      }
+      return res(false, { error: `Unter ${ipStr(ip)} (${srv.name}) läuft kein ${S.server}.`, hint: TYPES[srv.type].services ? `Schalte beim Server den Dienst „${S.label}" ein.` : `${srv.name} ist kein Server. Dienste wie ${S.label} bieten nur Server an.` });
+    }
+    const msgs = MESSAGES[action](src, srv, u);
+    const ex = exchange(net, rt, src, srv, msgs, proto, details);
+    steps.push(...ex.steps);
+    const extra = { target: srv.id, nat: natInfo(net, rt), lost: !!ex.lost, resent: !!ex.lost && S.proto === 'TCP', tcp: details, proto: S.proto, host: u.host };
+    let page = null, n = 0;
+    if (action === 'web') {
+      page = { host: u.host, ip: ipStr(ip), title: srv.services.web.title || '', text: srv.services.web.text || '' };
+      extra.page = page;
+    }
+    if (action === 'mail') extra.mail = { from: src.name, text: `Hallo! Viele Grüße von ${src.name}` };
+    if (action === 'mailget') { extra.mails = ((srv.services.mail || {}).box || []).slice(); n = extra.mails.length; }
+    extra.message = serviceMessage(action, srv, page, ex.lost, n);
+    return res(true, extra);
+  }
+
+  function browse(net, srcId, url, opts) { return useService(net, srcId, 'web', url, opts); }
 
   // ------------------------------------------------------------------ DHCP
   /** DHCP-Einstellungen eines Router-Anschlusses (fehlen bei älteren Netzen). */
@@ -1467,6 +1681,7 @@
     emptyNetwork, createDevice, dev, linksOf, portOf, canLink, addLink, removeDevice, removeLink,
     allLinksOf, filesOf, fileStore, newFile, sendFile, getFiles, btPartners, playMusic, NET_KINDS, netKinds,
     ifaceAddr, l2Endpoints, route, roundTrip, ping, browse, parseURL, logEvent, topology, topologies, TOPOLOGY_INFO, ringOf, activeFaults, setFault, clone, newId,
+    useService, SERVICES, ACTIONS, defaultServices, svcOn, linkBetween,
     parseIP6, ip6Str, net6Str, isLinkLocal6, ip6Map, ip6Of, route6, ping6,
     dhcpOf, dhcpRange, dhcpDefaultRange, dhcp, applyLease, refreshDns, suggest, suggestPortIP, iface, ifaceName, replug, WAN, LAN, wlanHub, setRouterWlan, isApipa, setModem, ispOf,
   };

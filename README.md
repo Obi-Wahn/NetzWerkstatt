@@ -14,9 +14,10 @@ Die NetzWerkstatt ist für den Informatikunterricht der Sekundarstufe I gedacht.
 - **NAT:** Pakete aus dem Heimnetz gehen mit der externen Adresse des Routers ins Internet; das Protokoll zeigt die Übersetzung hin und zurück. Lokale (private) Adressen werden im Internet nicht weitergeleitet, und Anfragen aus dem Internet kommen nicht ins Heimnetz.
 - **IPv6:** Jedes Gerät hat automatisch eine Link-Local-Adresse (fe80::…), die nur im eigenen Netz gilt. Ist der Router mit einem Internetanbieter verbunden, bekommt er von ihm ein eigenes IPv6-Netz für das Heimnetz, und die Geräte bilden daraus selbst ihre globale Adresse (2001:db8:…, der für Beispiele reservierte Bereich). Ping funktioniert auch per IPv6 – ohne NAT, also auch aus dem Internet ins Heimnetz. Ein Umschalter zeigt auf der Arbeitsfläche wahlweise IPv4- oder IPv6-Adressen, und ein Vergleich erklärt die Unterschiede (Länge, Schreibweise, Anzahl, NAT).
 - **Simulation mit Animation:** Ping (Anfrage und Antwort) sowie Webseiten-Aufruf mit DNS-Anfrage, DNS-Antwort, HTTP-Request und HTTP-Response. Router verbinden verschiedene Netze, Switches und Access Points leiten innerhalb eines Netzes weiter.
-- **Dienste auf Servern:** Webserver mit eigener Seite, DNS-Server mit eigenen Einträgen und Dateiablage (Cloud-Speicher).
+- **Dienste auf Servern:** Webserver mit eigener Seite, DNS-Server mit eigenen Einträgen, Dateiablage (Cloud-Speicher), E-Mail-Server (Senden per SMTP, Abrufen per IMAP), Video-Streaming, Video- und Audio-Telefonie und Spiele-Server. Zu jedem dieser Internetdienste stehen Protokoll, Port und eine kurze Begründung, warum er TCP oder UDP nutzt.
 - **Peer-to-Peer und Client-Server:** Endgeräte tauschen Dateien direkt miteinander (Peer-to-Peer, jedes Gerät ist Client und Server zugleich) oder laden sie auf einen Server hoch und holen sie dort ab (Client-Server). Das Protokoll erklärt jeweils, wer Client und wer Server ist.
 - **Netzarten PAN, LAN, MAN, WAN:** Eine Anzeige auf der Arbeitsfläche erkennt, welche Netzarten im Aufbau stecken, und hebt beim Antippen die zugehörigen Geräte hervor. Bluetooth-Kopfhörer bilden mit dem Smartphone ein PAN, ein Kabel lässt sich zur Glasfaserleitung quer durch die Stadt machen (MAN), der Internetanbieter führt ins WAN.
+- **TCP und UDP:** Auf Wunsch zeigt die Animation bei TCP den Verbindungsaufbau (SYN, SYN-ACK, ACK), die Bestätigungen und den Verbindungsabbau. Jede Verbindung lässt sich auf „gestört“ stellen: Dann geht ein Paket verloren. TCP wartet vergeblich auf die Bestätigung und sendet neu, bei UDP bleibt das Paket verloren (Bild ruckelt kurz).
 - **Aufgaben mit automatisch abgehakten Teilzielen:**
   1. Zwei PCs verbinden
   2. Sternnetz im Computerraum
@@ -24,11 +25,17 @@ Die NetzWerkstatt ist für den Informatikunterricht der Sekundarstufe I gedacht.
   4. Eine Webseite aufrufen (DNS, Router, lokale und externe IP-Adresse)
   5. Automatische Adressen mit DHCP
   6. IPv6: Eine Adresse für jedes Gerät
-  7. Dateien teilen: Peer-to-Peer und Client-Server
-  8. Musik über Bluetooth (PAN)
-  9. Stadtnetz für zwei Schulgebäude (MAN)
-  10. Vom PAN bis zum WAN
-  11. Freies Bauen
+  7. Busnetz
+  8. Ringnetz
+  9. Topologien im Ausfalltest
+  10. Dateien teilen: Peer-to-Peer und Client-Server
+  11. Musik über Bluetooth (PAN)
+  12. Stadtnetz für zwei Schulgebäude (MAN)
+  13. Vom PAN bis zum WAN
+  14. TCP und UDP im Vergleich (Video-Streaming und Videoanruf über eine gestörte WLAN-Verbindung)
+  15. Dienste einordnen: TCP oder UDP? (Dienste ausprobieren und Anwendungen zuordnen)
+  16. Eigene Internetdienste anbieten (E-Mail-Server und Spiele-Server mit DNS-Namen)
+  17. Freies Bauen
 - **Lehrkraft-Ansicht:** Live-Übersicht über alle Schülerinnen und Schüler, Abgaben am Beamer zeigen (auf Wunsch ohne Namen), zwei Lösungen nebeneinander vergleichen, Musterlösungen zeigen oder für die Klasse freigeben, Abgaben zurückgeben.
 
 ## Start im Unterricht (für Lehrkräfte)
@@ -90,11 +97,9 @@ Neue Aufgaben werden in `web/js/tasks.js` ergänzt. Der Test prüft automatisch,
 
 ## Geplant
 
-- TCP und UDP im Vergleich (z. B. Video-Streaming und Videotelefonie)
 - Bus- und Ringtopologie, Peer-to-Peer im Vergleich zu Client-Server
 - PAN, LAN, MAN und WAN
 - IPv6-Adressen, NAT
-- Weitere Internetdienste wie E-Mail und Online-Spiele
 
 ## Lizenz
 
