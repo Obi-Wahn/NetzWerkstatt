@@ -314,4 +314,85 @@ test('Router ohne Weg ins Internet meldet das verständlich', () => {
   assert.match(res.error, /kennt kein Netz/);
 });
 
+// ---------------------------------------------------------------- IPv6
+test('IPv6: Schreibweise lesen und kürzen', () => {
+  assert.strictEqual(NW.ip6Str(NW.parseIP6('2001:0db8:0000:0000:0000:0000:0000:0001')), '2001:db8::1');
+  assert.strictEqual(NW.ip6Str(NW.parseIP6('fe80:0:0:0:1:0:0:1')), 'fe80::1:0:0:1');
+  assert.strictEqual(NW.parseIP6('2001:db8:::1'), null);
+  assert.strictEqual(NW.parseIP6('1:2:3:4:5:6:7:8:9'), null);
+  assert.strictEqual(NW.parseIP6('2001:db8::xyz'), null);
+  assert.strictEqual(NW.parseIP6('192.168.0.1'), null);
+});
+
+function v6Net() {
+  const net = TASKS.find(t => t.id === 'ipv6').solution();
+  const a = (id, p) => NW.ip6Of(net, NW.dev(net, id), p || 0);
+  return { net, a };
+}
+
+test('IPv6: Geräte im Heimnetz bekommen Link-Local und eine globale Adresse aus dem Netz des Routers', () => {
+  const { net, a } = v6Net();
+  assert.match(a('pc').ll, /^fe80::/);
+  assert.strictEqual(a('r', NW.LAN).lanNet, '2001:db8:1:1::/64');
+  assert.ok(a('pc').gua.startsWith('2001:db8:1:1:'));
+  assert.ok(a('tb').gua.startsWith('2001:db8:1:1:'));
+  assert.ok(a('game').gua.startsWith('2001:db8:1:0:'));
+  assert.notStrictEqual(a('pc').gua, a('tb').gua);
+  // ohne Router nur Link-Local
+  const n2 = TASKS.find(t => t.id === 'zwei-pcs').solution();
+  assert.strictEqual(NW.ip6Of(n2, NW.dev(n2, 'p1'), 0).gua, '');
+});
+
+test('IPv6: Ping aus dem Internet ins Heimnetz klappt (kein NAT), per IPv4 nicht', () => {
+  const { net, a } = v6Net();
+  const r6 = NW.ping(net, 'game', a('pc').gua);
+  assert.ok(r6.ok, r6.error);
+  assert.deepStrictEqual(r6.steps[0].path, ['game', 'inet', 'r', 'pc']);
+  assert.strictEqual(r6.steps[0].proto, 'ICMPv6 · IPv6');
+  const r4 = NW.ping(net, 'game', NW.dev(net, 'pc').ip);
+  assert.ok(!r4.ok);
+});
+
+test('IPv6: Absender bleibt sichtbar, kein NAT', () => {
+  const { net, a } = v6Net();
+  const r = NW.ping(net, 'pc', a('game').gua);
+  assert.ok(r.ok, r.error);
+  assert.strictEqual(r.seenSrc, a('pc').gua);
+  assert.ok(r.viaRouter);
+});
+
+test('IPv6: Link-Local nur im eigenen Netz', () => {
+  const { net, a } = v6Net();
+  assert.ok(NW.ping(net, 'pc', a('tb').ll).ok);
+  const r = NW.ping(net, 'pc', a('game').ll);
+  assert.ok(!r.ok);
+  assert.match(r.hint, /nie weiter/);
+});
+
+test('IPv6: ohne Router nur Link-Local; globale Ziele scheitern mit Hinweis', () => {
+  const net = TASKS.find(t => t.id === 'zwei-pcs').solution();
+  const p2 = NW.ip6Of(net, NW.dev(net, 'p2'), 0);
+  assert.ok(NW.ping(net, 'p1', p2.ll).ok);
+  const r = NW.ping(net, 'p1', '2001:db8:1::1');
+  assert.ok(!r.ok);
+  assert.match(r.error, /nur eine Link-Local-Adresse/);
+});
+
+test('IPv6: Zwei Anbieter – Heimnetz erreicht Server beim anderen Anbieter', () => {
+  const net = internetNet();
+  const srv = NW.ip6Of(net, NW.dev(net, 'srv'), 0);
+  const r = NW.ping(net, 'pc', srv.gua);
+  assert.ok(r.ok, r.error);
+  const back = NW.ping(net, 'srv', NW.ip6Of(net, NW.dev(net, 'pc'), 0).gua);
+  assert.ok(back.ok, back.error);
+});
+
+test('IPv6-Ping zählt nicht als IPv4-Ping in Aufgaben', () => {
+  const net = TASKS.find(t => t.id === 'zwei-pcs').solution();
+  net.events = [];
+  NW.logEvent(net, { type: 'ping', v6: true, ll: true, src: 'p1', target: 'p2', ok: true });
+  const t = TASKS.find(x => x.id === 'zwei-pcs');
+  assert.strictEqual(evaluate(t, net)[3], false);
+});
+
 console.log(`\n${n} Tests bestanden.`);

@@ -285,3 +285,17 @@ details p { margin-top: 4px; font-size: .93em; }
 .dhcp-info { background: #eef5ff; border-radius: 8px; padding: 7px 9px; font-size: .88em; margin-bottom: 8px; }
 .wlan-badge path { fill: none; stroke: var(--wlan); stroke-width: 2; stroke-linecap: round; }
 .wlan-badge circle { fill: var(--wlan); }
+
+/* IPv6 */
+.addr-switch { margin: 0 0 0 auto; flex: none; }
+.addr-switch button { flex: none; padding: 7px 12px; min-height: 42px; }
+.v6-row { display: flex; flex-direction: column; gap: 1px; margin: 4px 0; }
+.v6-kind { flex: none; min-width: 74px; font-size: .82em; font-weight: 600; color: var(--muted); }
+.v6-row code, .group.v6 code { font-family: ui-monospace, Consolas, monospace; font-size: .86em; overflow-wrap: anywhere; user-select: all; -webkit-user-select: all; }
+.chips-label { align-self: center; font-size: .8em; font-weight: 600; color: var(--muted); }
+.chip.v6 { background: #eef6f1; }
+table.cmp { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: .82em; margin: 6px 0; overflow-wrap: break-word; hyphens: auto; -webkit-hyphens: auto; }
+table.cmp th, table.cmp td { text-align: left; vertical-align: top; padding: 4px 5px; border-bottom: 1px solid var(--line); }
+table.cmp thead th { color: var(--brand); }
+table.cmp tbody th { color: var(--muted); font-weight: 600; }
+table.cmp col.k { width: 26%; }

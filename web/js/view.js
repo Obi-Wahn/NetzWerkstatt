@@ -48,9 +48,18 @@
     return out;
   }
 
+  /** Beschriftung in der IPv6-Ansicht: globale Adresse, sonst die Link-Local-Adresse. */
+  function v6Labels(d, map) {
+    const t = NW.TYPES[d.type];
+    const one = i => { const x = map.get(d.id + ':' + i); return x ? NW.ip6Str(x.gua !== null ? x.gua : x.ll) : ''; };
+    if (t.host || t.isp) return [one(0)];
+    if (t.router) { const w = map.get(d.id + ':' + NW.WAN); return [one(NW.LAN)].concat(w && w.gua !== null ? ['extern ' + NW.ip6Str(w.gua)] : []); }
+    return [];
+  }
+
   /**
    * Zeichnet ein Netzwerk in ein <svg>.
-   * opts: { selected, pending, highlight:Set, interactive }
+   * opts: { selected, pending, highlight:Set, interactive, v6 }  (v6: IPv6-Adressen statt IPv4 anzeigen)
    */
   function render(svg, net, opts) {
     opts = opts || {};
@@ -85,6 +94,7 @@
       }
     }
 
+    const v6map = opts.v6 ? NW.ip6Map(net) : null;
     for (const d of net.devices) {
       const cls = ['device', 'type-' + d.type];
       if (opts.selected === d.id) cls.push('selected');
@@ -102,7 +112,7 @@
       icon.innerHTML = ICONS[d.cloud ? 'cloud' : d.type];
       const name = el('text', { x: 0, y: BOX.h / 2 + 17, 'text-anchor': 'middle', class: 'name' }, g);
       name.textContent = d.name;
-      const subs = NW.TYPES[d.type].router && !d.cloud ? routerLabels(d) : [hostLabel(d)].filter(Boolean);
+      const subs = opts.v6 ? (v6map ? v6Labels(d, v6map) : []) : NW.TYPES[d.type].router && !d.cloud ? routerLabels(d) : [hostLabel(d)].filter(Boolean);
       subs.forEach((sub, k) => {
         const s = el('text', { x: 0, y: BOX.h / 2 + 33 + k * 15, 'text-anchor': 'middle', class: 'ip' + (/keine IP/.test(sub) ? ' missing' : '') }, g);
         s.textContent = sub;
