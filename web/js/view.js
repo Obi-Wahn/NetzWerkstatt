@@ -31,7 +31,7 @@
 
   function hostLabel(d) {
     const t = NW.TYPES[d.type];
-    if (t.host) return d.ip && d.ip.trim() ? d.ip.trim() : 'keine IP';
+    if (t.host) return d.ip && d.ip.trim() ? d.ip.trim() : (d.dhcp ? 'DHCP: keine IP' : 'keine IP');
     if (t.router) return '';
     return '';
   }
@@ -66,7 +66,7 @@
         const dist = Math.max(1, Math.hypot(other.x - d.x, other.y - d.y));
         const t = Math.min(0.5, 92 / dist);
         const x = d.x + (other.x - d.x) * t, y = d.y + (other.y - d.y) * t;
-        const txt = (p.ip && p.ip.trim()) ? p.ip.trim() : `Anschluss ${port + 1}`;
+        const txt = ((p.ip && p.ip.trim()) ? p.ip.trim() : `Anschluss ${port + 1}`) + (p.dhcp && p.dhcp.on ? ' · DHCP' : '');
         const lab = el('g', { class: 'port-label' }, g);
         const w = txt.length * 6.6 + 10;
         el('rect', { x: x - w / 2, y: y - 9, width: w, height: 18, rx: 9 }, lab);
@@ -142,16 +142,18 @@
   function animate(svg, net, steps, onStep, speed) {
     const overlay = svg.querySelector('g.overlay');
     const hop = speed || 420;
-    return steps.reduce((p, step, i) => p.then(() => new Promise(resolve => {
-      if (onStep) onStep(step, i);
-      const pts = step.path.map(id => NW.dev(net, id)).filter(Boolean).map(d => ({ x: d.x, y: d.y }));
+    // Ein Schritt kann mehrere Wege gleichzeitig haben (Broadcast „an alle")
+    const one = (step, path, withLabel) => new Promise(resolve => {
+      const pts = path.map(id => NW.dev(net, id)).filter(Boolean).map(d => ({ x: d.x, y: d.y }));
       const g = el('g', { class: 'packet ' + (step.kind || 'request') }, overlay);
       el('circle', { r: 13 }, g);
-      const label = el('g', { class: 'packet-label' }, g);
-      const txt = step.label;
-      const w = txt.length * 7 + 16;
-      el('rect', { x: -w / 2, y: -40, width: w, height: 22, rx: 11 }, label);
-      el('text', { x: 0, y: -25, 'text-anchor': 'middle' }, label).textContent = txt;
+      if (withLabel) {
+        const label = el('g', { class: 'packet-label' }, g);
+        const txt = step.label;
+        const w = txt.length * 7 + 16;
+        el('rect', { x: -w / 2, y: -40, width: w, height: 22, rx: 11 }, label);
+        el('text', { x: 0, y: -25, 'text-anchor': 'middle' }, label).textContent = txt;
+      }
       if (pts.length < 2) {
         if (pts[0]) g.setAttribute('transform', `translate(${pts[0].x},${pts[0].y})`);
         setTimeout(() => finish(), hop);
@@ -179,7 +181,15 @@
           setTimeout(() => { g.remove(); resolve(); }, 120);
         }
       }
-    })), Promise.resolve());
+    });
+    return steps.reduce((p, step, i) => p.then(() => {
+      if (onStep) onStep(step, i);
+      const paths = step.paths && step.paths.length ? step.paths : [step.path];
+      // Beschriftung am längsten Weg, damit sie bis zum Schluss sichtbar ist
+      let li = 0;
+      paths.forEach((pa, k) => { if (pa.length > paths[li].length) li = k; });
+      return Promise.all(paths.map((pa, k) => one(step, pa, k === li)));
+    }), Promise.resolve());
   }
 
   root.NWView = { render, toWorld, clampPos, freeSpot, animate, iconSVG, WORLD, BOX };

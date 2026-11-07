@@ -7,7 +7,8 @@ Die NetzWerkstatt ist für den Informatikunterricht der Sekundarstufe I gedacht.
 ## Was kann der Prototyp?
 
 - **Baukasten:** PC, Tablet, Smartphone, Server, Switch, Access Point und Router auf die Arbeitsfläche setzen und per Kabel oder WLAN verbinden. Funktioniert mit Maus und Finger (Windows-PCs und iPads).
-- **Netzwerk-Einstellungen:** IP-Adresse (IPv4), Subnetzmaske, Gateway und DNS-Server mit sofortigen Hinweisen, z. B. „lokale (private) Adresse“ oder „Das Gateway muss im selben Netz liegen“.
+- **Netzwerk-Einstellungen:** IP-Adresse (IPv4), Subnetzmaske, Gateway und DNS-Server mit sofortigen Hinweisen, z. B. „lokale (private) Adresse“ oder „Das Gateway muss im selben Netz liegen“. Beim Eintragen von Hand werden passende freie Adressen, der Router als Gateway und ein vorhandener DNS-Server vorgeschlagen.
+- **DHCP:** Jeder Router-Anschluss kann als DHCP-Server Adressen verteilen (Adressbereich und DNS-Server einstellbar). Endgeräte lassen sich zwischen „Von Hand“ und „Automatisch (DHCP)“ umschalten; der Ablauf Discover → Offer → Request → Ack wird als Pakete animiert, Discover und Request sichtbar „an alle“.
 - **Simulation mit Animation:** Ping (Anfrage und Antwort) sowie Webseiten-Aufruf mit DNS-Anfrage, DNS-Antwort, HTTP-Request und HTTP-Response. Router verbinden verschiedene Netze, Switches und Access Points leiten innerhalb eines Netzes weiter.
 - **Dienste auf Servern:** Webserver mit eigener Seite und DNS-Server mit eigenen Einträgen.
 - **Aufgaben mit automatisch abgehakten Teilzielen:**
@@ -15,7 +16,8 @@ Die NetzWerkstatt ist für den Informatikunterricht der Sekundarstufe I gedacht.
   2. Sternnetz im Computerraum
   3. Heimnetz mit WLAN
   4. Eine Webseite aufrufen (DNS, Router, lokale und externe IP-Adresse)
-  5. Freies Bauen
+  5. Automatische Adressen mit DHCP
+  6. Freies Bauen
 - **Lehrkraft-Ansicht:** Live-Übersicht über alle Schülerinnen und Schüler, Abgaben am Beamer zeigen (auf Wunsch ohne Namen), zwei Lösungen nebeneinander vergleichen, Musterlösungen zeigen oder für die Klasse freigeben, Abgaben zurückgeben.
 
 ## Start im Unterricht (für Lehrkräfte)

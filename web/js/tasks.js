@@ -153,6 +153,34 @@
       },
     },
     {
+      id: 'dhcp',
+      title: 'Automatische Adressen mit DHCP',
+      level: 2,
+      intro: 'Im Schulcafé wollen viele Gäste ins WLAN. Niemand möchte dort IP-Adressen von Hand eintragen. Das übernimmt ein DHCP-Server im Router: Er verteilt die Adressen automatisch an alle Geräte, die danach fragen.',
+      tip: 'Tippe den Router an und schalte bei Anschluss 1 den DHCP-Server ein. Stelle danach bei Tablet und Smartphone die Netzwerk-Einstellungen auf „Automatisch (DHCP)". Beobachte die vier DHCP-Pakete!',
+      think: 'Warum schickt ein Gerät seine erste DHCP-Nachricht „an alle" und nicht direkt an den Router? Was passiert, wenn der Adressbereich nur zwei Adressen enthält, aber drei Geräte eine wollen? Probiere es aus!',
+      goals: [
+        { text: 'Schalte beim Router den DHCP-Server für das Netz 192.168.0.0/24 ein.', check: c => c.byType('router').some(r => r.ports.some((p, i) => p.dhcp && p.dhcp.on && NW.ifaceAddr(r, i) && NW.sameNet(NW.ifaceAddr(r, i).ip, NW.parseIP('192.168.0.0'), 24))) },
+        { text: 'Verbinde ein Tablet und ein Smartphone per WLAN mit dem Access Point.', check: c => ['tablet', 'smartphone'].every(t => c.byType(t).some(d => c.neighbors(d.id).some(n => n.kind === 'wlan' && n.dev.type === 'ap'))) },
+        { text: 'Lass Tablet und Smartphone ihre IP-Adresse automatisch per DHCP beziehen.', check: c => ['tablet', 'smartphone'].every(t => c.byType(t).some(d => d.dhcp && c.inNet(d, '192.168.0.0', 24) && d.gw.trim() === '192.168.0.1')) },
+        { text: 'Teste mit einem Ping vom Smartphone zum Tablet.', check: c => c.pingOk(isType('smartphone'), isType('tablet')) },
+      ],
+      start: () => dhcpStart(),
+      solution: () => {
+        const net = dhcpStart();
+        NW.dev(net, 'r').ports[0].dhcp.on = true;
+        NW.addLink(net, 'ap', 'tb', 'wlan');
+        NW.addLink(net, 'ap', 'sp', 'wlan');
+        for (const id of ['tb', 'sp']) {
+          const d = NW.dev(net, id);
+          d.dhcp = true;
+          NW.applyLease(d, NW.dhcp(net, id).lease);
+        }
+        evPing(net, 'sp', 'tb');
+        return net;
+      },
+    },
+    {
       id: 'frei',
       title: 'Freies Bauen',
       level: 0,
@@ -164,6 +192,17 @@
       solution: null,
     },
   ];
+
+  function dhcpStart() {
+    return build(({ add, link }) => {
+      const r = add('r', 'router', 160, 280, { name: 'Café-Router' });
+      r.ports[0].ip = '192.168.0.1';
+      add('ap', 'ap', 400, 280, { name: 'Café-WLAN' });
+      add('tb', 'tablet', 680, 150, { name: 'Tablet 1' });
+      add('sp', 'smartphone', 680, 410, { name: 'Smartphone 1' });
+      link('r', 'ap');
+    });
+  }
 
   function internetStart() {
     return build(({ add, link }) => {

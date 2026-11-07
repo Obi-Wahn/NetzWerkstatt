@@ -104,7 +104,8 @@
     const d = { id: newId('d'), type, name: nextName(net, type), x, y };
     const t = TYPES[type];
     if (t.host) { d.ip = ''; d.mask = '255.255.255.0'; d.gw = ''; d.dns = ''; }
-    if (t.router) d.ports = [0, 1, 2, 3].map(() => ({ ip: '', mask: '255.255.255.0' }));
+    if (t.host) d.dhcp = false;
+    if (t.router) d.ports = [0, 1, 2, 3].map(() => ({ ip: '', mask: '255.255.255.0', dhcp: { on: false, from: '', to: '', dns: '' } }));
     if (t.services) d.services = { web: { on: false, title: 'Willkommen!', text: 'Das ist meine erste Webseite.' }, dns: { on: false, entries: [] } };
     Object.assign(d, extra || {});
     net.devices.push(d);
@@ -244,7 +245,7 @@
     if (!linksOf(net, srcId).length) return fail([srcId], `${src.name} ist mit nichts verbunden.`, TYPES[src.type].wlan && !TYPES[src.type].cable ? 'Verbinde es per WLAN mit einem Access Point.' : 'Verbinde es mit einem Kabel.');
     const sa = ifaceAddr(src, 0);
     if (!sa) {
-      if (parseIP(src.ip) === null) return fail([srcId], `${src.name} hat noch keine gültige IP-Adresse.`, 'Tippe das Gerät an und trage eine IP-Adresse ein, z. B. 192.168.1.10.');
+      if (parseIP(src.ip) === null) return fail([srcId], `${src.name} hat noch keine gültige IP-Adresse.`, src.dhcp ? 'Tippe das Gerät an und fordere per DHCP eine Adresse an.' : 'Tippe das Gerät an und trage eine IP-Adresse ein, z. B. 192.168.1.10.');
       return fail([srcId], `Die Subnetzmaske von ${src.name} ist ungültig.`, 'Üblich ist 255.255.255.0.');
     }
     if (sa.ip === dstIP) return { ok: true, path: [srcId], target: src };
@@ -372,6 +373,121 @@
     return res(true, { page: { host: u.host, ip: ipStr(ip), title: ws.services.web.title || '', text: ws.services.web.text || '' }, target: ws.id });
   }
 
+  // ------------------------------------------------------------------ DHCP
+  /** DHCP-Einstellungen eines Router-Anschlusses (fehlen bei älteren Netzen). */
+  function dhcpOf(port) {
+    if (!port.dhcp) port.dhcp = { on: false, from: '', to: '', dns: '' };
+    return port.dhcp;
+  }
+
+  /** Standard-Adressbereich für einen Anschluss, z. B. .100 bis .199 in einem /24-Netz. */
+  function dhcpDefaultRange(ip, prefix) {
+    const net = (ip & maskOf(prefix)) >>> 0;
+    const size = 2 ** (32 - prefix);
+    if (size >= 256) return { from: net + 100, to: net + 199 };
+    return { from: net + Math.floor(size / 2), to: net + size - 2 };
+  }
+
+  /** Tatsächlich verwendeter Adressbereich eines Router-Anschlusses (oder null). */
+  function dhcpRange(r, port) {
+    const a = ifaceAddr(r, port);
+    if (!a) return null;
+    const cfg = dhcpOf(r.ports[port]);
+    const def = dhcpDefaultRange(a.ip, a.prefix);
+    let from = parseIP(cfg.from || ''), to = parseIP(cfg.to || '');
+    if (from === null || !sameNet(from, a.ip, a.prefix) || ipProblem(ipStr(from), r.ports[port].mask)) from = def.from;
+    if (to === null || !sameNet(to, a.ip, a.prefix) || ipProblem(ipStr(to), r.ports[port].mask)) to = def.to;
+    if (to < from) return { from: def.from, to: def.to };
+    return { from, to };
+  }
+
+  /**
+   * Ein Endgerät fragt per DHCP nach einer IP-Adresse.
+   * Ablauf wie in echt: Discover (an alle) → Offer → Request (an alle) → Ack.
+   * Das Netzwerk wird nicht verändert; das Ergebnis steht in lease.
+   * Ergebnis: {ok, steps, error, hint, lease:{ip, mask, gw, dns}, server}
+   */
+  function dhcp(net, hostId) {
+    const h = dev(net, hostId);
+    const steps = [];
+    const res = (ok, extra) => Object.assign({ ok, steps }, extra);
+    const P_REQ = 'UDP · Port 67', P_RESP = 'UDP · Port 68';
+    if (!h || !TYPES[h.type].host) return res(false, { error: 'Nur Endgeräte können per DHCP eine Adresse anfordern.' });
+    if (!linksOf(net, hostId).length) return res(false, { error: `${h.name} ist mit nichts verbunden und kann niemanden nach einer Adresse fragen.`, hint: TYPES[h.type].cable ? 'Verbinde es mit einem Kabel.' : 'Verbinde es per WLAN mit einem Access Point.' });
+    const eps = l2Endpoints(net, hostId, 0);
+    const servers = eps.filter(e => TYPES[e.dev.type].router && ifaceAddr(e.dev, e.port) && dhcpOf(e.dev.ports[e.port]).on);
+    const bcPaths = eps.length ? eps.map(e => e.path) : [[hostId]];
+    steps.push({ kind: 'request', label: 'DHCP-Discover', proto: P_REQ + ' · an alle', text: `${h.name} an alle im Netz: „Ich brauche eine IP-Adresse! Gibt es hier einen DHCP-Server?"`, paths: bcPaths, path: bcPaths[0], ok: servers.length > 0 });
+    if (!servers.length) {
+      const router = eps.find(e => TYPES[e.dev.type].router);
+      let hint = 'Ein DHCP-Server (meist im Router) muss im selben Netz eingeschaltet sein.';
+      if (router && !ifaceAddr(router.dev, router.port)) hint = `Der Anschluss ${router.port + 1} von ${router.dev.name} braucht zuerst eine IP-Adresse. Danach kannst du dort den DHCP-Server einschalten.`;
+      else if (router) hint = `Tippe ${router.dev.name} an und schalte bei Anschluss ${router.port + 1} den DHCP-Server ein.`;
+      return res(false, { error: 'Kein DHCP-Server hat geantwortet.', hint });
+    }
+    const srv = servers[0];
+    const r = srv.dev, port = srv.port;
+    const ra = ifaceAddr(r, port);
+    const range = dhcpRange(r, port);
+    const back = srv.path.slice().reverse();
+    // Freie Adresse suchen: Bisherige Adresse behalten, wenn möglich
+    const used = new Set();
+    for (const e of eps) { const a = ifaceAddr(e.dev, e.port); if (a) used.add(a.ip); }
+    let ip = null;
+    const own = parseIP(h.ip || '');
+    if (own !== null && own >= range.from && own <= range.to && !used.has(own)) ip = own;
+    for (let c = range.from; ip === null && c <= range.to; c++) if (!used.has(c)) ip = c;
+    if (ip === null) {
+      steps.push({ kind: 'response', label: 'DHCP-Offer', proto: P_RESP, text: `${r.name}: „Tut mir leid, alle Adressen sind vergeben."`, path: back, ok: true, bad: true });
+      return res(false, { error: `Der DHCP-Server von ${r.name} hat keine freie Adresse mehr (${ipStr(range.from)} bis ${ipStr(range.to)}).`, hint: 'Vergrößere beim Router den Adressbereich.' });
+    }
+    const cfg = dhcpOf(r.ports[port]);
+    const dnsIP = parseIP(cfg.dns || '');
+    const lease = { ip: ipStr(ip), mask: ipStr(maskOf(ra.prefix)), gw: ipStr(ra.ip), dns: dnsIP === null ? '' : ipStr(dnsIP) };
+    steps.push({ kind: 'response', label: 'DHCP-Offer', proto: P_RESP, text: `${r.name}: „Du kannst die Adresse ${lease.ip} haben."`, path: back, ok: true });
+    steps.push({ kind: 'request', label: 'DHCP-Request', proto: P_REQ + ' · an alle', text: `${h.name} an alle: „Ich nehme die Adresse ${lease.ip} von ${r.name}!"`, paths: bcPaths, path: srv.path, ok: true });
+    steps.push({ kind: 'response', label: 'DHCP-Ack', proto: P_RESP, text: `${r.name}: „Bestätigt! IP ${lease.ip}, Maske ${lease.mask}, Gateway ${lease.gw}` + (lease.dns ? `, DNS ${lease.dns}` : '') + '"', path: back, ok: true });
+    return res(true, { lease, server: r.id });
+  }
+
+  /** Übernimmt eine DHCP-Zuteilung in das Gerät. */
+  function applyLease(d, lease) {
+    d.ip = lease.ip; d.mask = lease.mask; d.gw = lease.gw; d.dns = lease.dns;
+  }
+
+  /**
+   * Vorschläge für die manuelle Einstellung eines Endgeräts, abgeleitet aus den
+   * Geräten im selben Netz. Liefert {ip, mask, gw, dns} (jeweils oder null).
+   */
+  function suggest(net, hostId) {
+    const h = dev(net, hostId);
+    const out = { ip: null, mask: null, gw: null, dns: null };
+    if (!h || !TYPES[h.type].host) return out;
+    const eps = linksOf(net, hostId).length ? l2Endpoints(net, hostId, 0) : [];
+    const own = ifaceAddr(h, 0);
+    // Bezugsnetz: zuerst ein Router-Anschluss, sonst ein anderes Endgerät
+    const withAddr = eps.map(e => ({ e, a: ifaceAddr(e.dev, e.port) })).filter(x => x.a && !ipProblem(ipStr(x.a.ip), ipStr(maskOf(x.a.prefix))));
+    const ref = withAddr.find(x => TYPES[x.e.dev.type].router) || withAddr[0];
+    if (ref) {
+      const used = new Set(withAddr.map(x => x.a.ip));
+      const ownOk = own && sameNet(own.ip, ref.a.ip, ref.a.prefix) && own.prefix === ref.a.prefix && !used.has(own.ip) && !ipProblem(h.ip, h.mask);
+      if (!ownOk) {
+        const base = (ref.a.ip & maskOf(ref.a.prefix)) >>> 0;
+        const size = 2 ** (32 - ref.a.prefix);
+        const start = size >= 64 ? 10 : 1;
+        for (let i = start; i < size - 1; i++) if (!used.has(base + i)) { out.ip = ipStr(base + i); break; }
+        if (out.ip) out.mask = ipStr(maskOf(ref.a.prefix));
+      }
+      const router = withAddr.find(x => TYPES[x.e.dev.type].router);
+      if (router && parseIP(h.gw || '') !== router.a.ip) out.gw = ipStr(router.a.ip);
+    }
+    if (!(h.dns || '').trim()) {
+      const ds = net.devices.find(d => d !== h && d.services && d.services.dns && d.services.dns.on && parseIP(d.ip) !== null);
+      if (ds) out.dns = ds.ip.trim();
+    }
+    return out;
+  }
+
   // ------------------------------------------------------------------ Ereignisse
   function logEvent(net, ev) {
     if (!net.events) net.events = [];
@@ -399,6 +515,7 @@
     TYPES, DESCRIPTIONS, parseIP, ipStr, parseMask, sameNet, netStr, ipProblem, isPrivate,
     emptyNetwork, createDevice, dev, linksOf, portOf, canLink, addLink, removeDevice, removeLink,
     ifaceAddr, l2Endpoints, route, roundTrip, ping, browse, parseURL, logEvent, topology, clone, newId,
+    dhcpOf, dhcpRange, dhcp, applyLease, suggest,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = NW;
   else root.NW = NW;

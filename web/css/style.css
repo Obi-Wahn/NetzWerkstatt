@@ -270,3 +270,12 @@ details p { margin-top: 4px; font-size: .93em; }
   .side { border-left: 0; overflow: visible; }
   .side.has-sel .inspector { order: -1; }
 }
+
+/* Umschalter „Von Hand" / „Automatisch (DHCP)" */
+.seg { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 10px; }
+.seg button { flex: 1; font: inherit; font-size: .88em; font-weight: 600; padding: 7px 6px; min-height: 38px; border: 0; background: #f6f8fb; color: var(--muted); cursor: pointer; }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button.on { background: var(--brand); color: #fff; }
+.seg button:disabled { cursor: default; }
+.dhcp-btn { width: 100%; margin-bottom: 10px; }
+.chip.suggest { background: #fff8e1; border-color: #f0d68a; }
