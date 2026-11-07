@@ -608,11 +608,11 @@
       const r = q.matrixTransform(m), ox = r.x - wrap.left, oy = r.y - wrap.top;
       return ox > l - 30 && ox < l + w + 30 && oy > top - 30 && oy < top + h + 30;
     }).length;
-    const right = cx + half + gap, leftSide = cx - half - gap - w;
-    const fitsR = right + w <= wrap.width - 8, fitsL = leftSide >= 8;
-    let left;
-    if (fitsR && fitsL) left = covered(leftSide) < covered(right) ? leftSide : right;
-    else left = clampL(fitsR ? right : fitsL ? leftSide : (cx > wrap.width / 2 ? leftSide : right));
+    // Kandidaten: direkt rechts, direkt links, ganz rechts, ganz links (das Fenster darf das gewählte Gerät nie verdecken)
+    const self = l => cx + half > l && cx - half < l + w;
+    const cands = [cx + half + gap, cx - half - gap - w, wrap.width - w - 8, 8].map(clampL).filter(l => !self(l));
+    let left = cands.length ? cands[0] : clampL(cx + half + gap), best = Infinity;
+    for (const l of cands) { const n = covered(l) * 1000 + Math.abs(l + w / 2 - cx); if (n < best) { best = n; left = l; } }
     insp.style.left = Math.round(left) + 'px';
     insp.style.top = Math.round(top) + 'px';
   }
