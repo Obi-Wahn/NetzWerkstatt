@@ -214,12 +214,30 @@
   });
 
   // ---------------------------------------------------------------- Palette und Werkzeuge
+  // Geräte nach Art sortiert; [Typ, Name, Funktion, ohne die das Gerät ausgeblendet ist]
   const PALETTE = [
-    ['pc', 'PC'], ['tablet', 'Tablet'], ['smartphone', 'Smartphone'], ['headset', 'Kopfhörer'], ['server', 'Server'],
-    ['switch', 'Switch'], ['bus', 'Bus-Kabel'], ['ap', 'Access Point'], ['router', 'Router'], ['isp', 'Internet\u00adanbieter'],
+    ['Endgeräte', [['pc', 'PC'], ['tablet', 'Tablet'], ['smartphone', 'Smartphone'], ['headset', 'Kopfhörer', 'pan']]],
+    ['Verteiler', [['switch', 'Switch'], ['bus', 'Bus-Kabel', 'topologie'], ['ap', 'Access Point', 'wlan'], ['router', 'Router']]],
+    ['Internet', [['server', 'Server'], ['isp', 'Internet\u00adanbieter', 'internet']]],
   ];
   const palette = $('palette');
-  palette.innerHTML = '<div class="palette-title">Geräte</div>' + PALETTE.map(([t, l]) => `<button class="pal-btn" data-type="${t}" title="${esc(l)} hinzufügen">${NWView.iconSVG(t, 34)}<span>${esc(l)}</span></button>`).join('');
+  function renderPalette() {
+    const groups = PALETTE.map(([title, items]) => [title, items.filter(([, , f]) => !f || has(f))]);
+    const html = groups.map(([title, items]) => `<div class="palette-title">${esc(title)}</div>` +
+      items.map(([t, l]) => `<button class="pal-btn" data-type="${t}" title="${esc(l.replace('\u00ad', ''))} hinzufügen">${NWView.iconSVG(t, 34)}<span>${esc(l)}</span></button>`).join('')).join('');
+    if (palette.dataset.sig !== html) { palette.innerHTML = html; palette.dataset.sig = html; }
+  }
+  /** Werkzeuge, Geräte und Anzeigen passend zur Aufgabe ein- und ausblenden. */
+  function applyFeatures() {
+    S.feat = NWTasks.featuresFor(S.task, S.net);
+    renderPalette();
+    document.querySelector('[data-tool="wlan"]').hidden = !has('wlan');
+    document.querySelector('[data-tool="bluetooth"]').hidden = !has('pan');
+    document.querySelector('.addr-switch').hidden = !has('v6');
+    if (!has('v6') && S.v6) document.querySelector('[data-addr="v4"]').click();
+    if ((S.tool === 'wlan' && !has('wlan')) || (S.tool === 'bluetooth' && !has('pan'))) setTool('move');
+    $('netkinds').hidden = !has('netzarten');
+  }
   palette.addEventListener('click', ev => {
     const b = ev.target.closest('.pal-btn');
     if (!b || readOnly()) return;
@@ -234,7 +252,7 @@
   });
 
   const HINTS = {
-    move: '',
+    move: 'Tippe ein Gerät oder eine Verbindung an, um es einzustellen und zu testen.',
     kabel: 'Tippe nacheinander auf die zwei Geräte, die du mit einem Kabel verbinden willst.',
     wlan: 'Tippe auf einen Access Point oder Router und dann auf ein Tablet oder Smartphone.',
     bluetooth: 'Tippe auf ein Smartphone, Tablet oder einen PC und dann auf die Kopfhörer.',
@@ -242,6 +260,8 @@
   };
   function setTool(t) {
     S.tool = t; S.pending = null;
+    // Beim Verbinden oder Löschen stört das Einstellungsfenster nur
+    if (t !== 'move' && S.selected && S.net) { S.selected = null; renderInspector(); }
     document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
     $('tool-hint').textContent = HINTS[t];
     if (S.net) renderCanvas();
@@ -268,6 +288,7 @@
     kinds.filter(k => k.kind === S.netKind).forEach(k => k.devices.forEach(id => highlight.add(id)));
     NWView.render($('canvas'), S.net, { selected: S.selected, pending: S.pending, highlight, v6: S.v6 });
     renderNetKinds(kinds);
+    positionInspector();
   }
 
   /** Anzeige unten auf der Arbeitsfläche: Welche Netzarten (PAN, LAN, MAN, WAN) stecken im Aufbau? */
@@ -296,6 +317,7 @@
   });
 
   function renderAll() {
+    applyFeatures();
     renderCanvas();
     renderGoals();
     renderInspector();
@@ -506,12 +528,11 @@
   function v6HostHTML(d) {
     const a = NW.ip6Of(S.net, d, 0);
     if (!a) return '';
-    let h = `<div class="group v6"><h4>IPv6 (automatisch)</h4>
-      <p class="v6-row"><span class="v6-kind">Link-Local</span><code>${esc(a.ll)}</code></p>`;
+    let h = `<p class="v6-row"><span class="v6-kind">Link-Local</span><code>${esc(a.ll)}</code></p>`;
     if (a.gua) h += `<p class="v6-row"><span class="v6-kind">Global</span><code>${esc(a.gua)}</code></p>
       <p class="muted small">Die ersten vier Blöcke (${esc(a.net)}) sind das Netz – es kommt ${a.fromRouter ? 'vom Router' : 'vom Internetanbieter'}. Die letzten vier Blöcke hat ${esc(d.name)} selbst gebildet.</p>`;
     else h += `<p class="muted small">Noch keine globale Adresse. Mit der Link-Local-Adresse erreicht ${esc(d.name)} nur Geräte im eigenen Netz. Eine globale Adresse gibt es automatisch, sobald ein Router mit Internetanbieter angeschlossen ist.</p>`;
-    return h + compareHTML() + '</div>';
+    return h + compareHTML();
   }
 
   function urlChips() {
@@ -528,11 +549,93 @@
     return vals.size ? `<div class="chips">${[...vals].map(n => `<button class="chip" data-fill="svc" data-val="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : '';
   }
 
+  // ---------------------------------------------------------------- Sichtbare Funktionen und Abschnitte
+  /** Ist diese Funktion in der aktuellen Aufgabe eingeblendet? */
+  const has = k => !!(S.feat && S.feat.has(k));
+  /** Geöffnete und geschlossene Abschnitte im Einstellungsbereich (bleiben beim Gerätewechsel erhalten). */
+  let openSecs = {};
+  try { openSecs = JSON.parse(store.get('nw-open') || '{}') || {}; } catch (e) { openSecs = {}; }
+  /**
+   * Einklappbarer Abschnitt. Grundfunktionen (feat leer) sind anfangs offen, ebenso
+   * Abschnitte zum Thema der Aufgabe. Im freien Bauen sind Zusatzthemen anfangs zu.
+   */
+  function sec(key, title, body, feat, cls) {
+    if (!body) return '';
+    let open = feat ? !S.task.free && NWTasks.showOf(S.task).includes(feat) : true;
+    if (key === 'conn') open = false;
+    const k = (S.task.free ? 'frei:' : 'aufgabe:') + key;
+    if (k in openSecs) open = openSecs[k];
+    return `<details class="group sec${cls ? ' ' + cls : ''}" data-sec="${k}" ${open ? 'open' : ''}><summary><h4>${title}</h4></summary>${body}</details>`;
+  }
+  insp.addEventListener('toggle', ev => {
+    const d = ev.target;
+    if (!d.dataset || !d.dataset.sec) return;
+    openSecs[d.dataset.sec] = d.open;
+    store.set('nw-open', JSON.stringify(openSecs));
+  }, true);
+
+  // ---------------------------------------------------------------- Einstellungsfenster am Gerät
+  // Auf großen Bildschirmen schwebt das Fenster direkt neben dem angetippten Gerät
+  // auf der Arbeitsfläche. Auf schmalen Bildschirmen (Tablet hochkant) steht es unter der Arbeitsfläche.
+  const wide = window.matchMedia('(min-width: 861px)');
+  function placeInspectorBox() {
+    const target = wide.matches ? document.querySelector('.canvas-wrap') : document.querySelector('.side');
+    if (insp.parentElement !== target) target.appendChild(insp);
+    insp.classList.toggle('floating', wide.matches);
+  }
+  /** Schiebt das Fenster neben das gewählte Gerät (bzw. neben die Mitte der gewählten Verbindung). */
+  function positionInspector() {
+    if (!wide.matches || insp.hidden || !S.selected) return;
+    const link = S.net.links.find(l => l.id === S.selected);
+    const d = NW.dev(S.net, S.selected);
+    let x, y;
+    if (link) { const a = NW.dev(S.net, link.a), b = NW.dev(S.net, link.b); x = (a.x + b.x) / 2; y = (a.y + b.y) / 2; }
+    else if (d) { x = d.x; y = d.y; }
+    else return;
+    const m = canvas.getScreenCTM();
+    const wrap = insp.parentElement.getBoundingClientRect();
+    if (!m) return;
+    const pt = canvas.createSVGPoint(); pt.x = x; pt.y = y;
+    const c = pt.matrixTransform(m);
+    const cx = c.x - wrap.left, cy = c.y - wrap.top;
+    const half = (link ? 14 : NWView.BOX.w / 2 + 6) * m.a;
+    const w = insp.offsetWidth, h = insp.offsetHeight, gap = 12;
+    const top = Math.min(Math.max(8, cy - 60), Math.max(8, wrap.height - h - 8));
+    // Rechts oder links vom Gerät – dort, wo das Fenster weniger andere Geräte verdeckt
+    const clampL = l => Math.min(Math.max(8, l), Math.max(8, wrap.width - w - 8));
+    const covered = l => S.net.devices.filter(o => {
+      const q = canvas.createSVGPoint(); q.x = o.x; q.y = o.y;
+      const r = q.matrixTransform(m), ox = r.x - wrap.left, oy = r.y - wrap.top;
+      return ox > l - 30 && ox < l + w + 30 && oy > top - 30 && oy < top + h + 30;
+    }).length;
+    // Kandidaten: direkt rechts, direkt links, ganz rechts, ganz links (das Fenster darf das gewählte Gerät nie verdecken)
+    const self = l => cx + half > l && cx - half < l + w;
+    const cands = [cx + half + gap, cx - half - gap - w, wrap.width - w - 8, 8].map(clampL).filter(l => !self(l));
+    let left = cands.length ? cands[0] : clampL(cx + half + gap), best = Infinity;
+    for (const l of cands) { const n = covered(l) * 1000 + Math.abs(l + w / 2 - cx); if (n < best) { best = n; left = l; } }
+    insp.style.left = Math.round(left) + 'px';
+    insp.style.top = Math.round(top) + 'px';
+  }
+  wide.addEventListener('change', () => { placeInspectorBox(); renderInspector(); });
+  window.addEventListener('resize', () => positionInspector());
+  placeInspectorBox();
+
   function renderInspector() {
+    renderInspectorBody();
+    if (!S.selected) return;
+    insp.insertAdjacentHTML('afterbegin', '<button class="insp-close btn ghost" data-act="close-insp" aria-label="Einstellungen schließen" title="Schließen">✕</button>');
+    positionInspector();
+  }
+
+  function renderInspectorBody() {
     document.querySelector('.side').classList.toggle('has-sel', !!S.selected);
+    insp.hidden = !S.selected && wide.matches;
+    insp.classList.toggle('sheet', !!S.selected && !wide.matches);
+    document.body.classList.toggle('has-sheet', !!S.selected && !wide.matches);
     const ro = readOnly();
     if (!S.selected) {
       insp.innerHTML = `<h3>Einstellungen</h3><p class="muted">Tippe auf ein Gerät, um es einzustellen und zu testen.</p>`;
+      insp.style.left = insp.style.top = '';
       return;
     }
     const link = S.net.links.find(l => l.id === S.selected);
@@ -548,7 +651,7 @@
         if (link.kind === 'kabel' && !ro && !link.locked && !toIsp) plug += `<button class="btn small" data-act="replug" data-dev="${esc(r.id)}">Umstecken: ${isWan ? 'in einen LAN-Anschluss' : 'in den Internet-Anschluss (WAN)'}</button>`;
       }
       const brk = link.kind !== 'kabel' ? '' : (link.broken ? '<p class="fault-note">⚡ Kabelbruch: Dieses Kabel überträgt keine Daten mehr.</p>' : '')
-        + (ro ? '' : `<div class="group"><h4>Ausfall testen</h4><button class="btn small ${link.broken ? 'primary' : ''}" data-act="fault">${link.broken ? 'Kabel reparieren' : '⚡ Kabelbruch simulieren'}</button></div>`);
+        + (ro || !has('ausfall') ? '' : `<div class="group"><h4>Ausfall testen</h4><button class="btn small ${link.broken ? 'primary' : ''}" data-act="fault">${link.broken ? 'Kabel reparieren' : '⚡ Kabelbruch simulieren'}</button></div>`);
       const title = { kabel: link.stadt ? 'Glasfaserleitung' : 'Netzwerkkabel', wlan: 'WLAN-Verbindung', bluetooth: 'Bluetooth-Kopplung' }[link.kind];
       const about = {
         kabel: link.stadt
@@ -557,21 +660,21 @@
         wlan: 'Per WLAN werden die Daten als Funkwellen übertragen.',
         bluetooth: 'Bluetooth ist Funk für kurze Strecken (etwa 10 Meter). Damit verbinden sich die Geräte einer Person, z. B. Smartphone und Kopfhörer, zu einem persönlichen Netz (PAN). Über Bluetooth laufen hier keine IP-Pakete.',
       }[link.kind];
-      const fiber = link.kind === 'kabel'
+      const fiber = link.kind === 'kabel' && has('netzarten')
         ? `<label class="toggle"><input type="checkbox" data-act="stadt" ${link.stadt ? 'checked' : ''} ${ro || link.locked ? 'disabled' : ''}> Glasfaserleitung quer durch die Stadt (mehrere Kilometer)</label>`
         : '';
       insp.innerHTML = `<h3>${title}</h3>
         <p>zwischen <b>${esc(a.name)}</b> und <b>${esc(b.name)}</b></p>${plug}${fiber}
         <p class="muted small">${about}</p>
-        <label class="toggle"><input type="checkbox" data-act="loss" ${link.loss ? 'checked' : ''} ${ro ? 'disabled' : ''}> Gestörte Verbindung</label>
+        ${has('dienste') && link.kind !== 'bluetooth' ? `<label class="toggle"><input type="checkbox" data-act="loss" ${link.loss ? 'checked' : ''} ${ro ? 'disabled' : ''}> Gestörte Verbindung</label>
         <p class="${link.loss ? 'loss-note' : 'muted small'}">${link.loss
           ? 'Hier gehen Pakete verloren – wie bei schwachem WLAN oder einem Wackelkontakt. Vergleiche: Was machen TCP und UDP mit einem verlorenen Paket?'
-          : 'Schalte die Störung ein, um zu sehen, was mit verlorenen Paketen passiert.'}</p>${brk}
+          : 'Schalte die Störung ein, um zu sehen, was mit verlorenen Paketen passiert.'}</p>` : ''}${brk}
         ${!ro && !link.locked ? '<button class="btn danger" data-act="del-link">Verbindung löschen</button>' : ''}`;
       return;
     }
     const d = NW.dev(S.net, S.selected);
-    if (!d) { S.selected = null; renderInspector(); return; }
+    if (!d) { S.selected = null; renderInspectorBody(); return; }
     const t = T[d.type];
     const dis = ro || d.locked;
     let h = `<div class="insp-head">${NWView.iconSVG(d.cloud ? 'switch' : d.type, 30)}<div><div class="insp-type">${esc(d.cloud ? 'Internet (vereinfacht)' : t.label)}</div>
@@ -581,181 +684,216 @@
     if (d.off) h += `<p class="fault-note">✕ ${esc(d.name)} ist ausgefallen. Es sendet, empfängt und leitet nichts weiter.</p>`;
     if (t.bus && d.broken) h += '<p class="fault-note">⚡ Kabelbruch im Bus-Kabel: Das ganze Busnetz ist gestört.</p>';
 
+    // ---- Endgeräte und Server: Adressen
     if (t.host) {
       const auto = !!d.dhcp;
-      h += `<div class="group"><h4>Netzwerk-Einstellungen</h4>
-        <div class="seg" role="group" aria-label="Art der Einstellung">
+      let b = '';
+      if (has('dhcp') || auto) {
+        b += `<div class="seg" role="group" aria-label="Art der Einstellung">
           <button class="${auto ? '' : 'on'}" data-act="mode-manual" ${dis ? 'disabled' : ''} aria-pressed="${!auto}">Von Hand</button>
           <button class="${auto ? 'on' : ''}" data-act="mode-dhcp" ${dis ? 'disabled' : ''} aria-pressed="${auto}">Automatisch (DHCP)</button>
         </div>`;
-      if (auto) {
-        h += `<p class="muted small">Diese Einstellungen bekommt ${esc(d.name)} vom DHCP-Server (meist im Router).</p>`;
-        if (!dis) h += '<button class="btn primary small dhcp-btn" data-act="dhcp">Adresse per DHCP anfordern</button>';
+        if (auto) {
+          b += `<p class="muted small">Diese Einstellungen bekommt ${esc(d.name)} vom DHCP-Server (meist im Router).</p>`;
+          if (!dis) b += '<button class="btn primary small dhcp-btn" data-act="dhcp">Adresse per DHCP anfordern</button>';
+        }
       }
       const sg = auto || dis ? {} : NW.suggest(S.net, d.id);
       const chip = (act, txt) => `<div class="chips"><button class="chip suggest" data-act="${act}">💡 ${esc(txt)}</button></div>`;
       const fdis = dis || auto;
-      h += field('IP-Adresse', 'ip', d.ip, 'ip', { disabled: fdis, placeholder: auto ? 'kommt per DHCP' : 'z. B. 192.168.1.10' });
-      if (sg.ip) h += chip('suggest-ip', `Vorschlag: ${sg.ip} übernehmen`);
-      h += field('Subnetzmaske', 'mask', d.mask, 'mask', { disabled: fdis, placeholder: '255.255.255.0' });
-      h += field('Gateway (Router)', 'gw', d.gw, 'gw', { disabled: fdis, placeholder: auto ? 'kommt per DHCP' : 'nur nötig für andere Netze' });
-      if (sg.gw) h += chip('suggest-gw', `Router ${sg.gw} als Gateway übernehmen`);
-      h += field('DNS-Server', 'dns', d.dns, 'dns', { disabled: fdis, placeholder: auto ? 'kommt per DHCP' : 'nur nötig für Namen wie www…' });
-      if (sg.dns) h += chip('suggest-dns', `DNS-Server ${sg.dns} übernehmen`);
-      h += '</div>';
-      h += v6HostHTML(d);
+      b += field('IP-Adresse', 'ip', d.ip, 'ip', { disabled: fdis, placeholder: auto ? 'kommt per DHCP' : 'z. B. 192.168.1.10' });
+      if (sg.ip) b += chip('suggest-ip', `Vorschlag: ${sg.ip} übernehmen`);
+      b += field('Subnetzmaske', 'mask', d.mask, 'mask', { disabled: fdis, placeholder: '255.255.255.0' });
+      if (has('gateway') || (d.gw || '').trim()) {
+        b += field('Gateway (Router)', 'gw', d.gw, 'gw', { disabled: fdis, placeholder: auto ? 'kommt per DHCP' : 'nur nötig für andere Netze' });
+        if (sg.gw) b += chip('suggest-gw', `Router ${sg.gw} als Gateway übernehmen`);
+      }
+      if (has('web') || (d.dns || '').trim()) {
+        b += field('DNS-Server', 'dns', d.dns, 'dns', { disabled: fdis, placeholder: auto ? 'kommt per DHCP' : 'nur nötig für Namen wie www…' });
+        if (sg.dns) b += chip('suggest-dns', `DNS-Server ${sg.dns} übernehmen`);
+      }
+      h += sec('net', 'Netzwerk-Einstellungen', b);
     }
+
+    // ---- Server: Dienste
     if (t.services) {
       // Ältere Netzwerke kennen noch nicht alle Dienste
       const def = NW.defaultServices();
       for (const k in def) if (!d.services[k]) d.services[k] = def[k];
       const w = d.services.web, n = d.services.dns;
       const info = k => { const sv = NW.SERVICES[k]; return `<p class="svc-info"><span class="proto-tag ${sv.proto.toLowerCase()}">${sv.proto} · Port ${sv.port}</span> ${esc(sv.why)}</p>`; };
-      const toggle = (k, label) => `<label class="toggle"><input type="checkbox" data-path="services.${k}.on" ${d.services[k].on ? 'checked' : ''} ${dis ? 'disabled' : ''}> ${esc(label)}</label>` + (d.services[k].on ? info(k) : '');
-      h += `<div class="group"><h4>Dienste</h4>
-        <p class="muted small">Ein Server kann mehrere Dienste gleichzeitig anbieten. Die Endgeräte sind die Clients, die sie nutzen (Client-Server-Modell).</p>
-        ${toggle('web', 'Webserver (HTTP)')}`;
-      if (w.on) {
-        h += field('Titel der Webseite', 'services.web.title', w.title, '', { disabled: dis });
-        h += field('Text der Webseite', 'services.web.text', w.text, '', { disabled: dis });
+      const toggle = (k, label) => `<label class="toggle"><input type="checkbox" data-path="services.${k}.on" ${d.services[k].on ? 'checked' : ''} ${dis ? 'disabled' : ''}> ${esc(label)}</label>` + (d.services[k].on && has('dienste') ? info(k) : '');
+      let b = '<p class="muted small">Ein Server kann mehrere Dienste gleichzeitig anbieten. Die Endgeräte sind die Clients, die sie nutzen (Client-Server-Modell).</p>';
+      if (has('web')) {
+        b += toggle('web', 'Webserver (HTTP)');
+        if (w.on) {
+          b += field('Titel der Webseite', 'services.web.title', w.title, '', { disabled: dis });
+          b += field('Text der Webseite', 'services.web.text', w.text, '', { disabled: dis });
+        }
       }
-      const fs = NW.fileStore(d);
-      h += `<label class="toggle"><input type="checkbox" data-path="services.files.on" ${fs.on ? 'checked' : ''} ${dis ? 'disabled' : ''}> Dateiablage (Cloud-Speicher)</label>`;
-      if (fs.on) h += `<p class="muted small">Endgeräte laden hier Dateien hoch und holen sie später wieder ab (Client-Server).</p>${fileListHTML(fs.files)}`;
-      h += toggle('dns', 'DNS-Server');
-      if (n.on) {
-        h += '<div class="dns-table"><div class="dns-row head"><span>Name</span><span>IP-Adresse</span><span></span></div>';
-        n.entries.forEach((e, i) => {
-          h += `<div class="dns-row"><input data-path="services.dns.entries.${i}.name" value="${esc(e.name)}" placeholder="www.beispiel.de" ${dis ? 'disabled' : ''} autocapitalize="off" spellcheck="false">
-            <input data-path="services.dns.entries.${i}.ip" data-check="dnsip" value="${esc(e.ip)}" placeholder="IP" ${dis ? 'disabled' : ''} autocapitalize="off" spellcheck="false">
-            ${dis ? '<span></span>' : `<button class="btn ghost small" data-act="dns-del" data-i="${i}" aria-label="Eintrag löschen">✕</button>`}</div>`;
-        });
-        h += '</div>';
-        if (!dis) h += '<button class="btn small" data-act="dns-add">+ Eintrag</button>';
+      if (has('dateien')) {
+        const fs = NW.fileStore(d);
+        b += `<label class="toggle"><input type="checkbox" data-path="services.files.on" ${fs.on ? 'checked' : ''} ${dis ? 'disabled' : ''}> Dateiablage (Cloud-Speicher)</label>`;
+        if (fs.on) b += `<p class="muted small">Endgeräte laden hier Dateien hoch und holen sie später wieder ab (Client-Server).</p>${fileListHTML(fs.files)}`;
       }
-      h += toggle('mail', 'E-Mail-Server (SMTP, IMAP)');
-      if (d.services.mail.on) {
-        const nb = (d.services.mail.box || []).length;
-        h += `<p class="svc-info">Postfach: <b>${nb === 1 ? '1 E-Mail' : nb + ' E-Mails'}</b></p>`;
+      if (has('web')) {
+        b += toggle('dns', 'DNS-Server');
+        if (n.on) {
+          b += '<div class="dns-table"><div class="dns-row head"><span>Name</span><span>IP-Adresse</span><span></span></div>';
+          n.entries.forEach((e, i) => {
+            b += `<div class="dns-row"><input data-path="services.dns.entries.${i}.name" value="${esc(e.name)}" placeholder="www.beispiel.de" ${dis ? 'disabled' : ''} autocapitalize="off" spellcheck="false">
+              <input data-path="services.dns.entries.${i}.ip" data-check="dnsip" value="${esc(e.ip)}" placeholder="IP" ${dis ? 'disabled' : ''} autocapitalize="off" spellcheck="false">
+              ${dis ? '<span></span>' : `<button class="btn ghost small" data-act="dns-del" data-i="${i}" aria-label="Eintrag löschen">✕</button>`}</div>`;
+          });
+          b += '</div>';
+          if (!dis) b += '<button class="btn small" data-act="dns-add">+ Eintrag</button>';
+        }
       }
-      h += toggle('video', 'Video-Streaming');
-      h += toggle('call', 'Video- und Audio-Telefonie');
-      h += toggle('game', 'Spiele-Server (Online-Spiel)');
-      h += '</div>';
+      if (has('dienste')) {
+        b += toggle('mail', 'E-Mail-Server (SMTP, IMAP)');
+        if (d.services.mail.on) {
+          const nb = (d.services.mail.box || []).length;
+          b += `<p class="svc-info">Postfach: <b>${nb === 1 ? '1 E-Mail' : nb + ' E-Mails'}</b></p>`;
+        }
+        b += toggle('video', 'Video-Streaming');
+        b += toggle('call', 'Video- und Audio-Telefonie');
+        b += toggle('game', 'Spiele-Server (Online-Spiel)');
+      }
+      if (has('web') || has('dateien') || has('dienste')) {
+        const feat = ['dienste', 'web', 'dateien'].find(k => NWTasks.showOf(S.task).includes(k)) || 'dienste';
+        h += sec('services', 'Dienste des Servers', b, feat);
+      }
     }
+
+    // ---- Endgeräte und Server: Testen
+    if (t.host) {
+      h += sec('ping', 'Ping', `<label class="field">Ping senden an (${has('v6') ? 'IPv4- oder IPv6-Adresse' : 'IP-Adresse'})
+          <div class="inline"><input id="ping-target" placeholder="${has('v6') ? 'z. B. 192.168.1.2 oder fe80::…' : 'z. B. 192.168.1.2'}" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn primary" data-act="ping">Ping</button></div></label>
+        ${otherHostChips(d)}${has('v6') ? v6Chips(d) : ''}`, null, 'test');
+      if (has('web')) h += sec('browser', 'Browser', `<label class="field">Adresse (URL)
+          <div class="inline"><input id="url-target" placeholder="http://www.beispiel.de" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn primary" data-act="browse">Öffnen</button></div></label>
+        ${urlChips()}`, 'web', 'test');
+      if (has('dienste')) h += sec('svc-use', 'Internetdienste nutzen', `<label class="field">Server (Name oder IP-Adresse)
+          <input id="svc-target" placeholder="z. B. mail.beispiel.de" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+        ${serverChips()}
+        <div class="svc-btns">${['mail', 'mailget', 'video', 'call', 'game'].map(a => `<button class="btn" data-act="svc" data-svc="${a}">${esc(NW.ACTIONS[a].label)}</button>`).join('')}</div>
+        <label class="toggle"><input type="checkbox" data-act="tcp-details" ${S.tcp ? 'checked' : ''}> TCP genau zeigen (Verbindungsaufbau und Bestätigungen)</label>`, 'dienste', 'test');
+      const bt = NW.btPartners(S.net, d.id);
+      if (bt.length) {
+        let b = `<p class="small">Gekoppelt mit ${bt.map(o => '<b>' + esc(o.name) + '</b>').join(', ')}</p>`;
+        if (bt.some(o => T[o.type].btOnly)) b += '<button class="btn primary small" data-act="music">♪ Musik abspielen</button>';
+        h += sec('bt', 'Bluetooth (PAN)', b, 'pan');
+      }
+      if (!t.services && has('dateien')) {
+        const files = NW.filesOf(d);
+        let b = fileListHTML(files);
+        if (!ro) b += '<button class="btn small" data-act="new-file">+ Neue Datei</button>';
+        b += `<label class="toggle"><input type="checkbox" data-path="share" ${d.share ? 'checked' : ''} ${dis ? 'disabled' : ''}> Dateien direkt tauschen (Peer-to-Peer)</label>
+          <p class="muted small">${d.share ? `Andere Endgeräte können ${esc(d.name)} direkt Dateien schicken und seine Dateien holen. ${esc(d.name)} ist damit Client und Server zugleich.` : 'Aus: Andere Endgeräte können mit diesem Gerät keine Dateien direkt tauschen.'}</p>`;
+        if (!ro) {
+          b += `<label class="field">Partner (IP-Adresse eines Endgeräts oder Servers)
+            <input id="file-target" placeholder="z. B. 192.168.1.12" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+            ${fileChips(d)}`;
+          if (files.length) b += `<label class="field">Datei<select id="file-pick">${files.map(f => `<option>${esc(f)}</option>`).join('')}</select></label>`;
+          b += `<div class="row">${files.length ? '<button class="btn primary small" data-act="send-file">Datei senden</button>' : ''}<button class="btn small" data-act="get-files">Dateien holen</button></div>`;
+        }
+        h += sec('files', 'Dateien', b, 'dateien');
+      }
+    }
+
+    // ---- Router
     if (t.router) {
       const conns = which => NW.linksOf(S.net, d.id).filter(l => NW.iface(NW.portOf(l, d.id)) === which)
         .map(l => { const o = NW.dev(S.net, l.a === d.id ? l.b : l.a); return `<span class="kind ${l.kind}">${l.kind === 'kabel' ? 'Kabel' : 'WLAN'}</span> ${esc(o.name)}`; });
       const lanConns = conns(NW.LAN), wanConns = conns(NW.WAN);
       const p = d.ports[NW.LAN], i = NW.LAN;
       // Heimnetz (LAN)
-      h += `<div class="group"><h4>Heimnetz (LAN)</h4>
-        <p class="muted small">Drei LAN-Anschlüsse und das WLAN des Routers gehören zum selben Heimnetz – wie ein eingebauter Switch. Hier hat der Router eine feste Adresse; Endgeräte tragen sie als Gateway ein.</p>
+      let b = `<p class="muted small">Drei LAN-Anschlüsse${has('wlan') ? ' und das WLAN des Routers' : ''} gehören zum selben Heimnetz – wie ein eingebauter Switch. Hier hat der Router eine feste Adresse; Endgeräte tragen sie als Gateway ein.</p>
         <p class="small">${lanConns.length ? lanConns.join(' · ') : '<span class="muted">Noch nichts angeschlossen.</span>'}</p>
         <div class="port-fields">${field('IP-Adresse des Routers', `ports.${i}.ip`, p.ip, 'portip', { disabled: dis })}${field('Subnetzmaske', `ports.${i}.mask`, p.mask, 'mask', { disabled: dis })}</div>`;
-      h += `<label class="toggle"><input type="checkbox" data-path="wlan" ${d.wlan ? 'checked' : ''} ${dis ? 'disabled' : ''}> WLAN (eingebauter Access Point)</label>`;
+      if (has('wlan')) b += `<label class="toggle"><input type="checkbox" data-path="wlan" ${d.wlan ? 'checked' : ''} ${dis ? 'disabled' : ''}> WLAN (eingebauter Access Point)</label>`;
       const dh = NW.dhcpOf(p);
-      h += `<label class="toggle"><input type="checkbox" data-path="ports.${i}.dhcp.on" ${dh.on ? 'checked' : ''} ${dis ? 'disabled' : ''}> DHCP-Server (verteilt IP-Adressen)</label>`;
-      if (dh.on) {
+      if (has('dhcp')) b += `<label class="toggle"><input type="checkbox" data-path="ports.${i}.dhcp.on" ${dh.on ? 'checked' : ''} ${dis ? 'disabled' : ''}> DHCP-Server (verteilt IP-Adressen)</label>`;
+      if (dh.on && has('dhcp')) {
         const rg = NW.dhcpRange(d, i);
-        if (!rg) h += `<p class="fhint warn">Der Router braucht im Heimnetz selbst eine feste IP-Adresse, damit er Adressen verteilen kann.</p>${dis ? '' : `<div class="chips"><button class="chip suggest" data-act="port-auto" data-i="${i}">💡 Adresse für den Router eintragen</button></div>`}`;
+        if (!rg) b += `<p class="fhint warn">Der Router braucht im Heimnetz selbst eine feste IP-Adresse, damit er Adressen verteilen kann.</p>${dis ? '' : `<div class="chips"><button class="chip suggest" data-act="port-auto" data-i="${i}">💡 Adresse für den Router eintragen</button></div>`}`;
         else {
-          h += `<p class="dhcp-info">Der Router selbst hat die feste Adresse <b>${esc(p.ip.trim())}</b>. Geräte auf „Automatisch (DHCP)" bekommen von ihm eine freie Adresse von ${esc(NW.ipStr(rg.from))} bis ${esc(NW.ipStr(rg.to))}, die Subnetzmaske und ${esc(p.ip.trim())} als Gateway.</p>`;
-          h += `<details class="desc"><summary>DHCP genauer einstellen</summary>
+          b += `<p class="dhcp-info">Der Router selbst hat die feste Adresse <b>${esc(p.ip.trim())}</b>. Geräte auf „Automatisch (DHCP)" bekommen von ihm eine freie Adresse von ${esc(NW.ipStr(rg.from))} bis ${esc(NW.ipStr(rg.to))}, die Subnetzmaske und ${esc(p.ip.trim())} als Gateway.</p>`;
+          b += `<details class="desc"><summary>DHCP genauer einstellen</summary>
             <div class="port-fields">${field('Adressen von', `ports.${i}.dhcp.from`, dh.from, 'range', { disabled: dis, placeholder: NW.ipStr(rg.from) })}${field('bis', `ports.${i}.dhcp.to`, dh.to, 'range', { disabled: dis, placeholder: NW.ipStr(rg.to) })}</div>
             ${field('DNS-Server für die Geräte', `ports.${i}.dhcp.dns`, dh.dns, 'dns', { disabled: dis, placeholder: 'leer = kein DNS-Server' })}</details>`;
         }
       }
-      h += '</div>';
+      h += sec('lan', 'Heimnetz (LAN)', b);
       // Internet (WAN)
-      const w = d.ports[NW.WAN];
-      h += `<div class="group"><h4>Internet-Anschluss (WAN)</h4>
-        <label class="toggle"><input type="checkbox" data-path="modem" ${d.modem ? 'checked' : ''} ${dis ? 'disabled' : ''}> Eingebautes Internet-Modem (DSL/Kabel)</label>
+      if (has('internet') || wanConns.length) {
+        const w = d.ports[NW.WAN];
+        b = `<label class="toggle"><input type="checkbox" data-path="modem" ${d.modem ? 'checked' : ''} ${dis ? 'disabled' : ''}> Eingebautes Internet-Modem (DSL/Kabel)</label>
         <p class="muted small">${d.modem
           ? 'Das Modem verbindet den Router über die Telefon- oder Kabelleitung mit dem Internetanbieter. Dort bekommt der Router seine externe (öffentliche) Adresse.'
           : 'Ohne eingebautes Modem wird hier ein externes Modem oder ein anderer Router per Kabel angeschlossen.'}</p>
         <p class="small">${wanConns.length ? wanConns.join(' · ') : '<span class="muted">Nichts angeschlossen.</span>'}</p>
         <div class="port-fields">${field('Externe IP-Adresse', `ports.${NW.WAN}.ip`, w.ip, 'portip', { disabled: dis, placeholder: d.modem ? 'vom Internetanbieter' : 'z. B. 192.168.100.2' })}${field('Subnetzmaske', `ports.${NW.WAN}.mask`, w.mask, 'mask', { disabled: dis })}</div>
         ${field('Gateway ins Internet', `ports.${NW.WAN}.gw`, w.gw || '', 'gw', { disabled: dis, placeholder: 'vom Internetanbieter' })}`;
-      const isp = NW.ispOf(S.net, d);
-      if (isp && !dis) h += `<button class="btn small" data-act="dhcp">Adresse von ${esc(isp.name)} anfordern</button>`;
-      const wa = NW.ifaceAddr(d, NW.WAN);
-      if (wa && wanConns.length) h += `<p class="nat-info"><b>NAT (nur bei IPv4):</b> Alle Geräte im Heimnetz gehen mit der externen Adresse <b>${esc(NW.ipStr(wa.ip))}</b> ins Internet. Ihre lokalen Adressen sieht dort niemand. Antworten verteilt der Router wieder an das richtige Gerät.</p>`;
-      h += '</div>';
-      // IPv6
-      const v6l = NW.ip6Of(S.net, d, NW.LAN), v6w = NW.ip6Of(S.net, d, NW.WAN);
-      h += `<div class="group v6"><h4>IPv6 (automatisch)</h4>`;
-      if (v6l.lanNet) h += `<p class="small">Vom Internetanbieter bekommt ${esc(d.name)} ein eigenes Netz für das Heimnetz: <code>${esc(v6l.lanNet)}</code>. Das gibt der Router im Heimnetz bekannt; jedes Gerät bildet daraus selbst seine globale Adresse – ohne DHCP und ohne NAT.</p>
-        <p class="v6-row"><span class="v6-kind">Heimnetz</span><code>${esc(v6l.gua)}</code></p>
-        <p class="v6-row"><span class="v6-kind">Internet</span><code>${esc(v6w.gua)}</code></p>`;
-      else h += '<p class="muted small">Sobald der Internet-Anschluss mit einem Internetanbieter verbunden ist, bekommt der Router von ihm ein IPv6-Netz für das Heimnetz.</p>';
-      h += `<p class="v6-row"><span class="v6-kind">Link-Local</span><code>${esc(v6l.ll)}</code></p>${compareHTML()}</div>`;
+        const isp = NW.ispOf(S.net, d);
+        if (isp && !dis) b += `<button class="btn small" data-act="dhcp">Adresse von ${esc(isp.name)} anfordern</button>`;
+        const wa = NW.ifaceAddr(d, NW.WAN);
+        if (wa && wanConns.length) b += `<p class="nat-info"><b>NAT${has('v6') ? ' (nur bei IPv4)' : ''}:</b> Alle Geräte im Heimnetz gehen mit der externen Adresse <b>${esc(NW.ipStr(wa.ip))}</b> ins Internet. Ihre lokalen Adressen sieht dort niemand. Antworten verteilt der Router wieder an das richtige Gerät.</p>`;
+        h += sec('wan', 'Internet-Anschluss (WAN)', b, 'internet');
+      }
     }
+
+    // ---- Internetanbieter
     if (t.isp) {
       const a = NW.ifaceAddr(d, 0);
-      h += `<div class="group"><h4>Öffentliche Adressen</h4>
-        <p class="muted small">Der Internetanbieter verteilt öffentliche (externe) IP-Adressen an alle Router und Server, die an seine Leitung angeschlossen werden – automatisch per DHCP.</p>
+      let b = `<p class="muted small">Der Internetanbieter verteilt öffentliche (externe) IP-Adressen an alle Router und Server, die an seine Leitung angeschlossen werden – automatisch per DHCP.</p>
         <div class="port-fields">${field('IP-Adresse des Anbieters', 'ip', d.ip, 'ip', { disabled: dis })}${field('Subnetzmaske', 'mask', d.mask, 'mask', { disabled: dis })}</div>`;
-      if (a) { const rg = NW.dhcpDefaultRange(a.ip, a.prefix); h += `<p class="small">Angeschlossene Geräte bekommen eine Adresse von ${esc(NW.ipStr(rg.from))} bis ${esc(NW.ipStr(rg.to))} und ${esc(d.ip.trim())} als Gateway.</p>`; }
-      h += field('DNS-Server für die Kunden', 'dns', d.dns || '', 'dns', { disabled: dis, placeholder: 'leer = kein DNS-Server' });
-      if (!dis && !(d.dns || '').trim()) {
-        const ds = S.net.devices.find(o => o.services && o.services.dns && o.services.dns.on && NW.parseIP(o.ip) !== null && !NW.isPrivate(NW.parseIP(o.ip)));
-        if (ds) h += `<div class="chips"><button class="chip suggest" data-act="isp-dns" data-val="${esc(ds.ip.trim())}">💡 ${esc(ds.name)} (${esc(ds.ip.trim())}) als DNS-Server übernehmen</button></div>`;
+      if (a) { const rg = NW.dhcpDefaultRange(a.ip, a.prefix); b += `<p class="small">Angeschlossene Geräte bekommen eine Adresse von ${esc(NW.ipStr(rg.from))} bis ${esc(NW.ipStr(rg.to))} und ${esc(d.ip.trim())} als Gateway.</p>`; }
+      if (has('web') || (d.dns || '').trim()) {
+        b += field('DNS-Server für die Kunden', 'dns', d.dns || '', 'dns', { disabled: dis, placeholder: 'leer = kein DNS-Server' });
+        if (!dis && !(d.dns || '').trim()) {
+          const ds = S.net.devices.find(o => o.services && o.services.dns && o.services.dns.on && NW.parseIP(o.ip) !== null && !NW.isPrivate(NW.parseIP(o.ip)));
+          if (ds) b += `<div class="chips"><button class="chip suggest" data-act="isp-dns" data-val="${esc(ds.ip.trim())}">💡 ${esc(ds.name)} (${esc(ds.ip.trim())}) als DNS-Server übernehmen</button></div>`;
+        }
       }
       const cust = NW.l2Endpoints(S.net, d.id, 0).map(e => {
         const x = NW.ifaceAddr(e.dev, e.port);
         return `<li>${esc(e.dev.name)}${T[e.dev.type].isp ? ' <span class="muted">(anderer Internetanbieter)</span>' : ''} – ${x ? esc(NW.ipStr(x.ip)) : '<span class="muted">noch keine Adresse</span>'}</li>`;
       });
-      const v6 = NW.ip6Of(S.net, d, 0);
-      h += `<h4>IPv6</h4><p class="small">IPv6-Adressbereich: <code>${esc(v6.net.replace('::/64', '::/48'))}</code>. Jeder angeschlossene Router bekommt daraus ein eigenes Netz für sein Heimnetz, Server direkt beim Anbieter liegen in <code>${esc(v6.net)}</code>. Der Anbieter selbst hat <code>${esc(v6.gua)}</code>.</p>`;
-      h += `<h4>Angeschlossen</h4>${cust.length ? `<ul class="conn">${cust.join('')}</ul>` : '<p class="muted small">Noch nichts. Verbinde einen Router (Internet-Anschluss) oder einen Server per Kabel.</p>'}</div>`;
+      b += `<h4>Angeschlossen</h4>${cust.length ? `<ul class="conn">${cust.join('')}</ul>` : '<p class="muted small">Noch nichts. Verbinde einen Router (Internet-Anschluss) oder einen Server per Kabel.</p>'}`;
+      h += sec('isp', 'Öffentliche Adressen', b);
     }
+
+    // ---- IPv6 (für alle Geräte mit Adressen)
+    if (has('v6')) {
+      let b = '';
+      if (t.host) b = v6HostHTML(d);
+      else if (t.router) {
+        const v6l = NW.ip6Of(S.net, d, NW.LAN), v6w = NW.ip6Of(S.net, d, NW.WAN);
+        if (v6l.lanNet) b += `<p class="small">Vom Internetanbieter bekommt ${esc(d.name)} ein eigenes Netz für das Heimnetz: <code>${esc(v6l.lanNet)}</code>. Das gibt der Router im Heimnetz bekannt; jedes Gerät bildet daraus selbst seine globale Adresse – ohne DHCP und ohne NAT.</p>
+          <p class="v6-row"><span class="v6-kind">Heimnetz</span><code>${esc(v6l.gua)}</code></p>
+          <p class="v6-row"><span class="v6-kind">Internet</span><code>${esc(v6w.gua)}</code></p>`;
+        else b += '<p class="muted small">Sobald der Internet-Anschluss mit einem Internetanbieter verbunden ist, bekommt der Router von ihm ein IPv6-Netz für das Heimnetz.</p>';
+        b += `<p class="v6-row"><span class="v6-kind">Link-Local</span><code>${esc(v6l.ll)}</code></p>${compareHTML()}`;
+      } else if (t.isp) {
+        const v6 = NW.ip6Of(S.net, d, 0);
+        b = `<p class="small">IPv6-Adressbereich: <code>${esc(v6.net.replace('::/64', '::/48'))}</code>. Jeder angeschlossene Router bekommt daraus ein eigenes Netz für sein Heimnetz, Server direkt beim Anbieter liegen in <code>${esc(v6.net)}</code>. Der Anbieter selbst hat <code>${esc(v6.gua)}</code>.</p>`;
+      }
+      h += sec('v6', 'IPv6 (automatisch)', b, 'v6', 'v6');
+    }
+
     if (t.bus) h += '<p class="muted small">Das Bus-Kabel braucht keine IP-Adresse. Schließe alle Geräte mit einem Kabel daran an.</p>';
     else if (t.l2) h += `<p class="muted small">Ein ${esc(t.label)} braucht keine IP-Adresse – er leitet die Pakete nur weiter.</p>`;
-    if (!ro) {
-      const on = t.bus ? !!d.broken : !!d.off;
-      const label = t.bus ? (on ? 'Bus-Kabel reparieren' : '⚡ Kabelbruch im Bus-Kabel simulieren') : (on ? 'Wieder einschalten' : '✕ Ausfall simulieren (ausschalten)');
-      h += `<div class="group"><h4>Ausfall testen</h4><button class="btn small ${on ? 'primary' : ''}" data-act="fault">${label}</button></div>`;
-    }
     if (t.btOnly) h += '<p class="muted small">Kopfhörer brauchen keine IP-Adresse. Sie werden per Bluetooth mit einem Gerät in der Nähe gekoppelt (Werkzeug „Bluetooth“).</p>';
 
-    h += `<div class="group"><h4>Verbindungen</h4>${connectionsHTML(d)}</div>`;
-
-    if (t.host) {
-      h += `<div class="group test"><h4>Testen</h4>
-        <label class="toggle"><input type="checkbox" data-act="tcp-details" ${S.tcp ? 'checked' : ''}> TCP genau zeigen (Verbindungsaufbau und Bestätigungen)</label>
-        <label class="field">Ping senden an (IPv4- oder IPv6-Adresse)
-          <div class="inline"><input id="ping-target" placeholder="z. B. 192.168.1.2 oder fe80::…" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn primary" data-act="ping">Ping</button></div></label>
-        ${otherHostChips(d)}${v6Chips(d)}
-        <label class="field">Browser: Adresse (URL)
-          <div class="inline"><input id="url-target" placeholder="http://www.beispiel.de" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn primary" data-act="browse">Öffnen</button></div></label>
-        ${urlChips()}
-        <label class="field">Internetdienste: Server (Name oder IP-Adresse)
-          <input id="svc-target" placeholder="z. B. mail.beispiel.de" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-        ${serverChips()}
-        <div class="svc-btns">${['mail', 'mailget', 'video', 'call', 'game'].map(a => `<button class="btn" data-act="svc" data-svc="${a}">${esc(NW.ACTIONS[a].label)}</button>`).join('')}</div></div>`;
-      const bt = NW.btPartners(S.net, d.id);
-      if (bt.length) {
-        h += `<div class="group"><h4>Bluetooth (PAN)</h4><p class="small">Gekoppelt mit ${bt.map(o => '<b>' + esc(o.name) + '</b>').join(', ')}</p>`;
-        if (bt.some(o => T[o.type].btOnly)) h += '<button class="btn primary small" data-act="music">♪ Musik abspielen</button>';
-        h += '</div>';
-      }
-      if (!t.services) {
-        const files = NW.filesOf(d);
-        h += `<div class="group"><h4>Dateien</h4>${fileListHTML(files)}`;
-        if (!ro) h += '<button class="btn small" data-act="new-file">+ Neue Datei</button>';
-        h += `<label class="toggle"><input type="checkbox" data-path="share" ${d.share ? 'checked' : ''} ${dis ? 'disabled' : ''}> Dateien direkt tauschen (Peer-to-Peer)</label>
-          <p class="muted small">${d.share ? `Andere Endgeräte können ${esc(d.name)} direkt Dateien schicken und seine Dateien holen. ${esc(d.name)} ist damit Client und Server zugleich.` : 'Aus: Andere Endgeräte können mit diesem Gerät keine Dateien direkt tauschen.'}</p>`;
-        if (!ro) {
-          h += `<label class="field">Partner (IP-Adresse eines Endgeräts oder Servers)
-            <input id="file-target" placeholder="z. B. 192.168.1.12" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-            ${fileChips(d)}`;
-          if (files.length) h += `<label class="field">Datei<select id="file-pick">${files.map(f => `<option>${esc(f)}</option>`).join('')}</select></label>`;
-          h += `<div class="row">${files.length ? '<button class="btn primary small" data-act="send-file">Datei senden</button>' : ''}<button class="btn small" data-act="get-files">Dateien holen</button></div>`;
-        }
-        h += '</div>';
-      }
+    if (!ro && has('ausfall')) {
+      const on = t.bus ? !!d.broken : !!d.off;
+      const label = t.bus ? (on ? 'Bus-Kabel reparieren' : '⚡ Kabelbruch im Bus-Kabel simulieren') : (on ? 'Wieder einschalten' : '✕ Ausfall simulieren (ausschalten)');
+      h += sec('fault', 'Ausfall testen', `<button class="btn small ${on ? 'primary' : ''}" data-act="fault">${label}</button>`, 'ausfall');
     }
+
+    h += sec('conn', 'Verbindungen', connectionsHTML(d));
+
     if (!dis) h += '<button class="btn danger" data-act="del-dev">Gerät löschen</button>';
     insp.innerHTML = h;
     updateHints();
@@ -928,6 +1066,8 @@
         if (!l.loss) delete l.loss;
         renderAll(); scheduleSave(); break;
       }
+      case 'close-insp':
+        S.selected = null; renderCanvas(); renderInspector(); break;
       case 'del-dev':
         NW.removeDevice(S.net, d.id); S.selected = null; renderAll(); scheduleSave(); break;
       case 'del-link':
@@ -1073,7 +1213,7 @@
     if (S.busy) return;
     const d = NW.dev(S.net, S.selected);
     const url = $('url-target').value.trim();
-    const res = NW.browse(S.net, d.id, url, { tcp: S.tcp });
+    const res = NW.browse(S.net, d.id, url, { tcp: S.tcp && has('dienste') });
     if (res.steps.length) await runSteps(res.steps);
     const u = NW.parseURL(url);
     NW.logEvent(S.net, { type: 'web', src: d.id, host: u ? u.host : url, ok: !!res.ok, lost: !!res.lost, tcp: !!res.tcp });
@@ -1091,7 +1231,7 @@
     if (S.busy) return;
     const d = NW.dev(S.net, S.selected);
     const target = $('svc-target').value.trim();
-    const res = NW.useService(S.net, d.id, action, target, { tcp: S.tcp });
+    const res = NW.useService(S.net, d.id, action, target, { tcp: S.tcp && has('dienste') });
     if (res.steps.length) await runSteps(res.steps);
     const u = NW.parseURL(target);
     NW.logEvent(S.net, { type: 'svc', action, src: d.id, host: u ? u.host : target, ok: !!res.ok, lost: !!res.lost, tcp: !!res.tcp });

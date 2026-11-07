@@ -780,7 +780,90 @@
   /** Eingebaute und eigene Aufgaben. */
   function all() { return TASKS.concat(CUSTOM); }
 
-  const api = { TASKS, GROUPS, evaluate, byId, manualize, setCustom, all };
+  // ---------------------------------------------------------------- Welche Funktionen sieht man?
+  // Damit die Oberfläche übersichtlich bleibt, blendet jede Aufgabe nur die Werkzeuge,
+  // Geräte und Einstellungen ein, die sie braucht. Grundfunktionen (IPv4-Adresse,
+  // Subnetzmaske, Kabel, Ping) sind immer da.
+  const FEATURES = [
+    { id: 'gateway', label: 'Router und Gateway', text: 'Feld „Gateway“ bei den Endgeräten' },
+    { id: 'wlan', label: 'WLAN', text: 'Werkzeug „WLAN“ und Access Point' },
+    { id: 'dhcp', label: 'DHCP', text: 'Adressen automatisch vergeben lassen' },
+    { id: 'web', label: 'Webseiten und DNS', text: 'Browser, Webserver, DNS-Server und Feld „DNS-Server“' },
+    { id: 'internet', label: 'Internet', text: 'Internetanbieter, Internet-Anschluss des Routers, NAT' },
+    { id: 'v6', label: 'IPv6', text: 'IPv6-Adressen anzeigen und anpingen' },
+    { id: 'topologie', label: 'Bus-Kabel', text: 'Bus-Kabel für die Bustopologie' },
+    { id: 'ausfall', label: 'Ausfälle testen', text: 'Kabelbruch und Geräteausfall simulieren' },
+    { id: 'dateien', label: 'Dateien tauschen', text: 'Peer-to-Peer und Dateiablage auf dem Server' },
+    { id: 'pan', label: 'Bluetooth', text: 'Kopfhörer und Werkzeug „Bluetooth“ (PAN)' },
+    { id: 'netzarten', label: 'Netzarten', text: 'Anzeige PAN, LAN, MAN, WAN und Glasfaserleitung' },
+    { id: 'dienste', label: 'Internetdienste', text: 'E-Mail, Video, Telefonie, Spiele, TCP und UDP' },
+  ];
+  const WEBNET = ['gateway', 'wlan', 'dhcp', 'web', 'internet'];
+  const SHOW = {
+    'zwei-pcs': [],
+    stern: ['ausfall'],
+    heimnetz: ['gateway', 'wlan'],
+    webseite: ['gateway', 'web', 'internet'],
+    dhcp: ['gateway', 'wlan', 'dhcp'],
+    ipv6: ['gateway', 'wlan', 'dhcp', 'internet', 'v6'],
+    bus: ['topologie', 'ausfall'],
+    ring: ['ausfall'],
+    topologien: ['topologie', 'ausfall'],
+    dateien: ['dateien'],
+    pan: ['gateway', 'wlan', 'dhcp', 'pan', 'netzarten'],
+    man: ['web', 'netzarten'],
+    netzarten: WEBNET.concat('pan', 'netzarten'),
+    'tcp-udp': WEBNET.concat('dienste'),
+    'dienste-sortieren': WEBNET.concat('dienste'),
+    dienste: WEBNET.concat('dienste'),
+  };
+  // Im freien Bauen ist alles verfügbar (übersichtlich in einklappbaren Abschnitten).
+  TASKS.forEach(t => { t.show = (!t.free && SHOW[t.id]) || FEATURES.map(f => f.id); });
+
+  /** Funktionen, die ein Netzwerk schon benutzt – sie werden immer eingeblendet, damit nichts verborgen bleibt. */
+  function usedFeatures(net) {
+    const s = new Set();
+    const has = (k, cond) => { if (cond) s.add(k); };
+    for (const d of net.devices) {
+      const t = T[d.type] || {};
+      has('gateway', t.router || (t.host && (d.gw || '').trim()));
+      has('wlan', d.type === 'ap');
+      has('dhcp', (t.host && d.dhcp) || (t.router && d.ports.some(p => p.dhcp && p.dhcp.on)));
+      has('web', t.host && (d.dns || '').trim());
+      has('internet', t.isp);
+      has('pan', t.btOnly);
+      has('topologie', t.bus);
+      has('ausfall', d.off || d.broken);
+      has('dateien', t.host && d.share);
+      if (d.services) {
+        has('web', ['web', 'dns'].some(k => d.services[k] && d.services[k].on));
+        has('dateien', d.services.files && d.services.files.on);
+        has('dienste', ['mail', 'video', 'call', 'game'].some(k => d.services[k] && d.services[k].on));
+      }
+    }
+    for (const l of net.links) {
+      has('wlan', l.kind === 'wlan');
+      has('pan', l.kind === 'bluetooth');
+      has('ausfall', l.broken);
+      has('netzarten', l.stadt);
+      has('dienste', l.loss);
+    }
+    return s;
+  }
+
+  /** Freigegebene Funktionen einer Aufgabe; ohne Angabe (z. B. eigene Aufgaben ohne Auswahl) ist alles frei. */
+  function showOf(task) {
+    return Array.isArray(task.show) && !task.free ? task.show : FEATURES.map(f => f.id);
+  }
+
+  /** Alle Funktionen, die in dieser Aufgabe mit diesem Netzwerk sichtbar sind. */
+  function featuresFor(task, net) {
+    const s = usedFeatures(net);
+    showOf(task).forEach(k => s.add(k));
+    return s;
+  }
+
+  const api = { TASKS, GROUPS, FEATURES, evaluate, byId, manualize, setCustom, all, featuresFor, usedFeatures, showOf };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.NWTasks = api;
 })(typeof window !== 'undefined' ? window : globalThis);

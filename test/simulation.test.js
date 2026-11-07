@@ -1,7 +1,7 @@
 // Automatische Tests für Simulation und Aufgaben: node test/simulation.test.js
 const assert = require('assert');
 const NW = require('../web/js/sim.js');
-const { TASKS, GROUPS, evaluate } = require('../web/js/tasks.js');
+const { TASKS, GROUPS, evaluate, featuresFor, FEATURES } = require('../web/js/tasks.js');
 
 let n = 0;
 function test(name, fn) { fn(); n++; console.log('ok  ' + name); }
@@ -683,6 +683,21 @@ test('Eigene Aufgaben: werden mit Nummer E1 … unter „Eigene Aufgaben" einger
   assert.strictEqual(NWTasks.byId('eigen-neu').solution, null);
   E.install([]);
   assert.strictEqual(NWTasks.byId('eigen-neu'), null);
+});
+
+test('Sichtbare Funktionen: einfache Aufgaben zeigen wenig, freies Bauen alles', () => {
+  const t1 = TASKS.find(t => t.id === 'zwei-pcs');
+  assert.deepStrictEqual([...featuresFor(t1, t1.start())], []);
+  const frei = TASKS.find(t => t.free);
+  assert.strictEqual(featuresFor(frei, frei.start()).size, FEATURES.length);
+  // Was im Netzwerk schon benutzt wird, bleibt sichtbar (z. B. Musterlösungen)
+  for (const t of TASKS) if (t.solution) {
+    const f = featuresFor(t, t.solution());
+    assert.ok(t.show.every(k => f.has(k)));
+  }
+  const net = t1.start();
+  NW.createDevice(net, 'headset', 100, 100);
+  assert.ok(featuresFor(t1, net).has('pan'));
 });
 
 console.log(`\n${n} Tests bestanden.`);
