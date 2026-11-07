@@ -38,7 +38,9 @@ Probleme?
   Sind alle Geräte im selben Netz (gleiches WLAN/Schulnetz)? Wurde bei der
   Windows-Frage „Zugriff zulassen“ gewählt? Manche Schulnetze trennen
   Schüler- und Lehrergeräte – dann hilft die Schul-IT.
-- Neues Lehrer-Passwort oder neuer Raumcode: Programm beenden, die Datei
+- Der Raumcode ist nach jedem Start ein neuer. Wer schon angemeldet ist,
+  arbeitet trotzdem einfach weiter.
+- Neues Lehrer-Passwort: Programm beenden, die Datei
   „netzwerkstatt-daten.json“ umbenennen oder löschen, neu starten.
 
 Weitere Infos und neue Versionen: https://github.com/Obi-Wahn/NetzWerkstatt
