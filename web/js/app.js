@@ -36,7 +36,7 @@
   async function start() {
     if (!S.token) { show('login'); if (roomParam) setTimeout(() => $('login-name').focus(), 50); return; }
     try {
-      S.me = await api('GET', '/api/me', undefined, S.token);
+      setMe(await api('GET', '/api/me', undefined, S.token));
       showTasks();
     } catch (e) {
       if (e.status === 401) { store.del('nw_token'); S.token = null; }
@@ -52,7 +52,7 @@
       const r = await api('POST', '/api/login', { name: $('login-name').value, room: $('login-room').value });
       S.token = r.token;
       store.set('nw_token', r.token);
-      S.me = await api('GET', '/api/me', undefined, S.token);
+      setMe(await api('GET', '/api/me', undefined, S.token));
       if (r.returning) toast(`Willkommen zurück, ${r.name}!`);
       showTasks();
     } catch (e) {
@@ -69,16 +69,37 @@
   });
 
   async function refreshMe() {
-    try { S.me = await api('GET', '/api/me', undefined, S.token); } catch (e) { /* später erneut */ }
+    try { setMe(await api('GET', '/api/me', undefined, S.token)); } catch (e) { /* später erneut */ }
   }
+
+  /** Eigenen Stand übernehmen: freigeschaltete und eigene Aufgaben der Lehrkraft. */
+  function setMe(me) {
+    S.me = me;
+    NWEigene.install(me.customTasks || []);
+  }
+  // Nur Aufgaben, die die Lehrkraft freigeschaltet hat (im Baukasten der Lehrkraft alle)
+  const visible = t => !!(S.me && (S.me.preview || (S.me.unlocked && S.me.unlocked[t.id])));
+
+  // Die Übersicht fragt regelmäßig nach, damit neu freigeschaltete Aufgaben ohne Neuladen erscheinen.
+  let listSig = '';
+  setInterval(async () => {
+    if (document.hidden || $('screen-tasks').hidden || !S.token) return;
+    await refreshMe();
+    const sig = JSON.stringify(S.me);
+    if (sig !== listSig) showTasks();
+  }, 6000);
 
   function showTasks() {
     show('tasks');
+    listSig = JSON.stringify(S.me);
     $('who').textContent = S.me ? S.me.name : '';
+    $('preview-note').hidden = !(S.me && S.me.preview);
     const list = $('task-list');
     list.innerHTML = '';
+    let shown = 0;
     for (const g of NWTasks.GROUPS) {
-      const items = NWTasks.TASKS.filter(t => t.group === g.id);
+      const items = NWTasks.all().filter(t => t.group === g.id && visible(t));
+      shown += items.length;
       if (!items.length) continue;
       const sec = document.createElement('section');
       sec.className = 'task-group';
@@ -91,18 +112,20 @@
         const status = w ? (w.submitted ? '<span class="badge ok">abgegeben ✓</span>' : '<span class="badge">angefangen</span>') : '<span class="badge new">neu</span>';
         const sol = S.me && S.me.released[t.id] ? '<span class="badge sol">Musterlösung da</span>' : '';
         const b = document.createElement('button');
-        b.className = 'task-tile' + (t.free ? ' free' : '') + (w && w.submitted ? ' done' : '');
+        b.className = 'task-tile' + (t.free ? ' free' : '') + (t.custom ? ' custom' : '') + (w && w.submitted ? ' done' : '');
         b.innerHTML = `<div class="tile-num">${t.free ? '∞' : t.num}</div><div class="tile-body"><h4>${esc(t.title)}</h4><p>${esc(t.intro)}</p><div class="tile-meta">${t.free ? '' : status}${sol}${t.goals.length ? `<span class="muted small">${t.goals.length} Ziele</span>` : ''}</div></div>`;
         b.addEventListener('click', () => openTask(t.id));
         grid.appendChild(b);
       }
       list.appendChild(sec);
     }
+    $('no-tasks').hidden = shown > 0;
   }
 
   // ---------------------------------------------------------------- Aufgabe öffnen
   async function openTask(id) {
     const task = NWTasks.byId(id);
+    if (!task) { toast('Diese Aufgabe gibt es nicht mehr.', 'error'); showTasks(); return; }
     let saved = null;
     try { saved = await api('GET', '/api/work/' + encodeURIComponent(id), undefined, S.token); } catch (e) {
       if (e.status === 401) { show('login'); return; }
