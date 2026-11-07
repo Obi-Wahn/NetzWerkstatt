@@ -426,8 +426,36 @@ func securityHeaders(h http.Handler) http.Handler {
 	})
 }
 
+// virtualAdapter erkennt typische virtuelle Netzwerkadapter (VirtualBox, VMware,
+// Hyper-V, WSL, Docker …), über die Schülergeräte die NetzWerkstatt nicht erreichen.
+func virtualAdapter(name string) bool {
+	n := strings.ToLower(name)
+	for _, k := range []string{"virtualbox", "vbox", "vmware", "vmnet", "hyper-v", "vethernet", "wsl", "docker", "veth", "br-", "virbr", "tailscale", "zerotier", "tun", "tap", "vpn", "loopback", "bluetooth"} {
+		if strings.Contains(n, k) {
+			return true
+		}
+	}
+	return false
+}
+
+// outboundIP liefert die Adresse, über die dieser Rechner standardmäßig ins Netz geht.
+// Es wird dabei nichts gesendet: Bei UDP legt Dial nur die Route fest.
+func outboundIP() net.IP {
+	c, err := net.Dial("udp4", "192.0.2.1:9")
+	if err != nil {
+		return nil
+	}
+	defer c.Close()
+	if a, ok := c.LocalAddr().(*net.UDPAddr); ok {
+		return a.IP.To4()
+	}
+	return nil
+}
+
+// localIPs liefert die IPv4-Adressen dieses Rechners; die wahrscheinlich richtige
+// Schulnetz-Adresse steht vorne, Adressen virtueller Adapter hinten.
 func localIPs() []string {
-	var out []string
+	var real, virtual []string
 	ifaces, _ := net.Interfaces()
 	for _, ifc := range ifaces {
 		if ifc.Flags&net.FlagUp == 0 || ifc.Flags&net.FlagLoopback != 0 {
@@ -435,12 +463,29 @@ func localIPs() []string {
 		}
 		addrs, _ := ifc.Addrs()
 		for _, a := range addrs {
-			if ipn, ok := a.(*net.IPNet); ok {
-				if ip4 := ipn.IP.To4(); ip4 != nil && !ip4.IsLinkLocalUnicast() {
-					out = append(out, ip4.String())
-				}
+			ipn, ok := a.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ip4 := ipn.IP.To4()
+			if ip4 == nil || ip4.IsLinkLocalUnicast() {
+				continue
+			}
+			if virtualAdapter(ifc.Name) {
+				virtual = append(virtual, ip4.String())
+			} else {
+				real = append(real, ip4.String())
 			}
 		}
 	}
-	return out
+	all := append(real, virtual...)
+	if ob := outboundIP(); ob != nil {
+		for i, ip := range all {
+			if ip == ob.String() {
+				all = append([]string{ip}, append(all[:i:i], all[i+1:]...)...)
+				break
+			}
+		}
+	}
+	return all
 }

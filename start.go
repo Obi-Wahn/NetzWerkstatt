@@ -211,9 +211,11 @@ func main() {
 	fmt.Println("  Adresse für die Schülerinnen und Schüler:")
 	if len(ips) == 0 {
 		fmt.Printf("      http://localhost:%d   (nur auf diesem Rechner)\n", p)
-	}
-	for _, ip := range ips {
-		fmt.Printf("      http://%s:%d\n", ip, p)
+	} else {
+		fmt.Printf("      http://%s:%d\n", ips[0], p)
+		if len(ips) > 1 {
+			fmt.Println("      (Falls das nicht klappt: In der Lehrkraft-Ansicht kann eine andere Adresse gewählt werden.)")
+		}
 	}
 	fmt.Println()
 	fmt.Printf("  Raumcode:          %s\n", store.RoomCode)
