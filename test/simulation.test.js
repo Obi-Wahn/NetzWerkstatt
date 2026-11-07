@@ -879,4 +879,27 @@ test('Rechenzentrum: Internetserver mit eigenem öffentlichem Netz, erreichbar �
   assert.ok(r.steps.some(s => s.path.join() === 'pc,r,isp,rz1,web'), 'HTTP geht ins andere Rechenzentrum');
 });
 
+test('Falscher Dienst bei einem Aufgaben-Server: Tipp zeigt den passenden Knopf statt „einschalten"', () => {
+  const net = TASKS.find(t => t.id === 'tcp-udp').solution();
+  const w = NW.useService(net, 'tb', 'web', 'http://video.netzwerkstatt.de');
+  assert.ok(!w.ok);
+  assert.match(w.hint, /Video ansehen/);
+  assert.doesNotMatch(w.hint, /Schalte/);
+  const c = NW.useService(net, 'tb', 'video', 'konferenz.netzwerkstatt.de');
+  assert.match(c.hint, /Videoanruf/);
+  assert.doesNotMatch(c.hint, /Schalte/);
+  const d = NW.useService(net, 'tb', 'web', 'http://203.0.113.53');
+  assert.match(d.hint, /gehört zur Aufgabe/);
+});
+
+test('Keine Aufgabe verlangt, einen Dienst auf einem gesperrten Server einzuschalten', () => {
+  for (const t of TASKS.filter(t => t.start && t.solution)) {
+    const a = t.start(), b = t.solution();
+    for (const d of a.devices.filter(d => d.locked && d.services)) {
+      const on = x => Object.keys(x.services).filter(k => x.services[k].on).join();
+      assert.strictEqual(on(NW.dev(b, d.id)), on(d), `${t.id}: ${d.name}`);
+    }
+  }
+});
+
 console.log(`\n${n} Tests bestanden.`);

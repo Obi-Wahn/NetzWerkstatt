@@ -607,7 +607,10 @@
 
   function urlChips() {
     const names = new Set();
-    S.net.devices.forEach(o => o.services && o.services.dns && o.services.dns.on && (o.services.dns.entries || []).forEach(e => e.name && names.add(e.name.trim())));
+    // Nur Namen vorschlagen, hinter denen ein Webserver steht (oder ein unbekanntes Gerät) –
+    // sonst landet z. B. video.… im Browser statt bei „Video ansehen".
+    const webby = ip => { const o = S.net.devices.find(x => x.services && (x.ip || '').trim() === (ip || '').trim()); return !o || NW.svcOn(o, 'web') || !['mail', 'video', 'call', 'game'].some(k => NW.svcOn(o, k)); };
+    S.net.devices.forEach(o => o.services && o.services.dns && o.services.dns.on && (o.services.dns.entries || []).forEach(e => e.name && webby(e.ip) && names.add(e.name.trim())));
     return names.size ? `<div class="chips">${[...names].map(n => `<button class="chip" data-fill="url" data-val="http://${esc(n)}">${esc(n)}</button>`).join('')}</div>` : '';
   }
 
