@@ -43,6 +43,13 @@
     return '';
   }
 
+  /** Namen der eingeschalteten Dienste eines Servers (z. B. www.meineseite.de) als zweite Zeile, sonst ''. */
+  function serverNames(d) {
+    if (!d.services) return '';
+    const names = [...new Set(NW.NAMED_SERVICES.filter(k => NW.svcOn(d, k) && NW.validHost(NW.svcHost(d, k))).map(k => NW.svcHost(d, k)))];
+    return names.length ? names[0] + (names.length > 1 ? ' +' + (names.length - 1) : '') : '';
+  }
+
   /** Beschriftung unter einem Router: Adresse im Heimnetz (LAN) und ggf. am Internet-Anschluss (WAN). */
   function routerLabels(d) {
     const lan = d.ports[NW.LAN], wan = d.ports[NW.WAN];
@@ -182,7 +189,7 @@
       icon.innerHTML = ICONS[d.cloud ? 'cloud' : d.type];
       const name = el('text', { x: 0, y: BOX.h / 2 + 17, 'text-anchor': 'middle', class: 'name' }, g);
       name.textContent = d.name;
-      const subs = d.off ? ['✕ ausgefallen'] : opts.v6 ? (v6map ? v6Labels(d, v6map) : []) : NW.TYPES[d.type].router && !d.cloud ? routerLabels(d) : [hostLabel(d)].filter(Boolean);
+      const subs = d.off ? ['✕ ausgefallen'] : opts.v6 ? (v6map ? v6Labels(d, v6map) : []) : NW.TYPES[d.type].router && !d.cloud ? routerLabels(d) : [hostLabel(d), serverNames(d)].filter(Boolean);
       subs.forEach((sub, k) => {
         const s = el('text', { x: 0, y: BOX.h / 2 + 33 + k * 15, 'text-anchor': 'middle', class: 'ip' + (/keine IP|ausgefallen/.test(sub) ? ' missing' : '') }, g);
         s.textContent = sub;

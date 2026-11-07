@@ -621,7 +621,10 @@
 
   function urlChips() {
     const names = new Set();
-    S.net.devices.forEach(o => o.services && o.services.dns && o.services.dns.on && (o.services.dns.entries || []).forEach(e => e.name && names.add(e.name.trim())));
+    // Nur Namen vorschlagen, hinter denen ein Webserver steht (oder ein unbekanntes Gerät) –
+    // sonst landet z. B. video.… im Browser statt bei „Video ansehen".
+    const webby = ip => { const o = S.net.devices.find(x => x.services && (x.ip || '').trim() === (ip || '').trim()); return !o || NW.svcOn(o, 'web') || !['mail', 'video', 'call', 'game'].some(k => NW.svcOn(o, k)); };
+    S.net.devices.forEach(o => o.services && o.services.dns && o.services.dns.on && (o.services.dns.entries || []).forEach(e => e.name && webby(e.ip) && names.add(e.name.trim())));
     return names.size ? `<div class="chips">${[...names].map(n => `<button class="chip" data-fill="url" data-val="http://${esc(n)}">${esc(n)}</button>`).join('')}</div>` : '';
   }
 
@@ -631,6 +634,47 @@
     S.net.devices.forEach(o => o.services && o.services.dns && o.services.dns.on && (o.services.dns.entries || []).forEach(e => e.name && vals.add(e.name.trim())));
     S.net.devices.forEach(o => { if (o.services && ['mail', 'video', 'call', 'game'].some(k => NW.svcOn(o, k)) && NW.parseIP(o.ip) !== null) vals.add(o.ip.trim()); });
     return vals.size ? `<div class="chips">${[...vals].map(n => `<button class="chip" data-fill="svc" data-val="${esc(n)}">${esc(n)}</button>`).join('')}</div>` : '';
+  }
+
+  // ---------------------------------------------------------------- Internetdienste: passender Knopf
+  const SVC_ACTIONS = ['mail', 'mailget', 'video', 'call', 'game'];
+  /** Einfache Strich-Symbole für die Dienst-Knöpfe. */
+  const SVC_ICONS = {
+    mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>',
+    mailget: '<path d="M4 13v5a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5"/><path d="M12 3v11m-4-4 4 4 4-4"/>',
+    video: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z" fill="currentColor"/>',
+    call: '<rect x="3" y="7" width="12" height="10" rx="2"/><path d="m15 11 6-3v8l-6-3"/>',
+    game: '<rect x="2" y="8" width="20" height="10" rx="5"/><path d="M7 11v4M5 13h4"/><circle cx="16" cy="12" r="1" fill="currentColor"/><circle cx="18" cy="14" r="1" fill="currentColor"/>',
+  };
+  /** Welcher Server steckt hinter dem eingetippten Namen bzw. der IP-Adresse? (nur als Hilfe für die Anzeige) */
+  function svcServer(val) {
+    val = (val || '').trim().toLowerCase();
+    if (!val) return null;
+    const byIp = ip => S.net.devices.find(o => o.services && (o.ip || '').trim() === (ip || '').trim());
+    let srv = byIp(val);
+    if (!srv) S.net.devices.forEach(o => o.services && o.services.dns && o.services.dns.on && (o.services.dns.entries || []).forEach(e => {
+      if (!srv && (e.name || '').trim().toLowerCase() === val) srv = byIp(e.ip);
+    }));
+    return srv || null;
+  }
+  /** Knöpfe, die zum Server im Feld passen. */
+  function svcMatches(val) {
+    const srv = svcServer(val);
+    return srv ? SVC_ACTIONS.filter(a => NW.svcOn(srv, NW.ACTIONS[a].svc)) : [];
+  }
+  function svcHintText(val) {
+    const srv = svcServer(val), m = svcMatches(val);
+    if (srv && m.length) return `${esc(srv.name)} bietet das an – tippe auf ${m.map(a => '<b>„' + esc(NW.ACTIONS[a].label) + '“</b>').join(' oder ')}:`;
+    return 'Wähle zuerst einen Server. Dann tippst du auf einen dieser Knöpfe – er schickt die Anfrage los:';
+  }
+  /** Hebt die passenden Knöpfe hervor, sobald ein Server im Feld steht. */
+  function markSvcButtons() {
+    const inp = $('svc-target');
+    if (!inp) return;
+    const m = svcMatches(inp.value);
+    insp.querySelectorAll('[data-act="svc"]').forEach(b => b.classList.toggle('match', m.includes(b.dataset.svc)));
+    const h = $('svc-hint');
+    if (h) h.innerHTML = svcHintText(inp.value);
   }
 
   // ---------------------------------------------------------------- Sichtbare Funktionen und Abschnitte
@@ -654,6 +698,32 @@
     }
     const list = [...vals].filter(([ip]) => NW.parseIP(ip) !== own).slice(0, 3);
     return list.length ? `<div class="chips">${list.map(([ip, who]) => `<button class="chip suggest" data-act="dns-forward" data-val="${esc(ip)}">💡 ${esc(who)} (${esc(ip)}) fragen</button>`).join('')}</div>` : '';
+  }
+
+  // Beispielnamen für die Dienste eines Servers
+  const HOST_EXAMPLE = { web: 'www.meineseite.de', mail: 'mail.meineseite.de', video: 'video.meineseite.de', call: 'call.meineseite.de', game: 'spiel.meineseite.de' };
+
+  /** Stand des Namens im DNS mit Knöpfen zum Eintragen (wird beim Tippen neu gezeichnet). */
+  function nameStatusHTML(d, k, dis) {
+    const st = NW.nameStatus(S.net, d.id, k);
+    if (!st.host) return `<p class="muted small">Unter diesem Namen können Geräte den Dienst aufrufen, sobald er bei einem DNS-Server eingetragen ist.</p>`;
+    if (!st.valid) return `<p class="fhint bad">Kein gültiger Name. Ein Name besteht aus Teilen mit Buchstaben, Ziffern oder Bindestrichen, getrennt durch Punkte, z. B. ${esc(HOST_EXAMPLE[k])}.</p>`;
+    if (st.ip === null) return `<p class="fhint warn">${esc(d.name)} hat noch keine IP-Adresse. Erst dann kann ein DNS-Server den Namen in eine Adresse übersetzen.</p>`;
+    const nm = id => esc(NW.dev(S.net, id).name);
+    let h = '';
+    if (st.at.length) h += `<p class="fhint ok">✓ Eingetragen bei ${st.at.map(nm).join(', ')}: ${esc(st.host)} → ${esc(NW.ipStr(st.ip))}</p>`;
+    if (st.stale.length) h += `<p class="fhint warn">Bei ${st.stale.map(nm).join(', ')} zeigt ${esc(st.host)} auf eine andere IP-Adresse.</p>`;
+    if (!st.servers.length) return h + `<p class="fhint warn">Noch gibt es keinen DNS-Server, der den Namen kennt. Stelle einen DNS-Server ins Netz und trage den Namen dort ein.</p>`;
+    if (!st.at.length && !st.stale.length) h += `<p class="fhint warn">Noch kennt kein DNS-Server diesen Namen. Ohne DNS-Eintrag finden die Geräte ${esc(d.name)} nur über die IP-Adresse.</p>`;
+    const todo = st.servers.filter(id => !st.at.includes(id));
+    if (!dis && todo.length) h += `<div class="chips">${todo.slice(0, 4).map(id => `<button class="chip suggest" data-act="name-dns" data-svc="${k}" data-dns="${id}">💡 ${st.stale.includes(id) ? 'Eintrag bei ' + nm(id) + ' anpassen' : 'Bei ' + nm(id) + ' eintragen'}</button>`).join('')}</div>`;
+    return h;
+  }
+  /** Feld „Name im Internet“ für einen Dienst des Servers. */
+  function nameBlock(d, k, dis) {
+    if (!has('web') || (dis && !NW.svcHost(d, k))) return '';
+    return `<div class="svc-name">${field('Name im Internet', `services.${k}.host`, d.services[k].host || '', '', { disabled: dis, placeholder: 'z. B. ' + HOST_EXAMPLE[k] })}
+      <div class="name-dns" data-svc="${k}">${nameStatusHTML(d, k, dis)}</div></div>`;
   }
 
   function sec(key, title, body, feat, cls) {
@@ -827,6 +897,7 @@
       if (has('web')) {
         b += toggle('web', 'Webserver (HTTP)');
         if (w.on) {
+          b += nameBlock(d, 'web', dis);
           b += field('Titel der Webseite', 'services.web.title', w.title, '', { disabled: dis });
           b += field('Text der Webseite', 'services.web.text', w.text, '', { disabled: dis });
         }
@@ -859,10 +930,14 @@
         if (d.services.mail.on) {
           const nb = (d.services.mail.box || []).length;
           b += `<p class="svc-info">Postfach: <b>${nb === 1 ? '1 E-Mail' : nb + ' E-Mails'}</b></p>`;
+          b += nameBlock(d, 'mail', dis);
         }
         b += toggle('video', 'Video-Streaming');
+        if (d.services.video.on) b += nameBlock(d, 'video', dis);
         b += toggle('call', 'Video- und Audio-Telefonie');
+        if (d.services.call.on) b += nameBlock(d, 'call', dis);
         b += toggle('game', 'Spiele-Server (Online-Spiel)');
+        if (d.services.game.on) b += nameBlock(d, 'game', dis);
       }
       if (has('web') || has('dateien') || has('dienste')) {
         const feat = ['dienste', 'web', 'dateien'].find(k => NWTasks.showOf(S.task).includes(k)) || 'dienste';
@@ -881,7 +956,8 @@
       if (has('dienste')) h += sec('svc-use', 'Internetdienste nutzen', `<label class="field">Server (Name oder IP-Adresse)
           <input id="svc-target" placeholder="z. B. mail.beispiel.de" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
         ${serverChips()}
-        <div class="svc-btns">${['mail', 'mailget', 'video', 'call', 'game'].map(a => `<button class="btn" data-act="svc" data-svc="${a}">${esc(NW.ACTIONS[a].label)}</button>`).join('')}</div>
+        <div class="svc-box"><p class="svc-ask" id="svc-hint">${svcHintText()}</p>
+        <div class="svc-btns">${SVC_ACTIONS.map(a => `<button class="svc-act" data-act="svc" data-svc="${a}"><svg class="svc-ico" viewBox="0 0 24 24" aria-hidden="true">${SVC_ICONS[a]}</svg><span>${esc(NW.ACTIONS[a].label)}</span></button>`).join('')}</div></div>
         <label class="toggle"><input type="checkbox" data-act="tcp-details" ${S.tcp ? 'checked' : ''}> TCP genau zeigen (Verbindungsaufbau und Bestätigungen)</label>`, 'dienste', 'test');
       const bt = NW.btPartners(S.net, d.id);
       if (bt.length) {
@@ -1088,6 +1164,7 @@
 
   insp.addEventListener('input', ev => {
     const inp = ev.target;
+    if (inp.id === 'svc-target') { markSvcButtons(); return; }
     if (!inp.dataset.path || readOnly()) return;
     const d = NW.dev(S.net, S.selected);
     if (!d || d.locked) return;
@@ -1111,9 +1188,16 @@
       if (n) toast(`${n === 1 ? 'Ein Gerät hat' : n + ' Geräte haben'} den neuen DNS-Server per DHCP übernommen.`, 'ok');
     }
     if (inp.type === 'checkbox') renderInspector(); else updateHints();
+    refreshNameStatus(d);
     renderCanvas(); renderGoals(); scheduleSave();
     if (dm && val) autoDhcp();
   });
+
+  /** Namen der Dienste: Stand im DNS neu anzeigen (z. B. nach Tippen des Namens oder einer neuen IP-Adresse). */
+  function refreshNameStatus(d) {
+    const dis = readOnly() || d.locked;
+    insp.querySelectorAll('.name-dns[data-svc]').forEach(el => { el.innerHTML = nameStatusHTML(d, el.dataset.svc, dis); });
+  }
 
   function setPortAuto(d, i) {
     const sg = NW.suggestPortIP(S.net, d, i);
@@ -1143,7 +1227,13 @@
     if (ev.key !== 'Enter') return;
     if (ev.target.id === 'ping-target') { ev.preventDefault(); doPing(); }
     if (ev.target.id === 'url-target') { ev.preventDefault(); doBrowse(); }
-    if (ev.target.id === 'svc-target') { ev.preventDefault(); doService('mail'); }
+    if (ev.target.id === 'svc-target') {
+      ev.preventDefault();
+      // Eingabetaste: Bietet der Server genau einen passenden Dienst an, wird er benutzt
+      const m = svcMatches(ev.target.value);
+      if (m.length === 1 || (m.length === 2 && m.includes('mail') && m.includes('mailget'))) doService(m[0]);
+      else toast('Tippe auf einen der Knöpfe unter dem Feld, z. B. „Video ansehen“.', 'error');
+    }
   });
 
   insp.addEventListener('click', async ev => {
@@ -1152,6 +1242,7 @@
     if (b.dataset.fill) {
       const target = $({ ping: 'ping-target', url: 'url-target', file: 'file-target', svc: 'svc-target' }[b.dataset.fill]);
       target.value = b.dataset.val;
+      if (b.dataset.fill === 'svc') markSvcButtons();
       return;
     }
     if (b.dataset.act === 'stadt') {
@@ -1241,6 +1332,13 @@
         renderAll(); scheduleSave(); break;
       case 'dns-forward':
         d.services.dns.forward = b.dataset.val; renderInspector(); renderGoals(); scheduleSave(); break;
+      case 'name-dns': {
+        if (readOnly() || d.locked) break;
+        const r = NW.registerName(S.net, d.id, b.dataset.svc, b.dataset.dns);
+        if (r.ok) toast(`${NW.dev(S.net, b.dataset.dns).name} übersetzt jetzt ${r.host} in ${r.ip}.`, 'ok');
+        else toast(r.error, 'error');
+        renderInspector(); renderGoals(); scheduleSave(); break;
+      }
       case 'dns-add':
         d.services.dns.entries.push({ name: '', ip: '' }); renderInspector(); scheduleSave(); break;
       case 'dns-del':

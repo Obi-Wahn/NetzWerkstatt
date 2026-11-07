@@ -818,7 +818,7 @@
     mail:  { label: 'E-Mail-Server', server: 'E-Mail-Server', proto: 'TCP', port: 25,
       why: 'Eine E-Mail muss vollständig ankommen, kein Buchstabe darf fehlen. Deshalb TCP. Senden heißt SMTP (Port 25), Abrufen heißt IMAP (Port 143). Der Server bewahrt die E-Mails auf, bis sie abgerufen werden.' },
     video: { label: 'Video-Streaming', server: 'Video-Server', proto: 'TCP', port: 80,
-      why: 'Ein Video auf Abruf (z. B. aus einer Mediathek) wird über HTTP und TCP ein paar Sekunden im Voraus in einen Puffer geladen. Geht ein Paket verloren, wird es neu gesendet, bevor es gebraucht wird.' },
+      why: 'Ein Video auf Abruf (z. B. aus einer Mediathek) wird über HTTP und TCP ein paar Sekunden im Voraus in einen Puffer geladen. Geht ein Paket verloren, wird es neu gesendet, bevor es gebraucht wird. HTTP bringt der Video-Server selbst mit – ein zusätzlicher Webserver ist nicht nötig. Angesehen wird das Video mit „Video ansehen", nicht im Browser.' },
     call:  { label: 'Video- und Audio-Telefonie', server: 'Telefonie-Server', proto: 'UDP', port: 5004,
       why: 'Im Gespräch zählt jede Zehntelsekunde. Ein neu gesendetes Paket käme zu spät. Deshalb UDP: Fehlt ein Paket, ruckelt das Bild kurz, aber das Gespräch läuft weiter.' },
     game:  { label: 'Spiele-Server (Online-Spiel)', server: 'Spiele-Server', proto: 'UDP', port: 7777,
@@ -837,17 +837,78 @@
 
   function defaultServices() {
     return {
-      web: { on: false, title: 'Willkommen!', text: 'Das ist meine erste Webseite.' },
+      web: { on: false, title: 'Willkommen!', text: 'Das ist meine erste Webseite.', host: '' },
       dns: { on: false, entries: [], forward: '' },
-      mail: { on: false, box: [] },
-      video: { on: false },
-      call: { on: false },
-      game: { on: false },
+      mail: { on: false, box: [], host: '' },
+      video: { on: false, host: '' },
+      call: { on: false, host: '' },
+      game: { on: false, host: '' },
       files: { on: false, files: [] },
     };
   }
 
   function svcOn(d, k) { return !!(d && d.services && d.services[k] && d.services[k].on); }
+
+  // ------------------------------------------------------------------ Namen der Dienste (z. B. www.meineseite.de)
+  /** Dienste, für die man beim Server einen Namen im Internet eintragen kann. */
+  const NAMED_SERVICES = ['web', 'mail', 'video', 'call', 'game'];
+
+  /** Ein Name wie www.meineseite.de (Buchstaben, Ziffern, Bindestriche, mindestens ein Punkt)? */
+  function validHost(h) {
+    h = (h || '').trim().toLowerCase();
+    return h.length <= 253 && parseIP(h) === null && /^[a-z0-9äöüß]([a-z0-9äöüß-]*[a-z0-9äöüß])?(\.[a-z0-9äöüß]([a-z0-9äöüß-]*[a-z0-9äöüß])?)+$/.test(h);
+  }
+
+  /** Eingetragener Name eines Dienstes (klein geschrieben, ohne Leerzeichen) oder ''. */
+  function svcHost(d, k) {
+    const s = d && d.services && d.services[k];
+    return s ? (s.host || '').trim().toLowerCase() : '';
+  }
+
+  /**
+   * Wo steht der Name eines Dienstes im DNS?
+   * Ergebnis: {host, ip, valid, servers: alle DNS-Server (IDs), at: DNS-Server mit passendem Eintrag,
+   * stale: DNS-Server, bei denen der Name auf eine andere IP-Adresse zeigt}
+   */
+  function nameStatus(net, srvId, k) {
+    const d = dev(net, srvId);
+    const host = svcHost(d, k);
+    const ip = d ? parseIP(d.ip || '') : null;
+    const out = { host, ip, valid: validHost(host), servers: [], at: [], stale: [] };
+    for (const o of net.devices) {
+      if (!svcOn(o, 'dns')) continue;
+      out.servers.push(o.id);
+      if (!host) continue;
+      const es = (o.services.dns.entries || []).filter(e => (e.name || '').trim().toLowerCase() === host);
+      if (!es.length) continue;
+      if (ip !== null && es.some(e => parseIP(e.ip) === ip)) out.at.push(o.id);
+      else out.stale.push(o.id);
+    }
+    return out;
+  }
+
+  /**
+   * Trägt den Namen eines Dienstes beim DNS-Server dnsId ein (Name → IP-Adresse des Servers),
+   * wie wenn man eine Domain anmeldet. Ein vorhandener Eintrag mit dem Namen wird angepasst.
+   */
+  function registerName(net, srvId, k, dnsId) {
+    const d = dev(net, srvId), ds = dev(net, dnsId);
+    const host = svcHost(d, k);
+    if (!validHost(host)) return { ok: false, error: 'Trage zuerst einen gültigen Namen ein, z. B. www.meineseite.de.' };
+    const ip = parseIP(d.ip || '');
+    if (ip === null) return { ok: false, error: `${d.name} hat noch keine IP-Adresse.` };
+    if (!svcOn(ds, 'dns')) return { ok: false, error: `Auf ${ds ? ds.name : 'diesem Gerät'} läuft kein DNS-Server.` };
+    const entries = ds.services.dns.entries || (ds.services.dns.entries = []);
+    const same = entries.filter(e => (e.name || '').trim().toLowerCase() === host);
+    if (same.length) {
+      same[0].name = host; same[0].ip = ipStr(ip);
+      for (const e of same.slice(1)) entries.splice(entries.indexOf(e), 1);
+      return { ok: true, updated: true, host, ip: ipStr(ip) };
+    }
+    const empty = entries.find(e => !(e.name || '').trim() && !(e.ip || '').trim());
+    if (empty) { empty.name = host; empty.ip = ipStr(ip); } else entries.push({ name: host, ip: ipStr(ip) });
+    return { ok: true, updated: false, host, ip: ipStr(ip) };
+  }
 
   function linkBetween(net, a, b) {
     return net.links.find(l => (l.a === a && l.b === b) || (l.a === b && l.b === a)) || null;
@@ -944,7 +1005,7 @@
   /** Die Nachrichten eines Dienstes (ohne TCP-Verwaltungspakete). dir: 'up' = zum Server, 'down' = zurück. */
   const MESSAGES = {
     web: (src, srv, u) => [
-      { dir: 'up', label: 'HTTP-Request', short: 'Die Anfrage', text: `GET ${u.path} – „Schick mir bitte die Webseite ${u.host}"` },
+      { dir: 'up', label: 'HTTP-Request', short: 'Die Anfrage', text: `GET ${u.path} · Host: ${u.host} – „Schick mir bitte die Webseite ${u.host}"` },
       { dir: 'down', label: 'HTTP-Response', short: 'Die Webseite', text: '200 OK – hier ist die Webseite' },
     ],
     mail: (src, srv) => [
@@ -958,8 +1019,8 @@
         { dir: 'down', label: 'IMAP: E-Mails', short: 'Die Antwort', text: n ? `${srv.name}: „Hier sind ${plural(n, 'E-Mail', 'E-Mails')}."` : `${srv.name}: „Das Postfach ist leer."` },
       ];
     },
-    video: () => [
-      { dir: 'up', label: 'Video-Anfrage', short: 'Die Anfrage', text: 'GET /video – „Schick mir bitte das Video."' },
+    video: (src, srv, u) => [
+      { dir: 'up', label: 'Video-Anfrage', short: 'Die Anfrage', text: `GET /video · Host: ${u.host} – „Schick mir bitte das Video."` },
       { dir: 'down', label: 'Videodaten 1/3', short: 'Teil 1', text: 'Teil 1 des Videos – kommt in den Puffer' },
       { dir: 'down', label: 'Videodaten 2/3', short: 'Teil 2', text: 'Teil 2 des Videos – kommt in den Puffer' },
       { dir: 'down', label: 'Videodaten 3/3', short: 'Teil 3', text: 'Teil 3 des Videos – kommt in den Puffer' },
@@ -1093,7 +1154,15 @@
         const m = msgs ? msgs[0] : MESSAGES[action](src, { name: srv.name, services: {} }, u)[0];
         steps.push({ kind: 'request', label: m.label, proto, text: m.text, note: natNote(net, rt, 'there'), path: rt.there.path, ok: true });
       }
-      return res(false, { error: `Unter ${ipStr(ip)} (${srv.name}) läuft kein ${S.server}.`, hint: TYPES[srv.type].services ? `Schalte beim Server den Dienst „${S.label}" ein.` : `${srv.name} ist kein Server. Dienste wie ${S.label} bieten nur Server an.` });
+      return res(false, { error: `Unter ${ipStr(ip)} (${srv.name}) läuft kein ${S.server}.`, hint: missingServiceHint(srv, action, S) });
+    }
+    // HTTP (Webseite, Video): Der Browser schickt den Namen mit (Host). Hat der Server einen anderen Namen, kennt er die Seite nicht.
+    const own = svcHost(srv, A.svc);
+    if ((action === 'web' || action === 'video') && own && parseIP(u.host) === null && u.host !== own) {
+      const m = MESSAGES[action](src, srv, u)[0];
+      steps.push({ kind: 'request', label: m.label, proto, text: m.text, note: natNote(net, rt, 'there'), path: rt.there.path, ok: true });
+      steps.push({ kind: 'response', label: 'HTTP-Response', proto, text: `404 Not Found – „${u.host} gibt es bei mir nicht. Ich bin ${own}."`, note: natNote(net, rt, 'back'), path: rt.back.path, ok: true, bad: true });
+      return res(false, { error: `${srv.name} ist für ${own} zuständig, nicht für ${u.host}. Er antwortet mit „404 Not Found“.`, hint: `Der DNS-Server hat ${u.host} in die IP-Adresse von ${srv.name} übersetzt. Prüfe den DNS-Eintrag oder den Namen beim Server.`, dns: r.dns, target: srv.id });
     }
     const msgs = MESSAGES[action](src, srv, u);
     const ex = exchange(net, rt, src, srv, msgs, proto, details);
@@ -1108,6 +1177,28 @@
     if (action === 'mailget') { extra.mails = ((srv.services.mail || {}).box || []).slice(); n = extra.mails.length; }
     extra.message = serviceMessage(action, srv, page, ex.lost, n);
     return res(true, extra);
+  }
+
+  /**
+   * Tipp, wenn der angefragte Dienst auf dem Ziel nicht läuft.
+   * Ein Server, der zur Aufgabe gehört (gesperrt), kann nicht umgestellt werden:
+   * Dann zeigt der Tipp, welchen Dienst er stattdessen anbietet und welcher Knopf passt.
+   */
+  function missingServiceHint(srv, action, S) {
+    if (!TYPES[srv.type].services) return `${srv.name} ist kein Server. Dienste wie ${S.label} bieten nur Server an.`;
+    const offered = Object.keys(ACTIONS).filter(a => a !== action && svcOn(srv, ACTIONS[a].svc));
+    const svcs = [...new Set(offered.map(a => ACTIONS[a].svc))];
+    const where = a => a === 'web' ? 'im Browser' : `unter „Internetdienste nutzen" mit dem Knopf „${ACTIONS[a].label}"`;
+    let alt = '';
+    if (svcs.length) {
+      const list = svcs.map(k => `„${SERVICES[k].label}"`).join(' und ');
+      const use = offered.filter((a, i, arr) => arr.findIndex(b => ACTIONS[b].svc === ACTIONS[a].svc) === i).map(a => `${where(a)}`).join(' bzw. ');
+      alt = `${srv.name} bietet ${list} an. ` + (action === 'web' && svcs.includes('video')
+        ? `Ein Video öffnest du nicht im Browser, sondern ${where('video')}.`
+        : `Probiere es ${use}.`);
+    }
+    if (srv.locked) return alt || `${srv.name} gehört zur Aufgabe und bietet keinen ${S.server} an. Prüfe, ob du den richtigen Server gewählt hast.`;
+    return (alt ? alt + ' Oder s' : 'S') + `chalte beim Server den Dienst „${S.label}" ein.`;
   }
 
   function browse(net, srcId, url, opts) { return useService(net, srcId, 'web', url, opts); }
@@ -1755,7 +1846,7 @@
     emptyNetwork, createDevice, dev, linksOf, portOf, canLink, addLink, removeDevice, removeLink,
     allLinksOf, filesOf, fileStore, newFile, sendFile, getFiles, btPartners, playMusic, NET_KINDS, netKinds,
     ifaceAddr, l2Endpoints, route, roundTrip, ping, browse, parseURL, logEvent, topology, topologies, TOPOLOGY_INFO, ringOf, activeFaults, setFault, clone, newId,
-    useService, SERVICES, ACTIONS, defaultServices, svcOn, linkBetween, isDnsServer, dnsUpstream,
+    useService, SERVICES, ACTIONS, defaultServices, svcOn, NAMED_SERVICES, validHost, svcHost, nameStatus, registerName, linkBetween, isDnsServer, dnsUpstream,
     parseIP6, ip6Str, net6Str, isLinkLocal6, ip6Map, ip6Of, route6, ping6,
     dhcpOf, dhcpRange, dhcpDefaultRange, dhcp, applyLease, refreshDns, suggest, suggestPortIP, iface, ifaceName, replug, WAN, LAN, wlanHub, setRouterWlan, isApipa, setModem, ispOf,
   };
