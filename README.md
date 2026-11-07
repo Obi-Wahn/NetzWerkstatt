@@ -37,6 +37,8 @@ Die NetzWerkstatt ist für den Informatikunterricht der Sekundarstufe I gedacht.
   16. Eigene Internetdienste anbieten (E-Mail-Server und Spiele-Server mit DNS-Namen)
   17. Freies Bauen
 - **Lehrkraft-Ansicht:** Live-Übersicht über alle Schülerinnen und Schüler, Abgaben am Beamer zeigen (auf Wunsch ohne Namen), zwei Lösungen nebeneinander vergleichen, Musterlösungen zeigen oder für die Klasse freigeben, Abgaben zurückgeben.
+- **Aufgaben freischalten:** Die Lehrkraft bestimmt, welche Aufgaben und Themen (auch das freie Bauen) die Klasse sieht. Änderungen erscheinen bei den Schülern sofort, ohne Neuladen. Ab Werk sind die Aufgaben 1–5 und das freie Bauen freigeschaltet.
+- **Eigene Aufgaben:** Im Aufgaben-Editor der Lehrkraft-Ansicht entstehen eigene Aufgaben aus Text, automatisch geprüften Zielen, Startaufbau und Musterlösung. Start und Musterlösung baut die Lehrkraft im „Baukasten“ (Schüleransicht mit allen Aufgaben) oder übernimmt sie aus einer Schülerarbeit oder einer eingebauten Aufgabe. Eigene Aufgaben lassen sich als Datei exportieren und bei anderen Lehrkräften importieren. Importierte Dateien werden genau geprüft; sie enthalten keinen Programmcode.
 
 ## Start im Unterricht (für Lehrkräfte)
 
@@ -89,6 +91,7 @@ Aufbau:
 | `paket/` | Anleitungen und Startskript für die Download-Pakete |
 | `web/js/sim.js` | Netzwerkmodell und Simulation (Weg der Pakete, DNS, HTTP) |
 | `web/js/tasks.js` | Aufgaben, Teilziele und Musterlösungen |
+| `web/js/eigene.js` | Eigene Aufgaben: Dateiformat, Prüfung beim Import, Ziel-Bausteine |
 | `web/js/view.js` | Darstellung des Netzwerks und Paketanimation |
 | `web/js/app.js` | Oberfläche für Schülerinnen und Schüler |
 | `web/js/teacher.js` | Lehrkraft-Ansicht |

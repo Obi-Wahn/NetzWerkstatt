@@ -41,6 +41,8 @@
   </header>
   <main class="task-list-wrap">
     <h2>Wähle eine Aufgabe</h2>
+    <p id="preview-note" class="preview-note" hidden>Baukasten der Lehrkraft: Du siehst alle Aufgaben, auch gesperrte. Was du hier baust, kannst du in der Lehrkraft-Ansicht als Startaufbau oder Musterlösung einer eigenen Aufgabe übernehmen.</p>
+    <p id="no-tasks" class="muted empty" hidden>Deine Lehrkraft hat noch keine Aufgaben freigeschaltet. Sobald es so weit ist, erscheinen sie hier von selbst.</p>
     <div id="task-list" class="task-list"></div>
   </main>
 </section>
@@ -113,6 +115,7 @@
 
 <script src="js/sim.js"></script>
 <script src="js/tasks.js"></script>
+<script src="js/eigene.js"></script>
 <script src="js/view.js"></script>
 <script src="js/common.js"></script>
 <script src="js/app.js"></script>

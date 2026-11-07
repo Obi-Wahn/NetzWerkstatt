@@ -19,6 +19,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -35,6 +36,9 @@ type Student struct {
 	Name    string `json:"name"`
 	Token   string `json:"token"`
 	Created int64  `json:"created"`
+	// Teacher markiert den Baukasten-Zugang der Lehrkraft: Er sieht alle Aufgaben
+	// und taucht nicht in der Schülerliste auf.
+	Teacher bool `json:"teacher,omitempty"`
 }
 
 type Work struct {
@@ -49,6 +53,8 @@ type Store struct {
 	Students        []*Student                 `json:"students"`
 	Works           map[string]map[string]Work `json:"works"`    // studentID -> taskID -> Arbeit
 	Released        map[string]bool            `json:"released"` // taskID -> Musterlösung freigegeben
+	Unlocked        map[string]bool            `json:"unlocked"` // taskID -> für Schüler freigeschaltet
+	CustomTasks     []json.RawMessage          `json:"customTasks"`
 
 	mu   sync.Mutex
 	path string
@@ -100,6 +106,16 @@ func loadStore(path string) *Store {
 	if s.Released == nil {
 		s.Released = map[string]bool{}
 	}
+	if s.Unlocked == nil {
+		// Ab Werk (und bei Dateien aus älteren Versionen) sind diese Aufgaben freigeschaltet.
+		s.Unlocked = map[string]bool{}
+		for _, id := range defaultUnlocked {
+			s.Unlocked[id] = true
+		}
+	}
+	if s.CustomTasks == nil {
+		s.CustomTasks = []json.RawMessage{}
+	}
 	s.saveLocked()
 	return s
 }
@@ -119,6 +135,63 @@ func (s *Store) saveLocked() {
 	if err := os.Rename(tmp, s.path); err != nil {
 		log.Println("Speichern fehlgeschlagen:", err)
 	}
+}
+
+// defaultUnlocked: Aufgaben, die ab Werk für Schüler freigeschaltet sind.
+var defaultUnlocked = []string{"zwei-pcs", "stern", "heimnetz", "webseite", "dhcp", "frei"}
+
+// Grenzen für eigene Aufgaben (die genaue Prüfung macht die Oberfläche in eigene.js).
+const (
+	maxCustomTasks    = 60
+	maxCustomTaskSize = 1 << 20
+)
+
+var customIDPattern = regexp.MustCompile(`^eigen-[a-z0-9-]{1,30}$`)
+
+// customTaskID liest die ID einer eigenen Aufgabe und prüft den groben Aufbau.
+func customTaskID(raw json.RawMessage) (string, error) {
+	var t struct {
+		ID    string          `json:"id"`
+		Title string          `json:"title"`
+		Goals json.RawMessage `json:"goals"`
+	}
+	if len(raw) > maxCustomTaskSize {
+		return "", fmt.Errorf("Die Aufgabe ist zu groß.")
+	}
+	if err := json.Unmarshal(raw, &t); err != nil {
+		return "", fmt.Errorf("Die Aufgabe ist ungültig.")
+	}
+	if !customIDPattern.MatchString(t.ID) || strings.TrimSpace(t.Title) == "" || len(t.Title) > 200 {
+		return "", fmt.Errorf("Die Aufgabe ist ungültig.")
+	}
+	var goals []json.RawMessage
+	if err := json.Unmarshal(t.Goals, &goals); err != nil {
+		return "", fmt.Errorf("Die Ziele der Aufgabe sind ungültig.")
+	}
+	return t.ID, nil
+}
+
+// customForStudents liefert eigene Aufgaben ohne Musterlösung, außer sie ist freigegeben.
+// Aufrufer muss s.mu halten.
+func (s *Store) customForStudents(all bool) []json.RawMessage {
+	out := []json.RawMessage{}
+	for _, raw := range s.CustomTasks {
+		id, err := customTaskID(raw)
+		if err != nil || (!all && !s.Unlocked[id]) {
+			continue
+		}
+		if !s.Released[id] {
+			var m map[string]json.RawMessage
+			if json.Unmarshal(raw, &m) != nil {
+				continue
+			}
+			delete(m, "solution")
+			b, _ := json.Marshal(m)
+			raw = b
+		}
+		out = append(out, raw)
+	}
+	return out
 }
 
 func (s *Store) studentByToken(tok string) *Student {
@@ -210,7 +283,7 @@ func (srv *Server) routes() http.Handler {
 			return
 		}
 		for _, st := range s.Students {
-			if strings.EqualFold(st.Name, name) {
+			if !st.Teacher && strings.EqualFold(st.Name, name) {
 				writeJSON(w, 200, map[string]any{"token": st.Token, "name": st.Name, "returning": true})
 				return
 			}
@@ -234,7 +307,14 @@ func (srv *Server) routes() http.Handler {
 		for tid, wk := range s.Works[st.ID] {
 			status[tid] = map[string]any{"submitted": wk.Submitted, "updated": wk.Updated}
 		}
-		writeJSON(w, 200, map[string]any{"name": st.Name, "works": status, "released": s.Released})
+		unlocked := map[string]bool{}
+		for id, on := range s.Unlocked {
+			if on {
+				unlocked[id] = true
+			}
+		}
+		writeJSON(w, 200, map[string]any{"name": st.Name, "works": status, "released": s.Released,
+			"unlocked": unlocked, "preview": st.Teacher, "customTasks": s.customForStudents(st.Teacher)})
 	})
 
 	mux.HandleFunc("GET /api/work/{task}", func(w http.ResponseWriter, r *http.Request) {
@@ -326,7 +406,12 @@ func (srv *Server) routes() http.Handler {
 			Works map[string]Work `json:"works"`
 		}
 		rows := []row{}
+		var own map[string]Work
 		for _, st := range s.Students {
+			if st.Teacher {
+				own = s.Works[st.ID]
+				continue
+			}
 			rows = append(rows, row{ID: st.ID, Name: st.Name, Works: s.Works[st.ID]})
 		}
 		sort.Slice(rows, func(i, j int) bool { return strings.ToLower(rows[i].Name) < strings.ToLower(rows[j].Name) })
@@ -334,7 +419,119 @@ func (srv *Server) routes() http.Handler {
 		for _, ip := range localIPs() {
 			addrs = append(addrs, fmt.Sprintf("http://%s:%d", ip, srv.port))
 		}
-		writeJSON(w, 200, map[string]any{"students": rows, "released": s.Released, "roomCode": s.RoomCode, "addresses": addrs})
+		writeJSON(w, 200, map[string]any{"students": rows, "released": s.Released, "roomCode": s.RoomCode, "addresses": addrs,
+			"unlocked": s.Unlocked, "customTasks": s.CustomTasks, "ownWorks": own})
+	})
+
+	// Aufgaben für Schüler freischalten oder sperren (einzeln oder ein ganzes Thema)
+	mux.HandleFunc("POST /api/teacher/unlock", func(w http.ResponseWriter, r *http.Request) {
+		if !srv.isTeacher(r) {
+			fail(w, 401, "Bitte als Lehrkraft anmelden.")
+			return
+		}
+		var req struct {
+			Tasks    []string `json:"tasks"`
+			Unlocked bool     `json:"unlocked"`
+		}
+		if err := readBody(r, &req); err != nil || len(req.Tasks) == 0 || len(req.Tasks) > 200 {
+			fail(w, 400, "Ungültige Anfrage.")
+			return
+		}
+		s.mu.Lock()
+		for _, id := range req.Tasks {
+			if id != "" && len(id) <= 40 {
+				s.Unlocked[id] = req.Unlocked
+			}
+		}
+		s.saveLocked()
+		s.mu.Unlock()
+		writeJSON(w, 200, map[string]bool{"ok": true})
+	})
+
+	// Eigene Aufgabe anlegen oder ersetzen (gleiche ID)
+	mux.HandleFunc("POST /api/teacher/custom", func(w http.ResponseWriter, r *http.Request) {
+		if !srv.isTeacher(r) {
+			fail(w, 401, "Bitte als Lehrkraft anmelden.")
+			return
+		}
+		var req struct {
+			Task json.RawMessage `json:"task"`
+		}
+		if err := readBody(r, &req); err != nil {
+			fail(w, 400, "Ungültige Anfrage.")
+			return
+		}
+		id, err := customTaskID(req.Task)
+		if err != nil {
+			fail(w, 400, err.Error())
+			return
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for i, raw := range s.CustomTasks {
+			if old, _ := customTaskID(raw); old == id {
+				s.CustomTasks[i] = req.Task
+				s.saveLocked()
+				writeJSON(w, 200, map[string]any{"ok": true, "id": id})
+				return
+			}
+		}
+		if len(s.CustomTasks) >= maxCustomTasks {
+			fail(w, 400, fmt.Sprintf("Es sind höchstens %d eigene Aufgaben möglich.", maxCustomTasks))
+			return
+		}
+		s.CustomTasks = append(s.CustomTasks, req.Task)
+		s.saveLocked()
+		writeJSON(w, 200, map[string]any{"ok": true, "id": id})
+	})
+
+	mux.HandleFunc("POST /api/teacher/custom-delete", func(w http.ResponseWriter, r *http.Request) {
+		if !srv.isTeacher(r) {
+			fail(w, 401, "Bitte als Lehrkraft anmelden.")
+			return
+		}
+		var req struct{ ID string }
+		if err := readBody(r, &req); err != nil || req.ID == "" {
+			fail(w, 400, "Ungültige Anfrage.")
+			return
+		}
+		s.mu.Lock()
+		kept := s.CustomTasks[:0]
+		for _, raw := range s.CustomTasks {
+			if id, _ := customTaskID(raw); id != req.ID {
+				kept = append(kept, raw)
+			}
+		}
+		s.CustomTasks = kept
+		delete(s.Unlocked, req.ID)
+		delete(s.Released, req.ID)
+		for _, works := range s.Works {
+			delete(works, req.ID)
+		}
+		s.saveLocked()
+		s.mu.Unlock()
+		writeJSON(w, 200, map[string]bool{"ok": true})
+	})
+
+	// Baukasten-Zugang der Lehrkraft: Damit kann sie Aufbauten für eigene Aufgaben
+	// bauen und alle Aufgaben ausprobieren, auch gesperrte.
+	mux.HandleFunc("POST /api/teacher/workshop", func(w http.ResponseWriter, r *http.Request) {
+		if !srv.isTeacher(r) {
+			fail(w, 401, "Bitte als Lehrkraft anmelden.")
+			return
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		for _, st := range s.Students {
+			if st.Teacher {
+				writeJSON(w, 200, map[string]string{"token": st.Token})
+				return
+			}
+		}
+		st := &Student{ID: randomToken(6), Name: "Lehrkraft", Token: randomToken(16), Created: time.Now().Unix(), Teacher: true}
+		s.Students = append(s.Students, st)
+		s.saveLocked()
+		writeJSON(w, 200, map[string]string{"token": st.Token})
 	})
 
 	mux.HandleFunc("POST /api/teacher/release", func(w http.ResponseWriter, r *http.Request) {

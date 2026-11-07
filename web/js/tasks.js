@@ -10,6 +10,8 @@
   'use strict';
   const NW = root.NW || (typeof require !== 'undefined' ? require('./sim.js') : null);
   const T = NW.TYPES;
+  // Eigene Aufgaben der Lehrkraft (werden von eigene.js eingetragen)
+  let CUSTOM = [];
 
   // ---------------------------------------------------------------- Hilfen zum Prüfen
   function ctx(net) {
@@ -762,14 +764,23 @@
     { id: 'topologien', title: 'Topologien', tasks: ['bus', 'ring', 'topologien'] },
     { id: 'netzarten', title: 'Architekturen und Netzarten', tasks: ['dateien', 'pan', 'man', 'netzarten'] },
     { id: 'dienste', title: 'Protokolle und Internetdienste', tasks: ['tcp-udp', 'dienste-sortieren', 'dienste'] },
+    { id: 'eigene', title: 'Eigene Aufgaben', tasks: [] },
     { id: 'frei', title: 'Freies Bauen', tasks: ['frei'] },
   ];
   TASKS.forEach((t, i) => { t.num = i + 1; });
   for (const g of GROUPS) for (const id of g.tasks) TASKS.find(t => t.id === id).group = g.id;
 
-  function byId(id) { return TASKS.find(t => t.id === id) || null; }
+  function byId(id) { return TASKS.find(t => t.id === id) || CUSTOM.find(t => t.id === id) || null; }
 
-  const api = { TASKS, GROUPS, evaluate, byId, manualize };
+  /** Eigene Aufgaben setzen; sie bekommen die Nummern E1, E2, … */
+  function setCustom(list) {
+    CUSTOM = list.slice();
+    CUSTOM.forEach((t, i) => { t.num = 'E' + (i + 1); t.group = 'eigene'; });
+  }
+  /** Eingebaute und eigene Aufgaben. */
+  function all() { return TASKS.concat(CUSTOM); }
+
+  const api = { TASKS, GROUPS, evaluate, byId, manualize, setCustom, all };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.NWTasks = api;
 })(typeof window !== 'undefined' ? window : globalThis);

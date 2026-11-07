@@ -612,4 +612,77 @@ test('Sortieraufgabe: falsche Zuordnung erfüllt das Ziel nicht', () => {
   assert.deepStrictEqual(evaluate(t, net), [true, false]);
 });
 
+
+// ---------------------------------------------------------------- Eigene Aufgaben
+const E = require('../web/js/eigene.js');
+const NWTasks = require('../web/js/tasks.js');
+
+for (const t of TASKS) {
+  if (!t.solution) continue;
+  test(`Eigene Aufgaben: Netzwerk „${t.title}" übersteht Export und Import`, () => {
+    const net = E.sanitizeNetwork(JSON.parse(JSON.stringify(t.solution())), 'Test');
+    assert.deepStrictEqual(evaluate(t, net), t.goals.map(() => true));
+  });
+}
+
+test('Eigene Aufgaben: vorgeschlagene Ziele passen zu Start und Musterlösung', () => {
+  for (const id of ['stern', 'webseite', 'ring', 'dienste', 'zwei-pcs']) {
+    const b = TASKS.find(t => t.id === id);
+    const start = b.start(), sol = b.solution();
+    const goals = E.suggestGoals(start, sol);
+    assert.ok(goals.length > 0, id);
+    const file = E.fileFor([{ id: 'eigen-test' + id.replace(/[^a-z]/g, ''), title: 'Test ' + id, intro: 'x', goals, start, solution: sol }]);
+    const [task] = E.parseFile(file).tasks.map(E.compile);
+    assert.ok(evaluate(task, task.solution()).every(Boolean), id);
+    assert.ok(evaluate(task, task.start()).some(x => !x), id);
+  }
+});
+
+test('Eigene Aufgaben: jedes Ziel hat einen Text, auch bei allen Einstellungen', () => {
+  for (const [type, def] of Object.entries(E.GOAL_TYPES)) {
+    const base = { type };
+    for (const [k, f] of Object.entries(def.fields)) base[k] = f.def;
+    for (const [k, f] of Object.entries(def.fields)) {
+      for (const o of f.options || [f.def]) {
+        const g = E.sanitizeGoal(Object.assign({}, base, { [k]: o }), 0);
+        const text = E.goalText(g);
+        assert.ok(text.length > 10 && !/undefined/.test(text), text);
+      }
+    }
+  }
+});
+
+test('Eigene Aufgaben: ungültige Dateien werden abgelehnt', () => {
+  const ok = { id: 'eigen-abc', title: 'A', intro: 'B', goals: [{ type: 'geraete', device: 'pc', min: 2 }], start: NW.emptyNetwork() };
+  const file = tasks => JSON.stringify({ format: E.FORMAT, version: 1, tasks });
+  assert.throws(() => E.parseFile('kein json'), /kein gültiges JSON/);
+  assert.throws(() => E.parseFile('{"tasks":[]}'), /keine Aufgaben-Datei/);
+  assert.throws(() => E.parseFile(file([Object.assign({}, ok, { goals: [{ type: 'code', check: 'alert(1)' }] })])), /unbekannte Art/);
+  assert.throws(() => E.parseFile(file([Object.assign({}, ok, { goals: [{ type: 'geraete', device: 'rakete', min: 2 }] })])), /ungültige Einstellung/);
+  assert.throws(() => E.parseFile(file([Object.assign({}, ok, { goals: [{ type: 'ip-netz', device: 'pc', net: '300.1.1.0/24', gw: '' }] })])), /Netz bitte/);
+  assert.throws(() => E.parseFile(file([Object.assign({}, ok, { start: { devices: [{ id: 'a', type: 'ufo' }], links: [] } })])), /unbekanntes Gerät/);
+  assert.throws(() => E.parseFile(file([Object.assign({}, ok, { start: { devices: [{ id: 'a', type: 'pc' }], links: [{ id: 'l', a: 'a', b: 'x', kind: 'kabel' }] } })])), /gibt/);
+  assert.throws(() => E.parseFile(JSON.stringify({ format: E.FORMAT, version: 99, tasks: [ok] })), /neueren/);
+  // Unbekannte Felder werden bereinigt, Prototyp-Tricks verworfen
+  const evil = JSON.parse('{"id":"a","type":"pc","name":"<b>x</b>","x":1e9,"__proto__":{"polluted":1},"ip":5}');
+  const [t] = E.parseFile(file([Object.assign({}, ok, { id: 'falsch!', start: { devices: [evil], links: [] } })])).tasks;
+  assert.match(t.id, /^eigen-[a-z0-9]+$/);
+  const d = t.start.devices[0];
+  assert.strictEqual(d.x, 4000);
+  assert.strictEqual(d.ip, '');
+  assert.strictEqual({}.polluted, undefined);
+});
+
+test('Eigene Aufgaben: werden mit Nummer E1 … unter „Eigene Aufgaben" eingereiht', () => {
+  const raw = { id: 'eigen-neu', title: 'Neu', intro: 'x', goals: [{ type: 'ping', from: 'pc', to: 'pc' }], start: NW.emptyNetwork() };
+  const list = E.install([raw, { id: 'eigen-kaputt', title: '' }]);
+  assert.strictEqual(list.length, 1);
+  assert.strictEqual(NWTasks.byId('eigen-neu').num, 'E1');
+  assert.strictEqual(NWTasks.byId('eigen-neu').group, 'eigene');
+  assert.ok(NWTasks.all().length === TASKS.length + 1);
+  assert.strictEqual(NWTasks.byId('eigen-neu').solution, null);
+  E.install([]);
+  assert.strictEqual(NWTasks.byId('eigen-neu'), null);
+});
+
 console.log(`\n${n} Tests bestanden.`);
