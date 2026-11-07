@@ -15,6 +15,8 @@
   --bad-soft: #fbe6e4;
   --warn: #9a6400;
   --wlan: #2a7de1;
+  --bt: #8a4fc7;
+  --fiber: #d9731a;
   --cable: #3b4659;
   --req: #1d5fa8;
   --resp: #1f8a4c;
@@ -132,6 +134,10 @@ input:disabled { background: #f0f2f6; color: var(--muted); }
 .link .hit { stroke: transparent; stroke-width: 22; cursor: pointer; }
 .link .wire { stroke: var(--cable); stroke-width: 3.5; pointer-events: none; }
 .link.wlan .wire { stroke: var(--wlan); stroke-dasharray: 3 7; stroke-width: 3.5; stroke-linecap: round; }
+.link.bluetooth .wire { stroke: var(--bt); stroke-dasharray: 2 6; stroke-width: 3; stroke-linecap: round; }
+.link.stadt .wire { stroke: var(--fiber); stroke-width: 6; }
+.stadt-label rect { stroke: var(--fiber); }
+.stadt-label text { fill: var(--fiber); }
 .link.selected .wire { stroke: var(--accent); stroke-width: 6; }
 .port-label rect { fill: #fff; stroke: var(--line); }
 .port-label text { font-size: 11.5px; fill: var(--muted); font-weight: 600; pointer-events: none; }
@@ -144,6 +150,8 @@ input:disabled { background: #f0f2f6; color: var(--muted); }
 .device.type-server .box { fill: #eefaf2; stroke: #9fd3b4; }
 .device.type-isp .box { fill: #f3eefc; stroke: #b9a3e3; }
 .device.cloud .box { fill: #f1f4f9; stroke: #b9c3d3; }
+.device.type-headset .box { fill: #f6f0fb; stroke: #c6a8e0; }
+.device.highlight .box { stroke: var(--accent); stroke-width: 5; }
 .device.selected .box { stroke: var(--brand); stroke-width: 4; }
 .device.pending .box { stroke: var(--accent); stroke-width: 5; stroke-dasharray: 6 4; }
 .device .name { font-size: 14px; font-weight: 700; fill: var(--ink); paint-order: stroke; stroke: #fff; stroke-width: 4px; stroke-linejoin: round; }
@@ -250,6 +258,25 @@ details p { margin-top: 4px; font-size: .93em; }
 .port .field { margin-bottom: 4px; }
 .conn { list-style: none; padding: 0; margin: 0; display: grid; gap: 4px; }
 .kind { font-size: .75em; font-weight: 700; padding: 1px 7px; border-radius: 6px; background: #e9ecf2; color: var(--cable); }
+.kind.bluetooth { background: #f1e8fa; color: var(--bt); }
+.kind.stadt { background: #fdeee0; color: var(--fiber); }
+ul.files { list-style: none; padding: 0; margin: 4px 0 8px; font-size: .92em; }
+ul.files li { padding: 2px 0; overflow-wrap: anywhere; }
+select { font: inherit; width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; margin-top: 3px; }
+
+/* Anzeige der Netzarten auf der Arbeitsfläche */
+.netkinds { position: absolute; left: 10px; bottom: 10px; max-width: calc(100% - 20px); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; background: rgba(255,255,255,.92); border: 1px solid var(--line); border-radius: 10px; padding: 5px 8px; font-size: .88em; }
+.is-readonly .netkinds { bottom: 62px; }
+.nk-title { font-weight: 700; color: var(--muted); }
+.nk-none { color: var(--muted); }
+.nk-chip { font: inherit; font-weight: 700; min-height: 32px; padding: 3px 10px; border-radius: 8px; border: 2px solid var(--line); background: #fff; cursor: pointer; color: var(--ink); touch-action: manipulation; }
+.nk-chip.nk-PAN { border-color: var(--bt); color: var(--bt); }
+.nk-chip.nk-LAN { border-color: var(--brand); color: var(--brand); }
+.nk-chip.nk-MAN { border-color: var(--fiber); color: var(--fiber); }
+.nk-chip.nk-WAN { border-color: #7a5cc4; color: #7a5cc4; }
+.nk-chip.on { background: var(--accent); border-color: var(--accent); color: var(--ink); }
+.nk-info { flex-basis: 100%; max-width: 520px; line-height: 1.4; }
+.nk-why { color: var(--muted); }
 .kind.wlan { background: #e3eefb; color: var(--wlan); }
 .locked-note { background: #eef1f6; border-radius: 8px; padding: 7px 9px; font-size: .88em; }
 

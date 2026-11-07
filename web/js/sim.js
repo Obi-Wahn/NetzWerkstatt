@@ -10,9 +10,10 @@
 
   // ------------------------------------------------------------------ Gerätetypen
   const TYPES = {
-    pc:         { label: 'PC',           host: true,  cable: 1, wlan: false, icon: 'pc' },
-    tablet:     { label: 'Tablet',       host: true,  cable: 0, wlan: true,  icon: 'tablet' },
-    smartphone: { label: 'Smartphone',   host: true,  cable: 0, wlan: true,  icon: 'smartphone' },
+    pc:         { label: 'PC',           host: true,  cable: 1, wlan: false, bt: true, icon: 'pc' },
+    tablet:     { label: 'Tablet',       host: true,  cable: 0, wlan: true,  bt: true, icon: 'tablet' },
+    smartphone: { label: 'Smartphone',   host: true,  cable: 0, wlan: true,  bt: true, icon: 'smartphone' },
+    headset:    { label: 'Kopfhörer',    cable: 0, wlan: false, bt: true, btOnly: true, icon: 'headset' },
     server:     { label: 'Server',       host: true,  cable: 1, wlan: false, icon: 'server', services: true },
     switch:     { label: 'Switch',       l2: true,    cable: 8, icon: 'switch' },
     ap:         { label: 'Access Point', l2: true,    cable: 1, apWlan: 8, icon: 'ap' },
@@ -30,6 +31,7 @@
     ap: 'Der Access Point (Zugangspunkt) bringt Geräte per Funk (WLAN) ins Kabelnetz. Er braucht keine IP-Adresse.',
     router: 'Verbindet verschiedene Netze miteinander, z. B. das Heimnetz mit dem Internet. Er hat drei LAN-Anschlüsse für das Heimnetz (wie ein eingebauter Switch) und einen Internet-Anschluss (WAN). In jedem der beiden Netze hat er eine eigene IP-Adresse. Endgeräte tragen ihn als Gateway ein.',
     bus: 'Ein langes Kabel, an das alle Geräte angeschlossen werden (Bustopologie). Jedes Signal läuft über das ganze Kabel und kommt bei allen Geräten an – nur der Empfänger nimmt es an. Es darf immer nur ein Gerät gleichzeitig senden. Ist das Bus-Kabel an einer Stelle unterbrochen, ist das ganze Netz gestört. Es ist eine passive Komponente und braucht keine IP-Adresse.',
+    headset: 'Kabellose Kopfhörer verbinden sich per Bluetooth mit einem Smartphone, Tablet oder PC in der Nähe (wenige Meter). Sie haben keine IP-Adresse und gehören nicht zum Heimnetz, sondern zum persönlichen Netz (PAN) ihres Besitzers.',
     isp: 'Der Internetanbieter (Provider) verbindet Heimnetze und Server mit dem Internet. Jeder Router, der an seine Leitung angeschlossen wird, bekommt von ihm automatisch eine öffentliche (externe) IP-Adresse. Mehrere Internetanbieter, die per Kabel miteinander verbunden sind, bilden zusammen das Internet.',
   };
 
@@ -128,7 +130,8 @@
       d.modem = true;            // eingebautes Internet-Modem (DSL/Kabel)
     }
     if (t.isp) { d.ip = freeIspNet(net); d.mask = '255.255.255.0'; d.dns = ''; }
-    if (t.services) d.services = { web: { on: false, title: 'Willkommen!', text: 'Das ist meine erste Webseite.' }, dns: { on: false, entries: [] } };
+    if (t.services) d.services = { web: { on: false, title: 'Willkommen!', text: 'Das ist meine erste Webseite.' }, dns: { on: false, entries: [] }, files: { on: false, files: [] } };
+    else if (t.host) { d.files = []; d.share = false; }
     Object.assign(d, extra || {});
     net.devices.push(d);
     return d;
@@ -158,7 +161,11 @@
 
   function dev(net, id) { return net.devices.find(d => d.id === id) || null; }
 
-  function linksOf(net, id) { return net.links.filter(l => l.a === id || l.b === id); }
+  /** Verbindungen im IP-Netz (Kabel und WLAN). Bluetooth-Kopplungen gehören nicht dazu. */
+  function linksOf(net, id) { return net.links.filter(l => (l.a === id || l.b === id) && l.kind !== 'bluetooth'); }
+  /** Alle Verbindungen eines Geräts, auch Bluetooth. */
+  function allLinksOf(net, id) { return net.links.filter(l => l.a === id || l.b === id); }
+  function btCount(net, id) { return allLinksOf(net, id).filter(l => l.kind === 'bluetooth').length; }
 
   function portOf(link, id) { return link.a === id ? link.aPort : link.bPort; }
 
@@ -239,6 +246,13 @@
     if (net.links.some(l => (l.a === aId && l.b === bId) || (l.a === bId && l.b === aId)))
       return { ok: false, reason: `${a.name} und ${b.name} sind schon verbunden.` };
     const ta = TYPES[a.type], tb = TYPES[b.type];
+    if (kind === 'bluetooth') {
+      for (const d of [a, b]) if (!TYPES[d.type].bt) return { ok: false, reason: `${d.name} hat kein Bluetooth. Bluetooth haben z. B. Smartphone, Tablet, PC und Kopfhörer.` };
+      if (ta.btOnly && tb.btOnly) return { ok: false, reason: 'Zwei Kopfhörer können nicht miteinander gekoppelt werden. Verbinde die Kopfhörer mit einem Smartphone, Tablet oder PC.' };
+      for (const d of [a, b]) if (TYPES[d.type].btOnly && btCount(net, d.id) >= 1) return { ok: false, reason: `${d.name} ist schon mit einem anderen Gerät gekoppelt.` };
+      return { ok: true };
+    }
+    for (const [d, t] of [[a, ta], [b, tb]]) if (t.btOnly) return { ok: false, reason: `${d.name} verbindet sich nur per Bluetooth. Nimm das Werkzeug „Bluetooth“.` };
     if (kind === 'kabel') {
       for (const [d, t, o] of [[a, ta, b], [b, tb, a]]) {
         if (!t.cable) return { ok: false, reason: `${d.name} hat keinen Netzwerkanschluss für ein Kabel. Verbinde es per WLAN mit einem Access Point.` };
@@ -283,6 +297,7 @@
     if (!chk.ok) return chk;
     const l = { id: newId('l'), a: aId, b: bId, kind };
     const a = dev(net, aId), b = dev(net, bId);
+    if (kind === 'bluetooth') { net.links.push(l); return { ok: true, link: l }; }
     const rport = (r, o) => kind === 'wlan' ? WLAN_PORT : TYPES[o.type].isp ? WAN : freeRouterPort(net, r, o);
     if (TYPES[a.type].router) l.aPort = rport(a, b);
     if (TYPES[b.type].router) l.bPort = rport(b, a);
@@ -1230,6 +1245,214 @@
     return { ok: true, steps, target: rt.target.id, v6: true, linkLocal: isLinkLocal6(dst), seenSrc: ip6Str(from), viaRouter };
   }
 
+  // ------------------------------------------------------------------ Dateien teilen: Peer-to-Peer und Client-Server
+  /** Eigene Dateien eines Endgeräts (fehlen bei älteren Netzen). */
+  function filesOf(d) {
+    if (!Array.isArray(d.files)) d.files = [];
+    return d.files;
+  }
+
+  /** Dateiablage (Cloud-Speicher) eines Servers oder null. */
+  function fileStore(d) {
+    if (!d || !d.services) return null;
+    if (!d.services.files) d.services.files = { on: false, files: [] };
+    if (!Array.isArray(d.services.files.files)) d.services.files.files = [];
+    return d.services.files;
+  }
+
+  /** Legt auf einem Endgerät eine neue Datei an und liefert ihren Namen. */
+  function newFile(d) {
+    const files = filesOf(d);
+    let name = `Foto von ${d.name}.jpg`;
+    for (let i = 2; files.includes(name); i++) name = `Foto ${i} von ${d.name}.jpg`;
+    files.push(name);
+    return name;
+  }
+
+  /** Was ein Gerät anbietet: Ein Server mit Dateiablage (Client-Server) oder ein Endgerät mit eingeschaltetem Peer-to-Peer. */
+  function fileRole(d) {
+    if (!d || !TYPES[d.type].host) return null;
+    if (TYPES[d.type].services) return 'server';
+    return 'peer';
+  }
+
+  /**
+   * Gemeinsamer Ablauf für Senden und Holen: Hin- und Rückweg prüfen und den Partner bestimmen.
+   * Liefert {ok, rt, target, mode, error, hint}. mode: 'server' (Client-Server) oder 'p2p'.
+   */
+  function fileContact(net, srcId, dstText) {
+    const src = dev(net, srcId);
+    const dstIP = parseIP(dstText || '');
+    if (dstIP === null) return { ok: false, error: `„${dstText || ''}“ ist keine gültige IPv4-Adresse.`, hint: 'Tippe unten auf ein Gerät, um seine Adresse einzutragen.' };
+    const own = ifaceAddr(src, 0);
+    if (own && own.ip === dstIP) return { ok: false, error: `Das ist die eigene Adresse von ${src.name}.`, hint: 'Gib die IP-Adresse eines anderen Geräts ein.' };
+    const rt = roundTrip(net, srcId, dstIP);
+    const role = rt.target ? fileRole(rt.target) : null;
+    return { ok: rt.ok, rt, target: rt.target || null, mode: role === 'server' ? 'server' : 'p2p', error: rt.error, hint: rt.hint };
+  }
+
+  /** Prüft, ob der Partner beim Dateitausch mitmacht. Liefert null oder {error, hint, reply}. */
+  function fileRefusal(target) {
+    const role = fileRole(target);
+    if (!role) return { error: `${target.name} ist kein Endgerät und kann keine Dateien speichern.`, hint: 'Dateien tauschen Endgeräte (Peer-to-Peer) oder Endgeräte mit einem Server (Client-Server).' };
+    if (role === 'server' && !fileStore(target).on)
+      return { error: `Auf ${target.name} läuft keine Dateiablage.`, hint: `Tippe ${target.name} an und schalte bei den Diensten die Dateiablage (Cloud-Speicher) ein.`, reply: 'Hier gibt es keine Dateiablage.' };
+    if (role === 'peer' && !target.share)
+      return { error: `${target.name} macht beim Peer-to-Peer-Dateitausch nicht mit.`, hint: `Bei Peer-to-Peer ist jedes Gerät zugleich Client und Server. Tippe ${target.name} an und schalte „Dateien direkt tauschen (Peer-to-Peer)“ ein.`, reply: 'Ich tausche keine Dateien direkt.' };
+    return null;
+  }
+
+  const FILE_PROTO = 'TCP';
+
+  /**
+   * Schickt eine Datei an ein anderes Gerät: an einen Server mit Dateiablage (Hochladen, Client-Server)
+   * oder direkt an ein Endgerät (Peer-to-Peer). Bei Erfolg liegt die Datei danach beim Empfänger.
+   * Ergebnis: {ok, steps, mode, target, error, hint}
+   */
+  function sendFile(net, srcId, dstText, file) {
+    const src = dev(net, srcId);
+    const steps = [];
+    const res = (ok, extra) => Object.assign({ ok, steps }, extra);
+    if (!src || !TYPES[src.type].host) return res(false, { error: 'Nur Endgeräte können Dateien senden.' });
+    if (!file || !filesOf(src).includes(file)) return res(false, { error: `${src.name} hat diese Datei nicht.`, hint: 'Lege zuerst mit „+ Neue Datei“ eine Datei an.' });
+    const c = fileContact(net, srcId, dstText);
+    if (!c.rt) return res(false, { error: c.error, hint: c.hint });
+    const toServer = c.mode === 'server';
+    const label = toServer ? 'Hochladen' : 'Datei direkt senden';
+    const note = natNote(net, c.rt, 'there');
+    steps.push({ kind: 'request', label, proto: FILE_PROTO, text: `${src.name} → ${c.target ? c.target.name : dstText}: „${file}“`, note, path: c.rt.there.path, ok: c.rt.there.ok });
+    if (!c.ok) {
+      if (c.rt.back) steps.push({ kind: 'response', label: 'Bestätigung', proto: FILE_PROTO, text: '', path: c.rt.back.path, ok: false });
+      return res(false, { error: 'Der Empfänger ist nicht erreichbar: ' + c.error, hint: c.hint + (toServer ? '' : ' Bei Peer-to-Peer muss der Empfänger gerade eingeschaltet und erreichbar sein.') });
+    }
+    const no = fileRefusal(c.target);
+    if (no) {
+      if (no.reply) steps.push({ kind: 'response', label: 'Abgelehnt', proto: FILE_PROTO, text: `${c.target.name}: „${no.reply}“`, path: c.rt.back.path, ok: true, bad: true });
+      return res(false, { error: no.error, hint: no.hint, mode: c.mode, target: c.target.id });
+    }
+    const list = toServer ? fileStore(c.target).files : filesOf(c.target);
+    if (!list.includes(file)) list.push(file);
+    steps.push({ kind: 'response', label: 'Bestätigung', proto: FILE_PROTO, text: `${c.target.name}: „Datei ${file} ist angekommen.“`, note: natNote(net, c.rt, 'back'), path: c.rt.back.path, ok: true });
+    return res(true, { mode: c.mode, target: c.target.id, files: [file] });
+  }
+
+  /**
+   * Holt alle Dateien, die ein anderes Gerät anbietet und die man selbst noch nicht hat:
+   * von einem Server mit Dateiablage (Herunterladen, Client-Server) oder direkt von einem Endgerät (Peer-to-Peer).
+   * Ergebnis: {ok, steps, mode, target, files, error, hint}
+   */
+  function getFiles(net, srcId, dstText) {
+    const src = dev(net, srcId);
+    const steps = [];
+    const res = (ok, extra) => Object.assign({ ok, steps }, extra);
+    if (!src || !TYPES[src.type].host) return res(false, { error: 'Nur Endgeräte können Dateien holen.' });
+    const c = fileContact(net, srcId, dstText);
+    if (!c.rt) return res(false, { error: c.error, hint: c.hint });
+    const fromServer = c.mode === 'server';
+    steps.push({ kind: 'request', label: fromServer ? 'Download-Anfrage' : 'Anfrage (Peer-to-Peer)', proto: FILE_PROTO, text: `${src.name} → ${c.target ? c.target.name : dstText}: „Welche Dateien hast du für mich?“`, note: natNote(net, c.rt, 'there'), path: c.rt.there.path, ok: c.rt.there.ok });
+    if (!c.ok) {
+      if (c.rt.back) steps.push({ kind: 'response', label: 'Dateien', proto: FILE_PROTO, text: '', path: c.rt.back.path, ok: false });
+      return res(false, { error: 'Das andere Gerät ist nicht erreichbar: ' + c.error, hint: c.hint + (fromServer ? '' : ' Bei Peer-to-Peer muss das andere Gerät gerade eingeschaltet und erreichbar sein.') });
+    }
+    const no = fileRefusal(c.target);
+    if (no) {
+      if (no.reply) steps.push({ kind: 'response', label: 'Abgelehnt', proto: FILE_PROTO, text: `${c.target.name}: „${no.reply}“`, path: c.rt.back.path, ok: true, bad: true });
+      return res(false, { error: no.error, hint: no.hint, mode: c.mode, target: c.target.id });
+    }
+    const offer = fromServer ? fileStore(c.target).files : filesOf(c.target);
+    const mine = filesOf(src);
+    const got = offer.filter(f => !mine.includes(f));
+    if (!got.length) {
+      steps.push({ kind: 'response', label: 'Dateien', proto: FILE_PROTO, text: `${c.target.name}: „Ich habe keine neuen Dateien für dich.“`, path: c.rt.back.path, ok: true, bad: true });
+      return res(false, { error: `${c.target.name} hat keine Dateien, die ${src.name} noch nicht hat.`, hint: fromServer ? 'Lade zuerst von einem anderen Gerät eine Datei auf den Server hoch.' : `Lege zuerst auf ${c.target.name} eine Datei an.`, mode: c.mode, target: c.target.id });
+    }
+    got.forEach(f => mine.push(f));
+    steps.push({ kind: 'response', label: fromServer ? 'Herunterladen' : 'Datei (Peer-to-Peer)', proto: FILE_PROTO, text: `${c.target.name} → ${src.name}: ${got.map(f => '„' + f + '“').join(', ')}`, note: natNote(net, c.rt, 'back'), path: c.rt.back.path, ok: true });
+    return res(true, { mode: c.mode, target: c.target.id, files: got });
+  }
+
+  // ------------------------------------------------------------------ Bluetooth (PAN)
+  /** Bluetooth-Partner eines Geräts. */
+  function btPartners(net, id) {
+    return allLinksOf(net, id).filter(l => l.kind === 'bluetooth').map(l => dev(net, l.a === id ? l.b : l.a)).filter(Boolean);
+  }
+
+  /** Spielt Musik vom Gerät auf gekoppelten Bluetooth-Kopfhörern ab. Ergebnis: {ok, steps, target, error, hint} */
+  function playMusic(net, srcId) {
+    const src = dev(net, srcId);
+    const hs = src ? btPartners(net, srcId).find(d => TYPES[d.type].btOnly) : null;
+    if (!hs) return { ok: false, steps: [], error: `${src ? src.name : 'Das Gerät'} ist mit keinen Kopfhörern gekoppelt.`, hint: 'Nimm das Werkzeug „Bluetooth“ und tippe auf das Gerät und auf die Kopfhörer.' };
+    const step = { kind: 'request', label: 'Musik', proto: 'Bluetooth · Funk', text: `${src.name} → ${hs.name}: Musik wird abgespielt ♪`, path: [src.id, hs.id], ok: true };
+    return { ok: true, steps: [step], target: hs.id };
+  }
+
+  // ------------------------------------------------------------------ Netzarten (PAN, LAN, MAN, WAN)
+  const NET_KINDS = {
+    PAN: { name: 'Personal Area Network', text: 'Ein persönliches Netz: Die Geräte einer Person verbinden sich auf wenige Meter, meist per Bluetooth – z. B. Smartphone und Kopfhörer.' },
+    LAN: { name: 'Local Area Network', text: 'Ein lokales Netz in einem Raum oder Gebäude, z. B. das Heimnetz oder der Computerraum. Die Geräte hängen per Kabel an einem Switch oder per WLAN an einem Access Point.' },
+    MAN: { name: 'Metropolitan Area Network', text: 'Ein Stadtnetz: Es verbindet mehrere lokale Netze innerhalb einer Stadt über einige Kilometer, z. B. Schulgebäude über eine Glasfaserleitung.' },
+    WAN: { name: 'Wide Area Network', text: 'Ein Weitverkehrsnetz verbindet Netze über große Entfernungen – Länder und Kontinente. Das Internet ist das größte WAN; der Zugang führt über den Internetanbieter.' },
+  };
+
+  function andList(list) { return list.length < 2 ? list.join('') : list.slice(0, -1).join(', ') + ' und ' + list[list.length - 1]; }
+
+  /** Teilt Geräte entlang der gegebenen Verbindungen in zusammenhängende Gruppen auf. */
+  function groups(ids, edges) {
+    const nb = new Map(ids.map(id => [id, []]));
+    for (const [a, b] of edges) if (nb.has(a) && nb.has(b)) { nb.get(a).push(b); nb.get(b).push(a); }
+    const seen = new Set(), out = [];
+    for (const id of ids) {
+      if (seen.has(id) || !nb.get(id).length) continue;
+      const g = [], stack = [id];
+      seen.add(id);
+      while (stack.length) { const x = stack.pop(); g.push(x); for (const y of nb.get(x)) if (!seen.has(y)) { seen.add(y); stack.push(y); } }
+      out.push(g);
+    }
+    return out;
+  }
+
+  /**
+   * Erkennt die Netzarten in einem Aufbau.
+   * Ergebnis: [{kind:'PAN'|'LAN'|'MAN'|'WAN', devices:[IDs], why}] – sortiert von klein nach groß.
+   */
+  function netKinds(net) {
+    const out = [];
+    const ids = net.devices.map(d => d.id);
+    const T = id => TYPES[(dev(net, id) || {}).type] || {};
+    const name = id => (dev(net, id) || {}).name;
+    // PAN: Bluetooth-Kopplungen
+    const bt = net.links.filter(l => l.kind === 'bluetooth');
+    for (const g of groups(ids, bt.map(l => [l.a, l.b])))
+      out.push({ kind: 'PAN', devices: g, why: `${andList(g.map(name))} sind per Bluetooth gekoppelt.` });
+    // LAN: lokale Verbindungen (ohne Stadtleitungen, ohne Internetanbieter, ohne Internet-Anschluss eines Routers)
+    const isWanEnd = (l, id) => T(id).router && l[l.a === id ? 'aPort' : 'bPort'] !== undefined && iface(l[l.a === id ? 'aPort' : 'bPort']) === WAN;
+    const local = net.links.filter(l => l.kind !== 'bluetooth' && !l.stadt && !T(l.a).isp && !T(l.b).isp && !isWanEnd(l, l.a) && !isWanEnd(l, l.b));
+    const lans = groups(ids, local.map(l => [l.a, l.b]));
+    const lanOf = new Map();
+    lans.forEach((g, i) => {
+      g.forEach(id => lanOf.set(id, i));
+      const named = g.filter(id => !T(id).l2);
+      out.push({ kind: 'LAN', devices: g, why: `Lokales Netz aus ${andList((named.length ? named : g).map(name))}.` });
+    });
+    // MAN: Glasfaserleitungen quer durch die Stadt verbinden lokale Netze
+    const stadt = net.links.filter(l => l.kind === 'kabel' && l.stadt && !T(l.a).isp && !T(l.b).isp);
+    for (const g of groups(ids, stadt.map(l => [l.a, l.b]))) {
+      const lanIdx = new Set(g.map(id => lanOf.get(id)).filter(i => i !== undefined));
+      const all = new Set(g);
+      lanIdx.forEach(i => lans[i].forEach(id => all.add(id)));
+      out.push({ kind: 'MAN', devices: [...all], why: `Eine Glasfaserleitung durch die Stadt verbindet ${lanIdx.size >= 2 ? lanIdx.size + ' lokale Netze' : andList(g.map(name))}.` });
+    }
+    // WAN: Internetanbieter mit Anschlüssen
+    const isps = net.devices.filter(d => TYPES[d.type].isp && linksOf(net, d.id).length);
+    if (isps.length) {
+      const all = new Set();
+      for (const p of isps) { all.add(p.id); for (const l of linksOf(net, p.id)) all.add(l.a === p.id ? l.b : l.a); }
+      const many = isps.filter(p => linksOf(net, p.id).some(l => T(l.a === p.id ? l.b : l.a).isp)).length >= 2;
+      out.push({ kind: 'WAN', devices: [...all], why: many ? 'Mehrere Internetanbieter sind miteinander verbunden – zusammen bilden sie das Internet, das größte WAN.' : `Über ${isps.map(p => p.name).join(', ')} geht es ins Internet, das größte WAN.` });
+    }
+    return out;
+  }
+
   // ------------------------------------------------------------------ Ereignisse
   function logEvent(net, ev) {
     if (!net.events) net.events = [];
@@ -1242,6 +1465,7 @@
   const NW = {
     TYPES, DESCRIPTIONS, parseIP, ipStr, parseMask, sameNet, netStr, ipProblem, isPrivate,
     emptyNetwork, createDevice, dev, linksOf, portOf, canLink, addLink, removeDevice, removeLink,
+    allLinksOf, filesOf, fileStore, newFile, sendFile, getFiles, btPartners, playMusic, NET_KINDS, netKinds,
     ifaceAddr, l2Endpoints, route, roundTrip, ping, browse, parseURL, logEvent, topology, topologies, TOPOLOGY_INFO, ringOf, activeFaults, setFault, clone, newId,
     parseIP6, ip6Str, net6Str, isLinkLocal6, ip6Map, ip6Of, route6, ping6,
     dhcpOf, dhcpRange, dhcpDefaultRange, dhcp, applyLease, refreshDns, suggest, suggestPortIP, iface, ifaceName, replug, WAN, LAN, wlanHub, setRouterWlan, isApipa, setModem, ispOf,
