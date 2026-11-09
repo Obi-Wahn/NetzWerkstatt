@@ -34,6 +34,45 @@ test('Ping ohne Gateway in fremdes Netz scheitert mit Hinweis', () => {
   assert.match(r.error, /Gateway/);
 });
 
+test('Ping ohne Gateway: Tipp nennt den Router mit seiner Adresse', () => {
+  const net = TASKS.find(t => t.id === 'webseite').solution();
+  NW.dev(net, 'pc').gw = '';
+  const r = NW.ping(net, 'pc', '203.0.113.80');
+  assert.match(r.hint, /192\.168\.178\.1/);
+  NW.dev(net, 'pc').gw = '192.168.1.1';
+  const r2 = NW.ping(net, 'pc', '203.0.113.80');
+  assert.match(r2.hint, /192\.168\.178\.x/);
+  assert.match(r2.hint, /192\.168\.178\.1/);
+});
+
+test('Schreibweise für Schüler: 192.168.10.x statt /24', () => {
+  assert.strictEqual(NW.netName(NW.parseIP('192.168.10.7'), 24), '192.168.10.x');
+  assert.strictEqual(NW.netName(NW.parseIP('10.1.2.3'), 8), '10.x.x.x');
+  assert.strictEqual(NW.netName(NW.parseIP('192.168.10.7'), 25), '192.168.10.0/25');
+  for (const t of TASKS) for (const g of t.goals) assert.ok(!/\d\/\d\d/.test(g.text), `${t.title}: ${g.text}`);
+});
+
+test('Direkt verbunden, aber verschiedene Netze: Fehler sagt das und Feld-Hinweis warnt', () => {
+  const net = TASKS.find(t => t.id === 'zwei-pcs').solution();
+  const pcs = net.devices.filter(d => d.type === 'pc');
+  pcs[1].ip = '192.168.2.20'; pcs[1].gw = '';
+  const r = NW.ping(net, pcs[0].id, '192.168.2.20');
+  assert.ok(!r.ok);
+  assert.match(r.error, /direkt verbunden/);
+  assert.match(r.hint, /ersten drei Zahlen/);
+  assert.match(NW.addrHint(net, pcs[1].id), /192\.168\.1\.x/);
+  pcs[1].ip = pcs[0].ip;
+  assert.match(NW.addrHint(net, pcs[1].id), /dieselbe Adresse/);
+});
+
+test('Ziel in fremdem Netz ohne Router: Tipp fragt nach Tippfehler statt nach Gateway', () => {
+  const net = TASKS.find(t => t.id === 'zwei-pcs').solution();
+  const pc = net.devices.find(d => d.type === 'pc');
+  const r = NW.ping(net, pc.id, '192.168.5.5');
+  assert.ok(!r.ok);
+  assert.match(r.hint, /keinen Router/);
+});
+
 test('Webseite über DNS: vier Schritte', () => {
   const net = TASKS.find(t => t.id === 'webseite').solution();
   const r = NW.browse(net, 'pc', 'www.netzwerkstatt.de');
@@ -546,6 +585,21 @@ test('Client-Server: Datei bleibt auf dem Server, auch wenn der Absender weg ist
   assert.ok(r.ok, r.error);
   assert.strictEqual(r.mode, 'server');
   assert.deepStrictEqual(r.files, ['Klassenfoto.jpg']);
+});
+
+test('Klassenfoto vom Server holen klappt auch, wenn Mia es schon per Peer-to-Peer hat', () => {
+  const task = TASKS.find(t => t.id === 'dateien');
+  const net = task.start();
+  NW.dev(net, 'mia').share = true;
+  assert.ok(NW.sendFile(net, 'lena', '192.168.20.13', 'Klassenfoto.jpg').ok);
+  NW.fileStore(NW.dev(net, 'srv')).on = true;
+  assert.ok(NW.sendFile(net, 'lena', '192.168.20.2', 'Klassenfoto.jpg').ok);
+  const r = NW.getFiles(net, 'mia', '192.168.20.2');
+  assert.ok(r.ok, r.error);
+  assert.deepStrictEqual(r.files, ['Klassenfoto.jpg']);
+  assert.deepStrictEqual(NW.filesOf(NW.dev(net, 'mia')), ['Klassenfoto.jpg']);
+  NW.logEvent(net, { type: 'file', src: 'mia', target: r.target, mode: r.mode, dir: 'get', files: r.files, ok: r.ok });
+  assert.strictEqual(evaluate(task, net)[2], true);
 });
 
 test('Bluetooth-Kopfhörer: kein Kabel, kein IP-Netz, nur ein Partner', () => {
@@ -1088,5 +1142,16 @@ test('Anschlüsse: Router zeigt WAN und LAN 1–3, Switch nummeriert Ports 1–8
   assert.ok(NW.replug(net, up.id, 'r').ok);
   assert.strictEqual(NW.portName(net, r, up), 'LAN 2');
 });
+
+// Jede eingebaute Aufgabe mit Musterlösung hat einen Lösungsweg und Antworten zum Denkanstoß
+const { of: loesungOf } = require('../web/js/loesungen.js');
+for (const t of TASKS) {
+  if (!t.solution) continue;
+  test(`Lösungsweg zu „${t.title}" vorhanden`, () => {
+    const w = loesungOf(t);
+    assert.ok(w && w.steps.length >= 2, 'Lösungsweg fehlt');
+    if (t.think) assert.ok((w.answers || []).length > 0, 'Antworten zum Denkanstoß fehlen');
+  });
+}
 
 console.log(`\n${n} Tests bestanden.`);
