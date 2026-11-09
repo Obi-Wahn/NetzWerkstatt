@@ -55,7 +55,7 @@
 
   function render(net) {
     const st = S.demo.steps[S.k];
-    NWView.render($('canvas'), net, { highlight: new Set(st.focus || []) });
+    NWView.render($('canvas'), net, { highlight: new Set(st.focus || []), fit: true });
   }
 
   async function goTo(k) {

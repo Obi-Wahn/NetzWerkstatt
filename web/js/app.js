@@ -270,7 +270,7 @@
   const PALETTE = [
     ['endgeraete', 'Endgeräte', [['pc', 'PC'], ['laptop', 'Laptop', 'wlan'], ['tablet', 'Tablet'], ['smartphone', 'Smart\u00adphone'], ['headset', 'Kopf\u00adhörer', 'pan']]],
     ['aktiv', 'Aktive Komponenten', [['switch', 'Switch'], ['ap', 'Access Point', 'wlan'], ['router', 'Router']]],
-    ['verbindungen', 'Verbindungen (passiv)', [['tool:kabel', 'Netzwerk\u00adkabel'], ['tool:glasfaser', 'Glas\u00adfaser', 'netzarten'], ['tool:wlan', 'WLAN', 'wlan'], ['tool:bluetooth', 'Blue\u00adtooth', 'pan'], ['bus', 'Bus-Kabel', 'topologie']]],
+    ['verbindungen', 'Verbindungen (passiv)', [['tool:kabel', 'Netz\u00adwerk\u00adkabel'], ['tool:glasfaser', 'Glas\u00adfaser', 'netzarten'], ['tool:wlan', 'WLAN', 'wlan'], ['tool:bluetooth', 'Blue\u00adtooth', 'pan'], ['bus', 'Bus-Kabel', 'topologie']]],
     ['server', 'Server', [['server', 'Server'], ['server:web', 'Web\u00adserver', 'web'], ['server:dns', 'DNS-Server', 'web'], ['server:mail', 'Mail\u00adserver', 'dienste'], ['server:video', 'Video\u00adserver', 'dienste'], ['server:call', 'Telefonie-Server', 'dienste'], ['server:game', 'Spiele-Server', 'dienste']]],
     ['internet', 'Internet', [['isp', 'Internet\u00adanbieter', 'internet'], ['rz', 'Rechen\u00adzentrum', 'internet']]],
   ];
@@ -394,7 +394,7 @@
     if (S.netKind && !kinds.some(k => k.kind === S.netKind)) S.netKind = null;
     const highlight = new Set();
     kinds.filter(k => k.kind === S.netKind).forEach(k => k.devices.forEach(id => highlight.add(id)));
-    NWView.render($('canvas'), S.net, { selected: S.selected, pending: S.pending, highlight, v6: S.v6 });
+    NWView.render($('canvas'), S.net, { selected: S.selected, pending: S.pending, highlight, v6: S.v6, fit: true });
     renderNetKinds(kinds);
     positionInspector();
   }

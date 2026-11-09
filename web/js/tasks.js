@@ -686,7 +686,7 @@
     const add = (id, type, x, y, extra) => NW.createDevice(net, type, x, y, Object.assign({ id }, L, extra));
     const link = (a, b, kind, extra) => Object.assign(NW.addLink(net, a, b, kind).link, L, extra || {});
     const cfg = ip => ({ ip, gw: '192.168.178.1', dns: '203.0.113.53' });
-    add('sw', 'switch', 220, 280, { name: 'Switch Büro' });
+    add('sw', 'switch', 185, 280, { name: 'Switch Büro' });
     add('pc', 'pc', 80, 110, Object.assign({ name: 'PC Büro' }, cfg('192.168.178.20')));
     add('sp', 'smartphone', 190, 470, Object.assign({ name: 'Smartphone' }, cfg('192.168.178.30')));
     link('pc', 'sw', 'kabel', { unplugged: 'b' });
