@@ -115,6 +115,20 @@
       'Tippe das Smartphone an und drücke bei mail.schule.de auf „E-Mails abrufen“.',
       'Schalte beim Server auch den Spiele-Server ein, trage spiel.schule.de beim DNS-Server ein und spiele vom PC aus online.',
     ],
+    'fehler-computerraum': [
+      'Pinge von PC 1 aus alle anderen PCs an. Tippe dann das Kabel des PCs an, der nicht antwortet, und sieh dir den Stecker an.',
+      'Tippe das Kabel des anderen PCs an, der nicht antwortet, und drücke auf „Mit dem Kabeltester prüfen“.',
+      'Tippe PC 3 an und pinge unter „Ping“ die Adresse von PC 4 an: 192.168.50.14.',
+    ],
+    'fehler-heimnetz': [
+      'Tippe das Tablet an und sieh dir den Abschnitt „WLAN“ ganz oben an.',
+      'Tippe das Kabel zwischen Laptop und Router an und sieh dir an, wie der Stecker sitzt.',
+      'Tippe das Tablet an und pinge die Adresse des Laptops an: 192.168.178.21.',
+    ],
+    'fehler-internet': [
+      'Öffne am PC die Seite und schau, wo das Paket hängen bleibt. Tippe dieses Kabel an. Prüfe danach auch das nächste Kabel mit dem Kabeltester.',
+      'Tippe das Smartphone an und sieh dir den Abschnitt „WLAN“ ganz oben an.',
+    ],
   };
 
   const valid = id => LEVELS.some(l => l.id === id);

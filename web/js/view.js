@@ -118,7 +118,16 @@
       const g = el('g', { class: 'link ' + l.kind + (opts.selected === l.id ? ' selected' : '') + (l.broken ? ' broken' : '') + (l.stadt ? ' stadt' : '') + (l.loss ? ' lossy' : ''), 'data-link': l.id }, gLinks);
       const pa = anchor(a, b), pb = anchor(b, a);
       el('line', { x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y, class: 'hit' }, g);
-      el('line', { x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y, class: 'wire' }, g);
+      // Kabel steckt nicht richtig (Fehlersuche): Am losen Ende bleibt eine Lücke, der Stecker hängt davor
+      let wa = pa, wb = pb;
+      if (l.unplugged && l.kind === 'kabel') {
+        const atA = l.unplugged === 'a', from = atA ? pa : pb, to = atA ? pb : pa;
+        const k = Math.min(0.4, 36 / Math.max(1, Math.hypot(to.x - from.x, to.y - from.y)));
+        const q = { x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k };
+        if (atA) wa = q; else wb = q;
+      }
+      el('line', { x1: wa.x, y1: wa.y, x2: wb.x, y2: wb.y, class: 'wire' }, g);
+      if (wa !== pa || wb !== pb) el('circle', { cx: (wa !== pa ? wa : wb).x, cy: (wa !== pa ? wa : wb).y, r: 5, class: 'plug-end' }, g);
       if (l.loss && !l.broken) {
         // Gestörte Verbindung: Blitz in der Mitte
         const z = el('g', { class: 'loss-badge', transform: `translate(${(pa.x + pb.x) / 2},${(pa.y + pb.y) / 2})` }, g);
@@ -203,7 +212,7 @@
         const s = el('text', { x: 0, y: BOX.h / 2 + 33 + k * 15, 'text-anchor': 'middle', class: 'ip' + (/keine IP|ausgefallen/.test(sub) ? ' missing' : '') }, g);
         s.textContent = sub;
       });
-      if ((NW.TYPES[d.type].router || d.type === 'switch') && !d.cloud) drawSockets(g, NW.portList(net, d));
+      if ((NW.TYPES[d.type].router || d.type === 'switch') && !d.cloud) drawSockets(g, NW.portList(net, d), d);
       if (NW.TYPES[d.type].router && d.wlan) {
         // kleines Funk-Symbol: Der Router hat eingebautes WLAN
         const wf = el('g', { class: 'wlan-badge', transform: `translate(${-BOX.w / 2 + 12},${-BOX.h / 2 + 12})` }, g);
@@ -220,7 +229,9 @@
   }
 
   /** Anschlüsse als kleine Buchsen unten im Gerät: WAN farbig abgesetzt, belegte Buchsen gefüllt. */
-  function drawSockets(g, ports) {
+  function drawSockets(g, ports, d) {
+    // Steckt ein Kabel an diesem Gerät nicht richtig (Fehlersuche), bleibt sein Anschluss leer
+    const loose = l => !!(l && l.unplugged && (l.unplugged === 'a' ? l.a : l.b) === (d && d.id));
     if (!ports.length) return;
     const sw = 6, gap = 2.5, wanGap = 6;
     const hasWan = ports.some(p => p.wan);
@@ -228,7 +239,7 @@
     let x = -total / 2;
     const row = el('g', { class: 'sockets' }, g);
     ports.forEach((p, k) => {
-      const r = el('rect', { x, y: BOX.h / 2 - 12, width: sw, height: 6, rx: 1.2, class: 'sock' + (p.wan ? ' wan' : '') + (p.link ? ' used' : '') }, row);
+      const r = el('rect', { x, y: BOX.h / 2 - 12, width: sw, height: 6, rx: 1.2, class: 'sock' + (p.wan ? ' wan' : '') + (p.link && !loose(p.link) ? ' used' : '') }, row);
       el('title', {}, r).textContent = p.name + (p.other ? ': ' + p.other.name : ': frei');
       x += sw + (p.wan && k < ports.length - 1 ? wanGap : gap);
     });

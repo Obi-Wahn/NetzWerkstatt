@@ -251,6 +251,7 @@ input:disabled { background: var(--chip-bg); color: var(--muted); }
 .device.off .glyph { opacity: .35; }
 .link.broken .wire { stroke: var(--bad); stroke-dasharray: 10 6; }
 .break-mark { pointer-events: none; }
+.link .plug-end { fill: var(--cable); stroke: var(--panel); stroke-width: 2; pointer-events: none; }
 .break-mark circle { fill: var(--bad); stroke: var(--panel); stroke-width: 2.5; }
 .break-mark path { fill: var(--on-color); }
 .topo-badge { cursor: pointer; }

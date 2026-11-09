@@ -215,6 +215,45 @@
         'Eine E-Mail muss vollständig ankommen (TCP). Beim Spiel ist Schnelligkeit wichtiger, und das nächste Paket bringt ohnehin den neuesten Stand (UDP).',
       ],
     },
+    'fehler-computerraum': {
+      steps: [
+        'Bei PC 1 nacheinander die anderen PCs anpingen: 192.168.50.12 klappt, 192.168.50.13 und 192.168.50.14 nicht. Betroffen sind also PC 3 und PC 4.',
+        'Das Kabel von PC 3 antippen: Der Stecker bei PC 3 steckt nicht richtig. Auf „Kabel richtig einstecken“ tippen.',
+        'Das Kabel von PC 4 antippen: Von außen sieht es normal aus. „Mit dem Kabeltester prüfen“ zeigt: Das Kabel ist kaputt. Auf „Kabel austauschen“ tippen.',
+        'Bei PC 3 einen Ping an 192.168.50.14 (PC 4) senden.',
+      ],
+      answers: [
+        'Bei einem Kabelbruch sind oft nur einzelne dünne Adern im Inneren gerissen, zum Beispiel weil das Kabel geknickt oder eingeklemmt wurde. Die Hülle bleibt dabei heil.',
+        'Schritt für Schritt eingrenzen: Erst mit einem Ping prüfen, welche Geräte betroffen sind und wo das Paket hängen bleibt. Dann genau diese Stelle untersuchen: Stecker ansehen, Kabel testen, Einstellungen prüfen. Nach jeder Reparatur erneut testen.',
+      ],
+    },
+    'fehler-heimnetz': {
+      steps: [
+        'Beim Tablet einen Ping an den Router (192.168.178.1) senden: Zwischen Router und Tablet kommt kein Signal an.',
+        'Das Tablet antippen: Unter „WLAN“ ist das WLAN ausgeschaltet. „WLAN eingeschaltet“ ankreuzen.',
+        'Beim Laptop einen Ping an den Router senden: Zwischen Laptop und Router kommt kein Signal an.',
+        'Das Kabel vom Laptop zum Router antippen: Der Stecker beim Router steckt nicht richtig. Auf „Kabel richtig einstecken“ tippen.',
+        'Beim Tablet einen Ping an 192.168.178.21 (Laptop) senden.',
+      ],
+      answers: [
+        'Das Zeichen auf dem Bildschirm zeigt nur, dass eine WLAN-Verbindung eingerichtet ist. Ist das WLAN am Gerät aus (z. B. im Flugmodus) oder steckt ein Kabel nicht richtig, fließen trotzdem keine Daten.',
+        'Zu Hause kann man selbst prüfen: Ist das WLAN bzw. der Flugmodus richtig eingestellt? Stecken alle Kabel fest? Ist der Router eingeschaltet? Oft hilft auch, Router und Gerät neu zu starten.',
+      ],
+    },
+    'fehler-internet': {
+      steps: [
+        'Am PC die Seite www.netzwerkstatt.de öffnen: Schon zwischen PC und Switch kommt kein Signal an.',
+        'Das Kabel vom PC zum Switch antippen: Der Stecker beim Switch steckt nicht richtig. Auf „Kabel richtig einstecken“ tippen.',
+        'Die Seite erneut öffnen: Jetzt bleibt das Paket zwischen Switch und Router hängen.',
+        'Das Kabel vom Switch zum Router mit dem Kabeltester prüfen: Es ist kaputt. Auf „Kabel austauschen“ tippen.',
+        'Die Seite am PC noch einmal öffnen – jetzt klappt es.',
+        'Das Smartphone antippen: Das WLAN ist ausgeschaltet. „WLAN eingeschaltet“ ankreuzen und die Seite auch am Smartphone öffnen.',
+      ],
+      answers: [
+        'Es können mehrere Fehler hintereinander auf demselben Weg liegen. Das Paket bleibt immer am ersten Fehler hängen. Erst nach der Reparatur sieht man, ob es noch einen weiteren gibt.',
+        'Klappt der Ping zum Router, liegt der Fehler hinter dem Router (Internet, DNS, Server). Klappt er nicht, liegt der Fehler im eigenen Netz, also bei Kabeln, Switch, WLAN oder Einstellungen des Geräts.',
+      ],
+    },
   };
 
   /** Lösungsweg zu einer Aufgabe: {steps, answers} oder null. */

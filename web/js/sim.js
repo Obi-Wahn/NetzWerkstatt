@@ -348,6 +348,7 @@
       }
       const to = TYPES[other.type];
       if (!to.wlan) return { ok: false, reason: `${other.name} hat kein WLAN. Schließe es per Kabel an.` };
+      if (other.wlanOff) return { ok: false, reason: `Das WLAN von ${other.name} ist ausgeschaltet. Tippe das Gerät an und schalte es ein.` };
       if (wlanCount(net, other.id) >= 1) return { ok: false, reason: `${other.name} ist schon mit einem WLAN verbunden.` };
       if (to.host && cableCount(net, other.id) >= 1) return { ok: false, reason: `${other.name} ist schon per Kabel verbunden. Ein Endgerät nutzt entweder Kabel oder WLAN. Lösche zuerst das Kabel.` };
       if (wlanCount(net, apD.id) >= TYPES.ap.apWlan) return { ok: false, reason: `${apD.name} kann höchstens ${TYPES.ap.apWlan} WLAN-Geräte versorgen.` };
@@ -425,7 +426,7 @@
     }
     const seen = new Set([startId]);
     const queue = [];
-    const usable = l => ignoreFaults || !l.broken;
+    const usable = l => ignoreFaults || !linkDown(net, l);
     for (const l of linksOf(net, startId)) {
       if (!usable(l)) continue;
       if (TYPES[start.type].router && iface(portOf(l, startId)) !== iface(startPort)) continue;
@@ -508,16 +509,49 @@
     const out = [];
     if (!ring.closed) out.push({ kind: 'open' });
     for (const id of ring.members) { const d = dev(net, id); if (d.off) out.push({ kind: 'off', dev: d }); }
-    for (const l of ring.links) if (l.broken) out.push({ kind: 'link', link: l });
+    for (const l of ring.links) if (linkDown(net, l)) out.push({ kind: l.broken ? 'link' : 'nosignal', link: l });
     return out;
   }
 
   function linkBetween(net, a, b) { return net.links.find(l => (l.a === a && l.b === b) || (l.a === b && l.b === a)) || null; }
 
+  /**
+   * Fehler für die Fehlersuche (sie sind nicht sofort zu sehen und werden nicht verraten):
+   *   Verbindung: unplugged (Kabel steckt nicht richtig), defekt (Kabel kaputt, zeigt erst der Kabeltester)
+   *   Gerät:      wlanOff (WLAN am Endgerät ausgeschaltet)
+   * Überträgt die Verbindung gerade nichts (simulierter Kabelbruch oder einer dieser Fehler)?
+   */
+  function linkDown(net, l) {
+    if (l.broken || l.unplugged || l.defekt) return true;
+    if (l.kind !== 'wlan') return false;
+    const a = dev(net, l.a), b = dev(net, l.b);
+    return !!((a && a.wlanOff) || (b && b.wlanOff));
+  }
+
+  /** Kabeltester: Ergebnis {ok, text} für ein Kabel. */
+  function testCable(net, l) {
+    if (!l || l.kind !== 'kabel') return { ok: false, text: 'Der Kabeltester prüft nur Kabel.' };
+    const end = dev(net, l.unplugged === 'a' ? l.a : l.b);
+    if (l.unplugged) return { ok: false, text: `Der Kabeltester bekommt kein Signal: Das Kabel steckt bei ${end ? end.name : 'einem Gerät'} nicht richtig im Anschluss.` };
+    if (l.defekt || l.broken) return { ok: false, text: 'Der Kabeltester zeigt: Im Kabel sind Adern unterbrochen. Das Kabel ist kaputt.' };
+    return { ok: true, text: 'Der Kabeltester zeigt: Alle Adern sind in Ordnung. Das Kabel funktioniert.' };
+  }
+
+  /** Behebt einen Fehler der Fehlersuche: 'plug' (Kabel einstecken), 'swap' (Kabel austauschen), 'wlan' (WLAN am Gerät einschalten). */
+  function fixFault(net, id, how) {
+    const l = net.links.find(x => x.id === id);
+    if (how === 'plug' && l) { delete l.unplugged; return true; }
+    if (how === 'swap' && l && l.kind === 'kabel') { delete l.defekt; delete l.broken; return true; }
+    const d = dev(net, id);
+    if (how === 'wlan' && d) { delete d.wlanOff; return true; }
+    return false;
+  }
+
   function faultText(net, f) {
     if (f.kind === 'off') return `${f.dev.name} ist ausgefallen`;
     if (f.kind === 'link') return `das Kabel zwischen ${dev(net, f.link.a).name} und ${dev(net, f.link.b).name} hat einen Kabelbruch`;
     if (f.kind === 'bus') return `${f.dev.name} hat einen Kabelbruch`;
+    if (f.kind === 'nosignal') return `zwischen ${dev(net, f.link.a).name} und ${dev(net, f.link.b).name} kommt kein Signal an`;
     return 'der Ring ist nicht geschlossen';
   }
 
@@ -538,7 +572,7 @@
       for (let k = 0; k < n - 1; k++) {
         const j = (i + k) % n;
         const l = ring.links[j];
-        if (!l || l.broken) break;
+        if (!l || linkDown(net, l)) break;
         const nx = ring.members[(j + 1) % n];
         path.push(nx);
         if (dev(net, nx).off) break;
@@ -558,6 +592,7 @@
     const p = hit.path;
     for (let k = 1; k < p.length; k++) {
       const l = linkBetween(net, p[k - 1], p[k]);
+      if (l && !l.broken && linkDown(net, l)) return { path: p.slice(0, k), fault: 'nosignal', error: `Das Paket kommt nicht weiter: ${faultText(net, { kind: 'nosignal', link: l })}.`, hint: `Hier liegt der Fehler. Tippe die Verbindung und die Geräte ${dev(net, l.a).name} und ${dev(net, l.b).name} an und sieh genau nach.` };
       if (l && l.broken) return { path: p.slice(0, k), fault: 'link', error: `Das Paket kommt nicht weiter: ${faultText(net, { kind: 'link', link: l })}.`, hint: 'Ein kaputtes Kabel überträgt keine Signale. Tippe es an und repariere es.' };
       const d = dev(net, p[k]);
       if (d.off) {
@@ -595,7 +630,7 @@
     const k = step.path.findIndex(id => { const d = dev(net, id); return d && TYPES[d.type].bus; });
     if (k < 0) return step;
     const bus = step.path[k];
-    const extra = linksOf(net, bus).filter(l => !l.broken).map(l => l.a === bus ? l.b : l.a)
+    const extra = linksOf(net, bus).filter(l => !linkDown(net, l)).map(l => l.a === bus ? l.b : l.a)
       .filter(id => id !== step.path[k - 1] && id !== step.path[k + 1] && !dev(net, id).off)
       .map(id => step.path.slice(0, k + 1).concat(id));
     if (!extra.length) return step;
@@ -1990,7 +2025,7 @@
     TYPES, DESCRIPTIONS, parseIP, ipStr, parseMask, sameNet, netStr, netName, netRule, addrHint, ipProblem, isPrivate,
     emptyNetwork, createDevice, dev, linksOf, portOf, canLink, addLink, removeDevice, removeLink,
     allLinksOf, filesOf, fileStore, fileReady, newFile, sendFile, getFiles, btPartners, playMusic, NET_KINDS, netKinds,
-    ifaceAddr, l2Endpoints, route, roundTrip, ping, browse, parseURL, logEvent, topology, topologies, TOPOLOGY_INFO, ringOf, activeFaults, setFault, clone, newId,
+    ifaceAddr, l2Endpoints, route, roundTrip, ping, browse, parseURL, logEvent, topology, topologies, TOPOLOGY_INFO, ringOf, activeFaults, setFault, linkDown, testCable, fixFault, clone, newId,
     useService, SERVICES, ACTIONS, defaultServices, svcOn, NAMED_SERVICES, validHost, svcHost, nameStatus, registerName, linkBetween, isDnsServer, dnsUpstream,
     parseIP6, ip6Str, net6Str, isLinkLocal6, ip6Map, ip6Of, route6, ping6,
     dhcpOf, dhcpRange, dhcpDefaultRange, dhcp, applyLease, refreshDns, suggest, suggestPortIP, iface, ifaceName, replug, portName, portList, WAN, LAN, wlanHub, setRouterWlan, isApipa, setModem, ispOf,

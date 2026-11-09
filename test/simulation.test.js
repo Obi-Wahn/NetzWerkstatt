@@ -1110,6 +1110,48 @@ test('Dateitausch: nur mitmachende Geräte sind Partner, gesperrte Partner werde
   assert.doesNotMatch(r.hint, /schalte/i);
 });
 
+// ---------------------------------------------------------------- Fehlersuche
+test('Fehlersuche: Kabel nicht eingesteckt, kaputtes Kabel und WLAN aus blockieren, ohne den Grund zu verraten', () => {
+  const net = TASKS.find(t => t.id === 'fehler-computerraum').start();
+  assert.ok(NW.ping(net, 'p1', '192.168.50.12').ok);
+  for (const ip of ['192.168.50.13', '192.168.50.14']) {
+    const r = NW.ping(net, 'p1', ip);
+    assert.ok(!r.ok);
+    assert.match(r.error, /kein Signal/);
+    assert.doesNotMatch(r.error + r.hint, /kaputt|steckt|Kabelbruch/);
+  }
+  const home = TASKS.find(t => t.id === 'fehler-heimnetz').start();
+  const r = NW.ping(home, 'tb', '192.168.178.1');
+  assert.ok(!r.ok);
+  assert.match(r.error, /kein Signal/);
+  assert.ok(!NW.canLink(home, 'sp', 'tb', 'wlan').ok);
+});
+
+test('Fehlersuche: Kabeltester und Reparatur', () => {
+  const net = TASKS.find(t => t.id === 'fehler-computerraum').start();
+  const lk = id => net.links.find(l => l.a === id);
+  assert.ok(NW.testCable(net, lk('p1')).ok);
+  assert.match(NW.testCable(net, lk('p3')).text, /PC 3 nicht richtig/);
+  assert.match(NW.testCable(net, lk('p4')).text, /kaputt/);
+  NW.fixFault(net, lk('p3').id, 'plug');
+  NW.fixFault(net, lk('p4').id, 'swap');
+  assert.ok(NW.ping(net, 'p3', '192.168.50.14').ok);
+});
+
+test('Fehlersuche: Im Internet-Büro kommt das Paket nach jeder Reparatur ein Stück weiter', () => {
+  const net = TASKS.find(t => t.id === 'fehler-internet').start();
+  let r = NW.browse(net, 'pc', 'www.netzwerkstatt.de');
+  assert.ok(!r.ok);
+  NW.fixFault(net, net.links.find(l => l.a === 'pc').id, 'plug');
+  r = NW.browse(net, 'pc', 'www.netzwerkstatt.de');
+  assert.ok(!r.ok);
+  assert.match(r.error, /Switch Büro und Heimrouter/);
+  NW.fixFault(net, net.links.find(l => l.a === 'sw').id, 'swap');
+  assert.ok(NW.browse(net, 'pc', 'www.netzwerkstatt.de').ok);
+  assert.ok(!NW.browse(net, 'sp', 'www.netzwerkstatt.de').ok);
+  NW.fixFault(net, 'sp', 'wlan');
+  assert.ok(NW.browse(net, 'sp', 'www.netzwerkstatt.de').ok);
+});
 test('Anschlüsse: Router zeigt WAN und LAN 1–3, Switch nummeriert Ports 1–8', () => {
   const net = NW.emptyNetwork();
   NW.createDevice(net, 'router', 0, 0, { id: 'r' });
