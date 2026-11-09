@@ -112,6 +112,7 @@
     const gDevs = el('g', { class: 'devices' }, svg);
     el('g', { class: 'overlay' }, svg);
 
+    const allTags = [];
     for (const l of net.links) {
       const a = NW.dev(net, l.a), b = NW.dev(net, l.b);
       if (!a || !b) continue;
@@ -121,8 +122,12 @@
       // Kabel steckt nicht richtig (Fehlersuche): Am losen Ende bleibt eine Lücke, der Stecker hängt davor
       let wa = pa, wb = pb;
       if (l.unplugged && l.kind === 'kabel') {
-        const atA = l.unplugged === 'a', from = atA ? pa : pb, to = atA ? pb : pa;
-        const k = Math.min(0.4, 36 / Math.max(1, Math.hypot(to.x - from.x, to.y - from.y)));
+        const atA = l.unplugged === 'a', from = atA ? pa : pb, to = atA ? pb : pa, loose = atA ? a : b;
+        const len = Math.max(1, Math.hypot(to.x - from.x, to.y - from.y));
+        // Die Lücke beginnt erst am Rand des Geräts, sonst läge sie unsichtbar unter dem Kasten
+        const ux = Math.abs(to.x - from.x) / len, uy = Math.abs(to.y - from.y) / len;
+        const edge = isBus(loose) ? 6 : Math.min((BOX.w / 2) / (ux || 1e-6), (BOX.h / 2) / (uy || 1e-6));
+        const k = Math.min(0.45, (edge + 24) / len);
         const q = { x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k };
         if (atA) wa = q; else wb = q;
       }
@@ -150,9 +155,12 @@
         el('text', { x, y: y + 4, 'text-anchor': 'middle' }, lab).textContent = txt;
       }
       // Am Router und am Switch steht am Kabelende, in welchem Anschluss es steckt (WAN, LAN 1, Port 3 …)
+      const tags = [];
       if (l.kind === 'kabel') for (const [d, other] of [[a, b], [b, a]]) {
         let txt = NW.portName(net, d, l);
         if (!txt) continue;
+        // Steckt das Kabel hier nicht richtig, bleibt der Anschluss leer – kein Schild, die Lücke bleibt sichtbar
+        if (l.unplugged && (l.unplugged === 'a' ? l.a : l.b) === d.id) continue;
         const wan = txt === 'WAN';
         if (wan && d.modem) txt = 'Internet';
         const w = txt.length * 6.2 + 10;
@@ -165,11 +173,36 @@
         const half = dy > 0 ? Math.max(BOX.w / 2, d.name.length * 4.5, ...subs.map(x => x.length * 3.8)) : BOX.w / 2;
         const off = Math.min((half + w / 2 + 4) / (ux || 1e-6), ((dy > 0 ? below : BOX.h / 2) + 12) / (uy || 1e-6));
         const t = Math.min(NW.portName(net, other, l) ? 0.45 : 0.7, off / dist);
-        const x = d.x + dx * t, y = d.y + dy * t;
-        const lab = el('g', { class: 'port-label' + (wan ? ' wan' : ' lan') }, g);
-        el('rect', { x: x - w / 2, y: y - 9, width: w, height: 18, rx: 9 }, lab);
-        el('text', { x, y: y + 4, 'text-anchor': 'middle' }, lab).textContent = txt;
+        tags.push({ x: d.x + dx * t, y: d.y + dy * t, w, txt, wan });
       }
+      // Bei kurzen Kabeln würden sich beide Schilder überdecken: dann eins über, eins unter das Kabel
+      if (tags.length === 2) {
+        const [p, q] = tags;
+        if (Math.abs(p.x - q.x) < (p.w + q.w) / 2 + 2 && Math.abs(p.y - q.y) < 20) {
+          const len = Math.max(1, Math.hypot(b.x - a.x, b.y - a.y));
+          let nx = -(b.y - a.y) / len, ny = (b.x - a.x) / len;
+          if (ny > 0) { nx = -nx; ny = -ny; }
+          const sh = 11 + 10 * Math.abs(nx);
+          p.x += nx * sh; p.y += ny * sh; q.x -= nx * sh; q.y -= ny * sh;
+        }
+      }
+      for (const tg of tags) { tg.g = g; allTags.push(tg); }
+    }
+    // Schilder verschiedener Kabel am selben Gerät (z. B. zwei Kabel von oben) seitlich auseinanderschieben
+    for (let round = 0; round < 3; round++) {
+      for (let i = 0; i < allTags.length; i++) for (let j = i + 1; j < allTags.length; j++) {
+        const p = allTags[i], q = allTags[j];
+        const over = (p.w + q.w) / 2 + 3 - Math.abs(p.x - q.x);
+        if (over > 0 && Math.abs(p.y - q.y) < 19) {
+          const s = p.x <= q.x ? -1 : 1;
+          p.x += s * over / 2; q.x -= s * over / 2;
+        }
+      }
+    }
+    for (const tg of allTags) {
+      const lab = el('g', { class: 'port-label' + (tg.wan ? ' wan' : ' lan') }, tg.g);
+      el('rect', { x: tg.x - tg.w / 2, y: tg.y - 9, width: tg.w, height: 18, rx: 9 }, lab);
+      el('text', { x: tg.x, y: tg.y + 4, 'text-anchor': 'middle' }, lab).textContent = tg.txt;
     }
 
     const v6map = opts.v6 ? NW.ip6Map(net) : null;
