@@ -219,7 +219,7 @@
       steps: [
         'Bei PC 1 nacheinander die anderen PCs anpingen: 192.168.50.12 klappt, 192.168.50.13 und 192.168.50.14 nicht. Betroffen sind also PC 3 und PC 4.',
         'Das Kabel von PC 3 antippen: Der Stecker bei PC 3 steckt nicht richtig. Auf „Kabel richtig einstecken“ tippen.',
-        'Das Kabel von PC 4 antippen: Von außen sieht es normal aus. „Mit dem Kabeltester prüfen“ zeigt: Das Kabel ist kaputt. Auf „Kabel austauschen“ tippen.',
+        'Das Kabel von PC 4 antippen (oder PC 4 antippen und unter „Kabel prüfen“ auf „Kabeltester“): Von außen sieht es normal aus. „Mit dem Kabeltester prüfen“ zeigt: Das Kabel ist kaputt. Auf „Kabel austauschen“ tippen.',
         'Bei PC 3 einen Ping an 192.168.50.14 (PC 4) senden.',
       ],
       answers: [

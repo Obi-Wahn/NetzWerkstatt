@@ -592,7 +592,7 @@
     const p = hit.path;
     for (let k = 1; k < p.length; k++) {
       const l = linkBetween(net, p[k - 1], p[k]);
-      if (l && !l.broken && linkDown(net, l)) return { path: p.slice(0, k), fault: 'nosignal', error: `Das Paket kommt nicht weiter: ${faultText(net, { kind: 'nosignal', link: l })}.`, hint: `Hier liegt der Fehler. Tippe die Verbindung und die Geräte ${dev(net, l.a).name} und ${dev(net, l.b).name} an und sieh genau nach.` };
+      if (l && !l.broken && linkDown(net, l)) return { path: p.slice(0, k), fault: 'nosignal', error: `Das Paket kommt nicht weiter: ${faultText(net, { kind: 'nosignal', link: l })}.`, hint: `Hier liegt der Fehler. Tippe die Kabel-Linie zwischen ${dev(net, l.a).name} und ${dev(net, l.b).name} an (oder ein Gerät antippen und unter „Kabel prüfen“ den Kabeltester nehmen) und sieh dir auch die beiden Geräte genau an.` };
       if (l && l.broken) return { path: p.slice(0, k), fault: 'link', error: `Das Paket kommt nicht weiter: ${faultText(net, { kind: 'link', link: l })}.`, hint: 'Ein kaputtes Kabel überträgt keine Signale. Tippe es an und repariere es.' };
       const d = dev(net, p[k]);
       if (d.off) {
