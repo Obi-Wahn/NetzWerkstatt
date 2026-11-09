@@ -31,7 +31,7 @@
     tablet: 'Ein Endgerät ohne Netzwerkkabel. Es verbindet sich per WLAN mit einem Access Point.',
     smartphone: 'Ein Endgerät ohne Netzwerkkabel. Es verbindet sich per WLAN mit einem Access Point.',
     server: 'Ein Rechner, der Dienste für andere anbietet (Server im Client-Server-Modell), z. B. Webseiten, E-Mail, Videos, Videotelefonie, Online-Spiele oder die Namensauflösung (DNS).',
-    switch: 'Verbindet mehrere Geräte im selben Netz (LAN). Er leitet Pakete gezielt an das Gerät weiter, für das sie bestimmt sind. Er braucht keine IP-Adresse.',
+    switch: 'Verbindet mehrere Geräte im selben Netz (LAN). Er hat acht gleichwertige Anschlüsse (Ports 1–8) und leitet Pakete gezielt an das Gerät weiter, für das sie bestimmt sind. Er braucht keine IP-Adresse.',
     ap: 'Der Access Point (Zugangspunkt) bringt Geräte per Funk (WLAN) ins Kabelnetz. Er braucht keine IP-Adresse.',
     router: 'Verbindet verschiedene Netze miteinander, z. B. das Heimnetz mit dem Internet. Er hat drei LAN-Anschlüsse für das Heimnetz (wie ein eingebauter Switch) und einen Internet-Anschluss (WAN). In jedem der beiden Netze hat er eine eigene IP-Adresse. Endgeräte tragen ihn als Gateway ein.',
     bus: 'Ein langes Kabel, an das alle Geräte angeschlossen werden (Bustopologie). Jedes Signal läuft über das ganze Kabel und kommt bei allen Geräten an – nur der Empfänger nimmt es an. Es darf immer nur ein Gerät gleichzeitig senden. Ist das Bus-Kabel an einer Stelle unterbrochen, ist das ganze Netz gestört. Es ist eine passive Komponente und braucht keine IP-Adresse.',
@@ -259,6 +259,52 @@
     return { ok: true, iface: target };
   }
 
+  // ------------------------------------------------------------------ Anschlüsse (Ports) von Router und Switch
+  /** Anschlussnummern am Switch (1–8) je Verbindung. Ältere Netze ohne gespeicherte Nummer bekommen die nächste freie. */
+  function switchPortMap(net, sw) {
+    const ls = linksOf(net, sw.id).filter(l => l.kind === 'kabel');
+    const map = new Map(), used = new Set();
+    for (const l of ls) { const p = portOf(l, sw.id); if (Number.isInteger(p) && p >= 1 && p <= TYPES.switch.cable && !used.has(p)) { map.set(l.id, p); used.add(p); } }
+    let next = 1;
+    for (const l of ls) if (!map.has(l.id)) { while (used.has(next)) next++; map.set(l.id, next); used.add(next); }
+    return map;
+  }
+
+  /** Name des Anschlusses, in dem die Verbindung am Gerät steckt: „WAN“, „LAN 2“, „Port 3“, „WLAN“ – sonst ''. */
+  function portName(net, d, l) {
+    if (!d || !l) return '';
+    if (TYPES[d.type].router) {
+      const p = portOf(l, d.id);
+      if (l.kind === 'wlan' || p === WLAN_PORT) return 'WLAN';
+      if (p === undefined) return '';
+      return p === WAN ? 'WAN' : 'LAN ' + p;
+    }
+    if (d.type === 'switch' && l.kind === 'kabel') { const n = switchPortMap(net, d).get(l.id); return n ? 'Port ' + n : ''; }
+    return '';
+  }
+
+  /**
+   * Alle Kabelanschlüsse von Router oder Switch mit Belegung:
+   * [{ name:'WAN'|'LAN 1'|'Port 1', wan:bool, link, other }] (link/other = null, wenn frei).
+   */
+  function portList(net, d) {
+    const t = TYPES[d.type];
+    const cable = linksOf(net, d.id).filter(l => l.kind === 'kabel');
+    const other = l => dev(net, l.a === d.id ? l.b : l.a);
+    if (t.router) return [0, 1, 2, 3].map(p => {
+      const l = cable.find(x => portOf(x, d.id) === p) || null;
+      return { name: p === WAN ? 'WAN' : 'LAN ' + p, wan: p === WAN, link: l, other: l ? other(l) : null };
+    });
+    if (d.type === 'switch') {
+      const map = switchPortMap(net, d);
+      return Array.from({ length: t.cable }, (_, k) => {
+        const l = cable.find(x => map.get(x.id) === k + 1) || null;
+        return { name: 'Port ' + (k + 1), wan: false, link: l, other: l ? other(l) : null };
+      });
+    }
+    return [];
+  }
+
   /** Prüft, ob zwei Geräte verbunden werden dürfen. Liefert {ok, reason}. */
   function canLink(net, aId, bId, kind) {
     const a = dev(net, aId), b = dev(net, bId);
@@ -324,6 +370,10 @@
     const rport = (r, o) => kind === 'wlan' ? WLAN_PORT : TYPES[o.type].isp ? WAN : freeRouterPort(net, r, o);
     if (TYPES[a.type].router) l.aPort = rport(a, b);
     if (TYPES[b.type].router) l.bPort = rport(b, a);
+    // Am Switch steckt das Kabel im nächsten freien Anschluss (1–8)
+    const sport = sw => { const used = new Set(switchPortMap(net, sw).values()); let p = 1; while (used.has(p)) p++; return p; };
+    if (kind === 'kabel' && a.type === 'switch') l.aPort = sport(a);
+    if (kind === 'kabel' && b.type === 'switch') l.bPort = sport(b);
     net.links.push(l);
     return { ok: true, link: l };
   }
@@ -1943,7 +1993,7 @@
     ifaceAddr, l2Endpoints, route, roundTrip, ping, browse, parseURL, logEvent, topology, topologies, TOPOLOGY_INFO, ringOf, activeFaults, setFault, clone, newId,
     useService, SERVICES, ACTIONS, defaultServices, svcOn, NAMED_SERVICES, validHost, svcHost, nameStatus, registerName, linkBetween, isDnsServer, dnsUpstream,
     parseIP6, ip6Str, net6Str, isLinkLocal6, ip6Map, ip6Of, route6, ping6,
-    dhcpOf, dhcpRange, dhcpDefaultRange, dhcp, applyLease, refreshDns, suggest, suggestPortIP, iface, ifaceName, replug, WAN, LAN, wlanHub, setRouterWlan, isApipa, setModem, ispOf,
+    dhcpOf, dhcpRange, dhcpDefaultRange, dhcp, applyLease, refreshDns, suggest, suggestPortIP, iface, ifaceName, replug, portName, portList, WAN, LAN, wlanHub, setRouterWlan, isApipa, setModem, ispOf,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = NW;
   else root.NW = NW;
