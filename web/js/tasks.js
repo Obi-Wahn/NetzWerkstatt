@@ -128,7 +128,7 @@
       goals: [
         { text: 'Setze zwei PCs auf die Arbeitsfläche.', check: c => c.byType('pc').length >= 2 },
         { text: 'Verbinde die beiden PCs mit einem Kabel.', check: c => c.byType('pc').some(a => c.byType('pc').some(b => a !== b && c.linked(a, b, 'kabel'))) },
-        { text: 'Gib beiden PCs eine eigene IP-Adresse im Netz 192.168.1.0/24.', check: c => { const p = c.byType('pc').filter(d => c.inNet(d, '192.168.1.0', 24)); return p.length >= 2 && c.distinctIPs(p); } },
+        { text: 'Gib beiden PCs eine eigene IP-Adresse im Netz 192.168.1.x (für x eine Zahl von 1 bis 254, bei jedem PC eine andere).', check: c => { const p = c.byType('pc').filter(d => c.inNet(d, '192.168.1.0', 24)); return p.length >= 2 && c.distinctIPs(p); } },
         { text: 'Teste die Verbindung mit einem Ping von einem PC zum anderen.', check: c => c.pingOk(isType('pc'), isType('pc')) },
       ],
       start: () => NW.emptyNetwork(),
@@ -150,7 +150,7 @@
       goals: [
         { text: 'Setze einen Switch auf die Arbeitsfläche.', check: c => c.byType('switch').length >= 1 },
         { text: 'Verbinde alle vier PCs per Kabel mit dem Switch (Sterntopologie).', check: c => { const pcs = c.byType('pc'); return pcs.length >= 4 && c.byType('switch').some(s => pcs.every(p => c.linked(p, s, 'kabel'))); } },
-        { text: 'Gib jedem PC eine eigene IP-Adresse im Netz 192.168.10.0/24.', check: c => { const pcs = c.byType('pc'); return pcs.length >= 4 && pcs.every(d => c.inNet(d, '192.168.10.0', 24)) && c.distinctIPs(pcs); } },
+        { text: 'Gib jedem PC eine eigene IP-Adresse im Netz 192.168.10.x.', check: c => { const pcs = c.byType('pc'); return pcs.length >= 4 && pcs.every(d => c.inNet(d, '192.168.10.0', 24)) && c.distinctIPs(pcs); } },
         { text: 'Teste mit einem Ping, ob ein PC einen anderen über den Switch erreicht.', check: c => c.pingOk(isType('pc'), isType('pc')) },
       ],
       start: () => build(({ add }) => {
@@ -179,7 +179,7 @@
       goals: [
         { text: 'Verbinde ein Tablet und ein Smartphone per WLAN mit dem Router.', check: c => ['tablet', 'smartphone'].every(t => c.byType(t).some(d => c.neighbors(d.id).some(n => n.kind === 'wlan' && (n.dev.type === 'ap' || n.dev.type === 'router')))) },
         { text: 'Schließe einen PC per Kabel im Heimnetz an.', check: c => c.byType('pc').some(p => NW.l2Endpoints(c.net, p.id, 0).some(e => e.dev.type === 'router')) },
-        { text: 'Gib allen Endgeräten eine eigene IP-Adresse im Netz 192.168.178.0/24 und trage den Router (192.168.178.1) als Gateway ein.', check: c => { const h = c.hosts; return h.length >= 3 && h.every(d => c.inNet(d, '192.168.178.0', 24) && d.gw.trim() === '192.168.178.1') && c.distinctIPs(h); } },
+        { text: 'Gib allen Endgeräten eine eigene IP-Adresse im Netz 192.168.178.x und trage den Router (192.168.178.1) als Gateway ein.', check: c => { const h = c.hosts; return h.length >= 3 && h.every(d => c.inNet(d, '192.168.178.0', 24) && d.gw.trim() === '192.168.178.1') && c.distinctIPs(h); } },
         { text: 'Teste mit einem Ping vom Smartphone zum PC.', check: c => c.pingOk(isType('smartphone'), isType('pc')) },
       ],
       start: () => build(({ add }) => {
@@ -207,7 +207,7 @@
       think: 'Warum braucht der PC einen DNS-Server, obwohl er doch nur eine Webseite laden will? Was würde passieren, wenn du statt des Namens direkt http://203.0.113.80 eingibst?',
       goals: [
         { text: 'Schließe einen PC per Kabel an den Heimrouter an.', check: c => c.byType('pc').some(p => NW.l2Endpoints(c.net, p.id, 0).some(e => e.dev.id === 'r' && e.port === 1)) },
-        { text: 'Gib dem PC eine IP-Adresse im Heimnetz 192.168.178.0/24.', check: c => c.byType('pc').some(p => c.inNet(p, '192.168.178.0', 24) && p.ip.trim() !== '192.168.178.1') },
+        { text: 'Gib dem PC eine IP-Adresse im Heimnetz 192.168.178.x.', check: c => c.byType('pc').some(p => c.inNet(p, '192.168.178.0', 24) && p.ip.trim() !== '192.168.178.1') },
         { text: 'Trage beim PC den Router als Gateway ein.', check: c => c.byType('pc').some(p => p.gw.trim() === '192.168.178.1') },
         { text: 'Trage beim PC den DNS-Server ein.', check: c => c.byType('pc').some(p => p.dns.trim() === '203.0.113.53') },
         { text: 'Öffne im Browser des PCs die Seite http://www.netzwerkstatt.de.', check: c => c.webOk('www.netzwerkstatt.de') },
@@ -229,7 +229,7 @@
       tip: 'Tippe den Router an und schalte im Heimnetz (LAN) den DHCP-Server ein. Stelle danach bei Tablet und Smartphone die Netzwerk-Einstellungen auf „Automatisch (DHCP)". Beobachte die vier DHCP-Pakete!',
       think: 'Warum schickt ein Gerät seine erste DHCP-Nachricht „an alle" und nicht direkt an den Router? Was passiert, wenn der Adressbereich nur zwei Adressen enthält, aber drei Geräte eine wollen? Probiere es aus!',
       goals: [
-        { text: 'Schalte beim Router den DHCP-Server für das Netz 192.168.0.0/24 ein.', check: c => c.byType('router').some(r => r.ports.some((p, i) => p.dhcp && p.dhcp.on && NW.ifaceAddr(r, i) && NW.sameNet(NW.ifaceAddr(r, i).ip, NW.parseIP('192.168.0.0'), 24))) },
+        { text: 'Schalte beim Router den DHCP-Server für das Netz 192.168.0.x ein.', check: c => c.byType('router').some(r => r.ports.some((p, i) => p.dhcp && p.dhcp.on && NW.ifaceAddr(r, i) && NW.sameNet(NW.ifaceAddr(r, i).ip, NW.parseIP('192.168.0.0'), 24))) },
         { text: 'Verbinde ein Tablet und ein Smartphone per WLAN (mit dem Access Point oder dem WLAN des Routers).', check: c => ['tablet', 'smartphone'].every(t => c.byType(t).some(d => c.neighbors(d.id).some(n => n.kind === 'wlan' && (n.dev.type === 'ap' || n.dev.type === 'router')))) },
         { text: 'Lass Tablet und Smartphone ihre IP-Adresse automatisch per DHCP beziehen.', check: c => ['tablet', 'smartphone'].every(t => c.byType(t).some(d => d.dhcp && c.inNet(d, '192.168.0.0', 24) && d.gw.trim() === '192.168.0.1')) },
         { text: 'Teste mit einem Ping vom Smartphone zum Tablet.', check: c => c.pingOk(isType('smartphone'), isType('tablet')) },
@@ -288,7 +288,7 @@
       goals: [
         { text: 'Setze ein Bus-Kabel auf die Arbeitsfläche.', check: c => c.byType('bus').length >= 1 },
         { text: 'Schließe alle vier PCs per Kabel an das Bus-Kabel an (Bustopologie).', check: c => { const pcs = c.byType('pc'); return pcs.length >= 4 && c.byType('bus').some(b => pcs.every(p => c.linked(p, b, 'kabel'))); } },
-        { text: 'Gib jedem PC eine eigene IP-Adresse im Netz 192.168.20.0/24.', check: c => { const pcs = c.byType('pc'); return pcs.length >= 4 && pcs.every(d => c.inNet(d, '192.168.20.0', 24)) && c.distinctIPs(pcs); } },
+        { text: 'Gib jedem PC eine eigene IP-Adresse im Netz 192.168.20.x.', check: c => { const pcs = c.byType('pc'); return pcs.length >= 4 && pcs.every(d => c.inNet(d, '192.168.20.0', 24)) && c.distinctIPs(pcs); } },
         { text: 'Teste mit einem Ping, ob ein PC einen anderen über den Bus erreicht.', check: c => c.pingOk(isType('pc'), isType('pc')) },
         { text: 'Simuliere einen Kabelbruch im Bus-Kabel und sende einen Ping. Repariere das Kabel danach wieder.', check: c => c.pings().some(e => !e.ok && e.fault === 'bus') && c.byType('bus').length >= 1 && c.byType('bus').every(b => !b.broken) },
       ],
@@ -319,7 +319,7 @@
       think: 'Schau dir beim Ping genau an, welchen Weg die Antwort nimmt. Warum fällt das ganze Netz aus, wenn nur ein PC ausgeschaltet wird? Vergleiche mit dem Sternnetz.',
       goals: [
         { text: 'Verbinde die vier PCs per Kabel zu einem geschlossenen Ring.', check: c => { const pcs = c.byType('pc'); return pcs.length >= 4 && c.topos('ring').some(t => t.closed && pcs.every(p => t.members.includes(p.id))); } },
-        { text: 'Gib jedem PC eine eigene IP-Adresse im Netz 192.168.30.0/24.', check: c => { const pcs = c.byType('pc'); return pcs.length >= 4 && pcs.every(d => c.inNet(d, '192.168.30.0', 24)) && c.distinctIPs(pcs); } },
+        { text: 'Gib jedem PC eine eigene IP-Adresse im Netz 192.168.30.x.', check: c => { const pcs = c.byType('pc'); return pcs.length >= 4 && pcs.every(d => c.inNet(d, '192.168.30.0', 24)) && c.distinctIPs(pcs); } },
         { text: 'Teste mit einem Ping, ob die Daten durch den Ring laufen.', check: c => c.pingOk(isType('pc'), isType('pc')) },
         { text: 'Schalte einen PC aus oder simuliere einen Kabelbruch und sende dann einen Ping. Behebe den Fehler danach wieder.', check: c => c.pings().some(e => !e.ok && e.fault === 'ring') && c.topos('ring').length >= 1 && c.topos('ring').every(t => t.ok) },
       ],
