@@ -72,6 +72,7 @@ type Store struct {
 	Released        map[string]bool            `json:"released"` // taskID -> Musterlösung freigegeben
 	Unlocked        map[string]bool            `json:"unlocked"` // taskID -> für Schüler freigeschaltet
 	CustomTasks     []json.RawMessage          `json:"customTasks"`
+	Demos           map[string]bool            `json:"demos"` // demoID -> Vorführung für Schüler freigegeben
 
 	mu   sync.Mutex
 	path string
@@ -122,6 +123,9 @@ func loadStore(path string) *Store {
 	}
 	if s.Released == nil {
 		s.Released = map[string]bool{}
+	}
+	if s.Demos == nil {
+		s.Demos = map[string]bool{} // ab Werk sind keine Vorführungen freigegeben
 	}
 	if s.Unlocked == nil {
 		// Ab Werk (und bei Dateien aus älteren Versionen) sind diese Aufgaben freigeschaltet.
@@ -209,6 +213,17 @@ func (s *Store) customForStudents(all bool) []json.RawMessage {
 		out = append(out, raw)
 	}
 	return out
+}
+
+// openDemos: freigegebene Vorführungen (nur IDs mit true). Aufruf mit gehaltener Sperre.
+func (s *Store) openDemos() map[string]bool {
+	open := map[string]bool{}
+	for id, on := range s.Demos {
+		if on {
+			open[id] = true
+		}
+	}
+	return open
 }
 
 func (s *Store) studentByToken(tok string) *Student {
@@ -404,7 +419,26 @@ func (srv *Server) routes() http.Handler {
 			}
 		}
 		writeJSON(w, 200, map[string]any{"name": st.Name, "works": status, "released": s.Released,
-			"unlocked": unlocked, "preview": st.Teacher, "customTasks": s.customForStudents(st.Teacher)})
+			"unlocked": unlocked, "preview": st.Teacher, "customTasks": s.customForStudents(st.Teacher),
+			"demos": s.openDemos(), "allDemos": st.Teacher})
+	})
+
+	// Vorführungen: Die Lehrkraft sieht alle, Schüler nur die freigegebenen
+	mux.HandleFunc("GET /api/demos", func(w http.ResponseWriter, r *http.Request) {
+		if srv.isTeacher(r) {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			writeJSON(w, 200, map[string]any{"teacher": true, "open": s.openDemos()})
+			return
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		st := s.studentByToken(bearer(r))
+		if st == nil {
+			fail(w, 401, "Bitte melde dich an.")
+			return
+		}
+		writeJSON(w, 200, map[string]any{"teacher": false, "all": st.Teacher, "open": s.openDemos()})
 	})
 
 	mux.HandleFunc("GET /api/work/{task}", func(w http.ResponseWriter, r *http.Request) {
@@ -532,6 +566,35 @@ func (srv *Server) routes() http.Handler {
 		for _, id := range req.Tasks {
 			if id != "" && len(id) <= 40 {
 				s.Unlocked[id] = req.Unlocked
+			}
+		}
+		s.saveLocked()
+		s.mu.Unlock()
+		writeJSON(w, 200, map[string]bool{"ok": true})
+	})
+
+	// Vorführungen für Schüler freigeben oder sperren (einzeln oder alle)
+	mux.HandleFunc("POST /api/teacher/demos", func(w http.ResponseWriter, r *http.Request) {
+		if !srv.isTeacher(r) {
+			fail(w, 401, "Bitte als Lehrkraft anmelden.")
+			return
+		}
+		var req struct {
+			Demos []string `json:"demos"`
+			Open  bool     `json:"open"`
+		}
+		if err := readBody(r, &req); err != nil || len(req.Demos) == 0 || len(req.Demos) > 100 {
+			fail(w, 400, "Ungültige Anfrage.")
+			return
+		}
+		s.mu.Lock()
+		for _, id := range req.Demos {
+			if id != "" && len(id) <= 40 {
+				if req.Open {
+					s.Demos[id] = true
+				} else {
+					delete(s.Demos, id)
+				}
 			}
 		}
 		s.saveLocked()

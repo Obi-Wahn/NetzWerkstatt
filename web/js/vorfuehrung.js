@@ -1,13 +1,29 @@
-/* NetzWerkstatt – Vorführungen abspielen (ohne Anmeldung, nichts wird gespeichert) */
+/* NetzWerkstatt – Vorführungen abspielen. Schüler sehen nur, was die Lehrkraft freigegeben hat. */
 (function () {
   'use strict';
+  const { store, api, esc, toast } = NWCommon;
   const $ = id => document.getElementById(id);
-  const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const S = { demo: null, k: 0, run: 0 };
+  // access: null = noch unbekannt; sonst { teacher, all, open, token }
+  const S = { demo: null, k: 0, run: 0, access: null };
 
-  // Zurück dorthin, woher man kam (Lehreransicht oder Aufgaben)
-  const from = new URLSearchParams(location.search).get('von');
-  if (from === 'lehrer') document.querySelector('.back-link').href = 'lehrer.html';
+  /** Wer schaut zu? Lehrkraft (sieht alles und gibt frei) oder angemeldete Schüler (nur Freigegebenes). */
+  async function loadAccess() {
+    const tries = [store.get('nw_teacher'), store.get('nw_token')].filter(Boolean);
+    let lastErr = null;
+    for (const tok of tries) {
+      try {
+        const r = await api('GET', '/api/demos', undefined, tok);
+        return { teacher: !!r.teacher, all: !!r.all, open: r.open || {}, token: tok };
+      } catch (e) {
+        lastErr = e;
+        if (e.status !== 401) break;
+      }
+    }
+    if (lastErr && lastErr.offline) throw lastErr;
+    return null; // nicht angemeldet
+  }
+  const seesAll = () => !!(S.access && (S.access.teacher || S.access.all));
+  const allowed = d => !!(S.access && (seesAll() || S.access.open[d.id]));
 
   function show(name) {
     for (const s of document.querySelectorAll('.screen')) s.hidden = s.id !== 'screen-' + name;
@@ -16,8 +32,54 @@
   function showList() {
     show('list');
     S.demo = null; S.run++;
-    $('demo-list').innerHTML = NWDemos.DEMOS.map((d, i) => `<button class="task-tile" data-demo="${d.id}"><div class="tile-num">▶</div><div class="tile-body"><h4>${esc(d.title)}</h4><p>${esc(d.short)}</p><div class="tile-meta"><span class="muted small">${d.steps.length} Schritte</span></div></div></button>`).join('');
+    const a = S.access;
+    const teacher = !!(a && a.teacher);
+    $('intro-teacher').hidden = !teacher;
+    $('intro-student').hidden = teacher || !a;
+    // Zurück dorthin, woher man kam (Lehreransicht oder Aufgaben)
+    document.querySelector('.back-link').href = teacher ? 'lehrer.html' : 'index.html';
+    const msg = $('demo-msg');
+    msg.hidden = true;
+    if (!a) {
+      msg.innerHTML = 'Bitte melde dich zuerst an. Dann siehst du hier die Vorführungen, die deine Lehrkraft freigegeben hat. <a href="index.html">Zur Anmeldung</a>';
+      msg.hidden = false;
+      $('demo-list').innerHTML = '';
+      return;
+    }
+    const list = NWDemos.DEMOS.filter(allowed);
+    if (!list.length) {
+      msg.textContent = 'Deine Lehrkraft hat noch keine Vorführung freigegeben. Schau später noch einmal vorbei.';
+      msg.hidden = false;
+    }
+    const tile = d => `<button class="task-tile" data-demo="${d.id}"><div class="tile-num">▶</div><div class="tile-body"><h4>${esc(d.title)}</h4><p>${esc(d.short)}</p><div class="tile-meta"><span class="muted small">${d.steps.length} Schritte</span></div></div></button>`;
+    if (teacher) {
+      const n = NWDemos.DEMOS.filter(d => a.open[d.id]).length;
+      $('demo-open-count').textContent = n === 0 ? 'Für Schüler ist noch keine Vorführung freigegeben.'
+        : n === NWDemos.DEMOS.length ? 'Alle Vorführungen sind für Schüler freigegeben.'
+        : `${n} von ${NWDemos.DEMOS.length} Vorführungen sind für Schüler freigegeben.`;
+      $('btn-open-all').disabled = n === NWDemos.DEMOS.length;
+      $('btn-close-all').disabled = n === 0;
+      $('demo-list').innerHTML = list.map(d => `<div class="demo-item${a.open[d.id] ? '' : ' closed'}">${tile(d)}<label class="toggle"><input type="checkbox" data-open="${d.id}"${a.open[d.id] ? ' checked' : ''}> Für Schüler freigeben</label></div>`).join('');
+    } else {
+      $('demo-list').innerHTML = list.map(tile).join('');
+    }
   }
+  async function setOpen(ids, open) {
+    try {
+      await api('POST', '/api/teacher/demos', { demos: ids, open }, S.access.token);
+      for (const id of ids) { if (open) S.access.open[id] = true; else delete S.access.open[id]; }
+      toast(open ? (ids.length > 1 ? 'Alle Vorführungen freigegeben.' : 'Vorführung freigegeben.') : (ids.length > 1 ? 'Alle Vorführungen gesperrt.' : 'Vorführung gesperrt.'), 'ok');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+    showList();
+  }
+  $('demo-list').addEventListener('change', ev => {
+    const c = ev.target.closest('[data-open]');
+    if (c) setOpen([c.dataset.open], c.checked);
+  });
+  $('btn-open-all').addEventListener('click', () => setOpen(NWDemos.DEMOS.map(d => d.id), true));
+  $('btn-close-all').addEventListener('click', () => setOpen(NWDemos.DEMOS.map(d => d.id), false));
   $('demo-list').addEventListener('click', ev => {
     const b = ev.target.closest('[data-demo]');
     if (b) openDemo(b.dataset.demo, 0);
@@ -26,7 +88,7 @@
 
   function openDemo(id, k) {
     const demo = NWDemos.byId(id);
-    if (!demo) { showList(); return; }
+    if (!demo || !allowed(demo)) { showList(); return; }
     if (!S.demo || S.demo.id !== id) NWView.resetZoom($('canvas'));
     S.demo = demo;
     $('demo-title').textContent = demo.title;
@@ -106,6 +168,23 @@
   // Vergrößern mit Knöpfen oder zwei Fingern; vergrößert verschiebt ein Finger die Fläche
   NWView.enableZoom($('canvas'), { buttons: document.querySelector('#screen-demo .canvas-wrap'), anywhere: true });
 
-  const start = location.hash.slice(1);
-  if (start && NWDemos.byId(start)) openDemo(start, 0); else showList();
+  // Schüler: neu freigegebene Vorführungen erscheinen ohne Neuladen
+  setInterval(async () => {
+    if (document.hidden || $('screen-list').hidden || !S.access || S.access.teacher) return;
+    try {
+      const a = await loadAccess();
+      if (JSON.stringify(a) !== JSON.stringify(S.access)) { S.access = a; showList(); }
+    } catch (e) { /* später erneut */ }
+  }, 6000);
+
+  (async () => {
+    try { S.access = await loadAccess(); } catch (e) {
+      show('list');
+      $('demo-msg').textContent = e.message;
+      $('demo-msg').hidden = false;
+      return;
+    }
+    const start = location.hash.slice(1);
+    if (start && NWDemos.byId(start)) openDemo(start, 0); else showList();
+  })();
 })();
