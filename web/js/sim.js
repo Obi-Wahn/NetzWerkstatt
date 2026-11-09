@@ -1757,8 +1757,9 @@
   }
 
   /**
-   * Holt alle Dateien, die ein anderes Gerät anbietet und die man selbst noch nicht hat:
-   * von einem Server mit Dateiablage (Herunterladen, Client-Server) oder direkt von einem Endgerät (Peer-to-Peer).
+   * Holt alle Dateien, die ein anderes Gerät anbietet: von einem Server mit Dateiablage (Herunterladen, Client-Server)
+   * oder direkt von einem Endgerät (Peer-to-Peer). Hat man eine Datei schon (z. B. vorher per Peer-to-Peer bekommen),
+   * wird sie einfach noch einmal geholt – das ist kein Fehler.
    * Ergebnis: {ok, steps, mode, target, files, error, hint}
    */
   function getFiles(net, srcId, dstText) {
@@ -1781,12 +1782,12 @@
     }
     const offer = fromServer ? fileStore(c.target).files : filesOf(c.target);
     const mine = filesOf(src);
-    const got = offer.filter(f => !mine.includes(f));
+    const got = offer.slice();
     if (!got.length) {
-      steps.push({ kind: 'response', label: 'Dateien', proto: FILE_PROTO, text: `${c.target.name}: „Ich habe keine neuen Dateien für dich.“`, path: c.rt.back.path, ok: true, bad: true });
-      return res(false, { error: `${c.target.name} hat keine Dateien, die ${src.name} noch nicht hat.`, hint: fromServer ? 'Lade zuerst von einem anderen Gerät eine Datei auf den Server hoch.' : `Lege zuerst auf ${c.target.name} eine Datei an.`, mode: c.mode, target: c.target.id });
+      steps.push({ kind: 'response', label: 'Dateien', proto: FILE_PROTO, text: `${c.target.name}: „Ich habe keine Dateien für dich.“`, path: c.rt.back.path, ok: true, bad: true });
+      return res(false, { error: `${c.target.name} hat noch keine Dateien.`, hint: fromServer ? 'Lade zuerst von einem anderen Gerät eine Datei auf den Server hoch.' : `Lege zuerst auf ${c.target.name} eine Datei an.`, mode: c.mode, target: c.target.id });
     }
-    got.forEach(f => mine.push(f));
+    got.forEach(f => { if (!mine.includes(f)) mine.push(f); });
     steps.push({ kind: 'response', label: fromServer ? 'Herunterladen' : 'Datei (Peer-to-Peer)', proto: FILE_PROTO, text: `${c.target.name} → ${src.name}: ${got.map(f => '„' + f + '“').join(', ')}`, note: natNote(net, c.rt, 'back'), path: c.rt.back.path, ok: true });
     return res(true, { mode: c.mode, target: c.target.id, files: got });
   }
