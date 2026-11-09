@@ -548,6 +548,21 @@ test('Client-Server: Datei bleibt auf dem Server, auch wenn der Absender weg ist
   assert.deepStrictEqual(r.files, ['Klassenfoto.jpg']);
 });
 
+test('Klassenfoto vom Server holen klappt auch, wenn Mia es schon per Peer-to-Peer hat', () => {
+  const task = TASKS.find(t => t.id === 'dateien');
+  const net = task.start();
+  NW.dev(net, 'mia').share = true;
+  assert.ok(NW.sendFile(net, 'lena', '192.168.20.13', 'Klassenfoto.jpg').ok);
+  NW.fileStore(NW.dev(net, 'srv')).on = true;
+  assert.ok(NW.sendFile(net, 'lena', '192.168.20.2', 'Klassenfoto.jpg').ok);
+  const r = NW.getFiles(net, 'mia', '192.168.20.2');
+  assert.ok(r.ok, r.error);
+  assert.deepStrictEqual(r.files, ['Klassenfoto.jpg']);
+  assert.deepStrictEqual(NW.filesOf(NW.dev(net, 'mia')), ['Klassenfoto.jpg']);
+  NW.logEvent(net, { type: 'file', src: 'mia', target: r.target, mode: r.mode, dir: 'get', files: r.files, ok: r.ok });
+  assert.strictEqual(evaluate(task, net)[2], true);
+});
+
 test('Bluetooth-Kopfhörer: kein Kabel, kein IP-Netz, nur ein Partner', () => {
   const net = NW.emptyNetwork();
   const sp = NW.createDevice(net, 'smartphone', 0, 0), hs = NW.createDevice(net, 'headset', 0, 0), sw = NW.createDevice(net, 'switch', 0, 0);

@@ -606,7 +606,7 @@
     const mine = NW.filesOf(d), theirs = T[o.type].services ? NW.fileStore(o).files : NW.filesOf(o);
     const m = [];
     if (mine.length) m.push('send');
-    if (theirs.some(f => !mine.includes(f))) m.push('get');
+    if (theirs.length) m.push('get');
     return m;
   }
   function markFileButtons() {
