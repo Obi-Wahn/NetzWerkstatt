@@ -54,11 +54,13 @@
     ev.preventDefault();
     $('login-error').textContent = '';
     try {
-      const r = await api('POST', '/api/login', { name: $('login-name').value, room: $('login-room').value });
+      const r = await api('POST', '/api/login', { name: $('login-name').value, room: $('login-room').value, code: $('login-code').value });
       S.token = r.token;
       store.set('nw_token', r.token);
       setMe(await api('GET', '/api/me', undefined, S.token));
-      if (r.returning) toast(`Willkommen zurück, ${r.name}!`);
+      $('login-code').value = '';
+      if (r.newCode) toast(`Dein Code ist gespeichert, ${r.name}. Merke ihn dir gut!`, 'ok');
+      else if (r.returning) toast(`Willkommen zurück, ${r.name}!`);
       showTasks();
     } catch (e) {
       $('login-error').textContent = e.message;
@@ -66,10 +68,10 @@
   });
 
   $('btn-logout').addEventListener('click', async () => {
-    if (!(await confirmBox('Wirklich abmelden? Deine Arbeit bleibt gespeichert. Du kannst dich mit demselben Namen wieder anmelden.', 'Abmelden'))) return;
+    if (!(await confirmBox('Wirklich abmelden? Deine Arbeit bleibt gespeichert. Du kannst dich mit demselben Namen und deinem Code wieder anmelden.', 'Abmelden'))) return;
     store.del('nw_token');
     S.token = null; S.me = null;
-    $('login-name').value = ''; $('login-room').value = '';
+    $('login-name').value = ''; $('login-room').value = ''; $('login-code').value = '';
     show('login');
   });
 

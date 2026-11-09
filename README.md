@@ -53,7 +53,7 @@ Es muss nichts installiert werden.
 3. Starten: unter Windows Doppelklick auf `NetzWerkstatt.exe`, unter Linux `start.sh`.
    - Windows zeigt beim ersten Start evtl. „Der Computer wurde durch Windows geschützt“ → „Weitere Informationen“ → „Trotzdem ausführen“. Die Frage nach dem Netzwerkzugriff mit „Zugriff zulassen“ beantworten.
 4. Das Programm prüft Speicherort, Port und Netzwerkverbindung selbst, meldet Probleme verständlich und öffnet danach die **Lehrkraft-Ansicht** im Browser – bereits angemeldet.
-5. In der Lehrkraft-Ansicht „Zugang am Beamer zeigen“ wählen. Die Schülerinnen und Schüler öffnen die angezeigte Adresse im Browser (Edge, Chrome, Firefox oder Safari auf dem iPad) und melden sich mit Vornamen oder Kürzel und dem Raumcode an.
+5. In der Lehrkraft-Ansicht „Zugang am Beamer zeigen“ wählen. Die Schülerinnen und Schüler öffnen die angezeigte Adresse im Browser (Edge, Chrome, Firefox oder Safari auf dem iPad) und melden sich mit Vornamen oder Kürzel, dem Raumcode und einem selbst ausgedachten vierstelligen Code an. Mit diesem Code kann sich niemand unter fremdem Namen anmelden. Hat jemand den Code vergessen, setzt ihn die Lehrkraft in ihrer Ansicht mit „Code zurücksetzen“ zurück; beim nächsten Anmelden gilt dann der neu eingegebene Code.
 
 Das Fenster mit den Startmeldungen während der Stunde offen lassen. Wird das Programm ein zweites Mal gestartet, öffnet es nur die Lehrkraft-Ansicht der bereits laufenden NetzWerkstatt.
 
@@ -69,7 +69,7 @@ Der Raumcode wird bei jedem Start neu ausgewürfelt (außer er wird mit `-raumco
 
 - Alle Daten (Vornamen bzw. Kürzel und die gebauten Netzwerke) werden **nur auf dem Lehrer-Rechner** in der Datei `netzwerkstatt-daten.json` neben dem Programm gespeichert.
 - Das Programm lädt **nichts aus dem Internet** und sendet nichts dorthin. Alle Schriften, Bilder und Skripte sind im Programm enthalten. Der Browser wird zusätzlich per Content-Security-Policy angewiesen, nur Inhalte vom eigenen Server zu laden.
-- Es gibt keine Passwörter oder E-Mail-Adressen für Schülerinnen und Schüler, kein Tracking und keine Cookies. Im Browser wird nur ein Anmelde-Schlüssel gespeichert, damit man nach einem Neuladen angemeldet bleibt.
+- Es gibt keine E-Mail-Adressen für Schülerinnen und Schüler, nur einen vierstelligen Code (gespeichert wird nur ein Prüfwert, nicht der Code selbst), kein Tracking und keine Cookies. Im Browser wird nur ein Anmelde-Schlüssel gespeichert, damit man nach einem Neuladen angemeldet bleibt.
 - Nach der Unterrichtseinheit kann die Datendatei einfach gelöscht werden. Einzelne Personen lassen sich auch in der Lehrkraft-Ansicht löschen.
 
 ## Entwicklung

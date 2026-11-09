@@ -124,6 +124,7 @@ input:disabled { background: var(--chip-bg); color: var(--muted); }
 .login-card { background: var(--panel); border-radius: 18px; box-shadow: var(--shadow); padding: 30px 28px; width: min(420px, 100%); text-align: center; }
 .login-card form { text-align: left; display: grid; gap: 14px; margin: 20px 0 14px; }
 .login-card label { display: grid; gap: 6px; font-weight: 600; }
+.login-card label .hint { font-weight: normal; }
 .logo-big { width: 72px; height: 72px; }
 
 /* ---------------------------------------------------------------- Aufgabenliste */
