@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>NetzWerkstatt – Vorführungen</title>
+<link rel="icon" href="img/logo.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/style.css">
+<script src="js/theme.js"></script>
+</head>
+<body>
+
+<!-- Übersicht -->
+<section id="screen-list" class="screen">
+  <header class="topbar">
+    <div class="brand"><img src="img/logo.svg" alt=""> NetzWerkstatt <span class="muted">· Vorführungen</span></div>
+    <div class="spacer"></div>
+    <a class="btn ghost back-link" href="index.html">← Zurück</a>
+  </header>
+  <main class="task-list-wrap">
+    <h2>Vorführungen</h2>
+    <p class="muted">Hier ist das Netz schon fertig aufgebaut. Schritt für Schritt wird erklärt, was passiert, und die Datenpakete laufen wirklich durch das Netz. Mit „Weiter“ und „Zurück“ bestimmst du das Tempo.</p>
+    <div id="demo-list" class="task-grid"></div>
+  </main>
+</section>
+
+<!-- Vorführung -->
+<section id="screen-demo" class="screen editor" hidden>
+  <header class="topbar">
+    <button id="btn-list" class="btn ghost">← Alle Vorführungen</button>
+    <h1 id="demo-title" class="task-title"></h1>
+    <div class="spacer"></div>
+    <span id="demo-count" class="muted"></span>
+  </header>
+  <div class="workspace demo-space">
+    <div class="stage">
+      <div class="canvas-wrap"><svg id="canvas" class="canvas" role="img" aria-label="Netzwerk der Vorführung"></svg></div>
+      <div class="log" id="log" aria-live="polite"></div>
+    </div>
+    <aside class="side">
+      <section class="card demo-card">
+        <ol id="demo-dots" class="demo-dots" aria-label="Schritte"></ol>
+        <h2 id="step-title" class="demo-step-title"></h2>
+        <p id="step-text"></p>
+        <div class="demo-nav">
+          <button id="btn-prev" class="btn">← Zurück</button>
+          <button id="btn-replay" class="btn" title="Die Pakete dieses Schritts noch einmal laufen lassen">↻ Nochmal</button>
+          <button id="btn-next" class="btn primary">Weiter →</button>
+        </div>
+        <label class="toggle demo-slow"><input type="checkbox" id="chk-slow"> Langsam</label>
+        <div id="demo-end" class="demo-end" hidden>
+          <p>Jetzt bist du dran! Probiere es in der passenden Aufgabe selbst aus.</p>
+          <a id="btn-try" class="btn primary" href="index.html">Selbst ausprobieren</a>
+        </div>
+      </section>
+    </aside>
+  </div>
+</section>
+
+<script src="js/sim.js"></script>
+<script src="js/tasks.js"></script>
+<script src="js/view.js"></script>
+<script src="js/demos.js"></script>
+<script src="js/vorfuehrung.js"></script>
+</body>
+</html>

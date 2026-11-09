@@ -207,6 +207,13 @@ input:disabled { background: var(--chip-bg); color: var(--muted); }
 .link.selected .wire { stroke: var(--accent); stroke-width: 6; }
 .port-label rect { fill: var(--panel); stroke: var(--line); }
 .port-label text { font-size: 11.5px; fill: var(--muted); font-weight: 600; pointer-events: none; }
+.port-label.wan rect { stroke: var(--wan); }
+.port-label.wan text { fill: var(--wan); }
+.port-label.lan text { font-size: 10.5px; }
+.sock { fill: none; stroke: var(--muted); stroke-width: 1.1; }
+.sock.used { fill: var(--muted); }
+.sock.wan { stroke: var(--wan); }
+.sock.wan.used { fill: var(--wan); }
 .device { cursor: pointer; }
 .device .glyph, .device text, .device .lock { pointer-events: none; }
 .device .box { fill: var(--dev-fill); stroke: var(--dev-line); stroke-width: 2; }
@@ -336,6 +343,8 @@ details.sec > summary:hover h4 { color: var(--brand); }
 .router-conn { margin: 0 0 10px; }
 .router-conn li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: .9em; }
 .router-conn .replug-btn { margin-left: auto; }
+.port-name { display: inline-block; min-width: 3.6em; padding: 0 6px; border: 1px solid var(--line-strong); border-radius: 9px; font-size: .85em; font-weight: 600; color: var(--muted); text-align: center; }
+.port-name.wan { border-color: var(--wan); color: var(--wan); }
 .btn.act.match { box-shadow: 0 0 0 3px var(--brand-soft), 0 0 0 5px var(--brand); }
 .kind { font-size: .75em; font-weight: 700; padding: 1px 7px; border-radius: 6px; background: var(--chip-bg); color: var(--cable); }
 .kind.bluetooth { background: var(--bt-soft); color: var(--bt); }
@@ -592,6 +601,43 @@ table.cmp col.k { width: 26%; }
 .svc-name .field { margin-bottom: 4px; }
 .name-dns p { margin: 0 0 6px; }
 .name-dns .chips { margin: 0 0 6px; }
+
+/* ---------------------------------------------------------------- Schwierigkeitsgrade */
+.level-pick { margin: 2px 0 10px; }
+.level-pick[hidden] { display: none; }
+.stars { color: var(--warn); letter-spacing: 1px; font-size: .9em; }
+.goals li.next { outline: 2px solid var(--brand-line); }
+.goal-help { display: block; margin-top: 5px; font-size: .92em; color: var(--brand); font-weight: 600; }
+/* Auf der Stufe „Schwer“ gibt es keine 💡-Vorschläge */
+.stufe-schwer .chip.suggest { display: none; }
+.stufe-schwer .chips:not(:has(.chip:not(.suggest))) { display: none; }
+.list-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.list-head h2 { margin-right: auto; }
+
+/* ---------------------------------------------------------------- Vorführungen */
+.workspace.demo-space { grid-template-columns: minmax(0, 1fr) 360px; }
+.demo-space .log { height: 170px; }
+.demo-step-title { font-size: 1.1em; margin: 8px 0 6px; }
+.demo-card p { font-size: 1em; }
+.demo-dots { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 0 0 6px; }
+.demo-dots button { font: inherit; font-weight: 700; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); cursor: pointer; }
+.demo-dots button.seen { background: var(--brand-soft); color: var(--brand); border-color: var(--brand-line); }
+.demo-dots button.on { background: var(--brand); color: var(--on-color); border-color: var(--brand); }
+.demo-nav { display: flex; gap: 8px; margin: 12px 0 8px; }
+.demo-nav .btn { padding-left: 12px; padding-right: 12px; white-space: nowrap; }
+.demo-nav .btn.primary { margin-left: auto; }
+.demo-nav [hidden] { display: none; }
+.demo-end { margin-top: 12px; padding: 10px 12px; border-radius: 10px; background: var(--ok-soft); }
+.demo-end p { margin: 0 0 8px; }
+@media (max-width: 1100px) { .workspace.demo-space { grid-template-columns: minmax(0, 1fr) 300px; } }
+@media (max-width: 860px) {
+  .workspace.demo-space { grid-template-columns: 1fr; align-content: start; gap: 10px; padding: 10px; }
+  /* Schmal: Erklärung direkt unter dem Netz, Protokoll darunter */
+  .demo-space .stage { display: contents; }
+  .demo-space .canvas-wrap { order: 0; }
+  .demo-space .side { order: 1; padding: 0; background: none; }
+  .demo-space .log { order: 2; }
+}
 
 /* Netzwerk genau ansehen (Musterlösung, Schülerlösung): Bild links, Reiter rechts */
 .det { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, 400px); grid-template-rows: minmax(0, 1fr); gap: 16px; }

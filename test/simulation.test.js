@@ -1152,6 +1152,39 @@ test('Fehlersuche: Im Internet-Büro kommt das Paket nach jeder Reparatur ein St
   NW.fixFault(net, 'sp', 'wlan');
   assert.ok(NW.browse(net, 'sp', 'www.netzwerkstatt.de').ok);
 });
+test('Anschlüsse: Router zeigt WAN und LAN 1–3, Switch nummeriert Ports 1–8', () => {
+  const net = NW.emptyNetwork();
+  NW.createDevice(net, 'router', 0, 0, { id: 'r' });
+  NW.createDevice(net, 'switch', 0, 0, { id: 's' });
+  NW.createDevice(net, 'pc', 0, 0, { id: 'p1' });
+  NW.createDevice(net, 'pc', 0, 0, { id: 'p2' });
+  NW.createDevice(net, 'router', 0, 0, { id: 'r2' });
+  const rs = NW.addLink(net, 'r', 's', 'kabel').link;
+  const s1 = NW.addLink(net, 's', 'p1', 'kabel').link;
+  const s2 = NW.addLink(net, 'p2', 's', 'kabel').link;
+  const up = NW.addLink(net, 'r', 'r2', 'kabel').link;
+  const r = NW.dev(net, 'r'), s = NW.dev(net, 's');
+  assert.strictEqual(NW.portName(net, r, rs), 'LAN 1');
+  assert.strictEqual(NW.portName(net, r, up), 'WAN');
+  assert.strictEqual(NW.portName(net, s, rs), 'Port 1');
+  assert.strictEqual(NW.portName(net, s, s1), 'Port 2');
+  assert.strictEqual(NW.portName(net, s, s2), 'Port 3');
+  assert.deepStrictEqual(NW.portList(net, r).map(p => p.name + (p.link ? '+' : '')), ['WAN+', 'LAN 1+', 'LAN 2', 'LAN 3']);
+  // Gelöschtes Kabel macht den Anschluss frei, das nächste Kabel nimmt ihn
+  NW.removeLink(net, s1.id);
+  NW.createDevice(net, 'pc', 0, 0, { id: 'p3' });
+  const s3 = NW.addLink(net, 'p3', 's', 'kabel').link;
+  assert.strictEqual(NW.portName(net, s, s3), 'Port 2');
+  assert.strictEqual(NW.portName(net, s, s2), 'Port 3', 'andere Kabel bleiben im selben Anschluss');
+  assert.strictEqual(NW.portList(net, s).length, 8);
+  // Ältere Netze ohne gespeicherte Switch-Nummer bekommen eine
+  delete s2[s2.a === 's' ? 'aPort' : 'bPort'];
+  assert.strictEqual(NW.portName(net, s, s2), 'Port 3');
+  // Umstecken am Router ändert den Anschlussnamen
+  assert.ok(NW.replug(net, up.id, 'r').ok);
+  assert.strictEqual(NW.portName(net, r, up), 'LAN 2');
+});
+
 // Jede eingebaute Aufgabe mit Musterlösung hat einen Lösungsweg und Antworten zum Denkanstoß
 const { of: loesungOf } = require('../web/js/loesungen.js');
 for (const t of TASKS) {

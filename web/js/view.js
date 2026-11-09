@@ -149,15 +149,24 @@
         el('rect', { x: x - w / 2, y: y - 9, width: w, height: 18, rx: 9 }, lab);
         el('text', { x, y: y + 4, 'text-anchor': 'middle' }, lab).textContent = txt;
       }
-      // Kabel am Internet-Anschluss (WAN) des Routers kennzeichnen; die IP-Adressen stehen unter dem Router
-      for (const [d, other, port] of [[a, b, l.aPort], [b, a, l.bPort]]) {
-        if (!NW.TYPES[d.type].router || port === undefined || l.kind !== 'kabel' || NW.iface(port) !== NW.WAN) continue;
-        const dist = Math.max(1, Math.hypot(other.x - d.x, other.y - d.y));
-        const t = Math.min(0.5, 80 / dist);
-        const x = d.x + (other.x - d.x) * t, y = d.y + (other.y - d.y) * t;
-        const txt = d.modem ? 'Internet' : 'WAN';
-        const lab = el('g', { class: 'port-label' }, g);
-        const w = txt.length * 6.6 + 10;
+      // Am Router und am Switch steht am Kabelende, in welchem Anschluss es steckt (WAN, LAN 1, Port 3 …)
+      if (l.kind === 'kabel') for (const [d, other] of [[a, b], [b, a]]) {
+        let txt = NW.portName(net, d, l);
+        if (!txt) continue;
+        const wan = txt === 'WAN';
+        if (wan && d.modem) txt = 'Internet';
+        const w = txt.length * 6.2 + 10;
+        // Schild knapp außerhalb des Geräts (unten stehen Name und Adressen) – höchstens bis zur Kabelmitte
+        const dx = other.x - d.x, dy = other.y - d.y, dist = Math.max(1, Math.hypot(dx, dy));
+        const ux = Math.abs(dx) / dist, uy = Math.abs(dy) / dist;
+        const subs = NW.TYPES[d.type].router ? routerLabels(d) : [];
+        const below = BOX.h / 2 + 24 + 15 * subs.length;
+        // Unter dem Gerät ist der Text breiter als der Kasten
+        const half = dy > 0 ? Math.max(BOX.w / 2, d.name.length * 4.5, ...subs.map(x => x.length * 3.8)) : BOX.w / 2;
+        const off = Math.min((half + w / 2 + 4) / (ux || 1e-6), ((dy > 0 ? below : BOX.h / 2) + 12) / (uy || 1e-6));
+        const t = Math.min(NW.portName(net, other, l) ? 0.45 : 0.7, off / dist);
+        const x = d.x + dx * t, y = d.y + dy * t;
+        const lab = el('g', { class: 'port-label' + (wan ? ' wan' : ' lan') }, g);
         el('rect', { x: x - w / 2, y: y - 9, width: w, height: 18, rx: 9 }, lab);
         el('text', { x, y: y + 4, 'text-anchor': 'middle' }, lab).textContent = txt;
       }
@@ -203,6 +212,7 @@
         const s = el('text', { x: 0, y: BOX.h / 2 + 33 + k * 15, 'text-anchor': 'middle', class: 'ip' + (/keine IP|ausgefallen/.test(sub) ? ' missing' : '') }, g);
         s.textContent = sub;
       });
+      if ((NW.TYPES[d.type].router || d.type === 'switch') && !d.cloud) drawSockets(g, NW.portList(net, d), d);
       if (NW.TYPES[d.type].router && d.wlan) {
         // kleines Funk-Symbol: Der Router hat eingebautes WLAN
         const wf = el('g', { class: 'wlan-badge', transform: `translate(${-BOX.w / 2 + 12},${-BOX.h / 2 + 12})` }, g);
@@ -216,6 +226,23 @@
       }
     }
     if (opts.topo !== false) drawTopo(svg, net);
+  }
+
+  /** Anschlüsse als kleine Buchsen unten im Gerät: WAN farbig abgesetzt, belegte Buchsen gefüllt. */
+  function drawSockets(g, ports, d) {
+    // Steckt ein Kabel an diesem Gerät nicht richtig (Fehlersuche), bleibt sein Anschluss leer
+    const loose = l => !!(l && l.unplugged && (l.unplugged === 'a' ? l.a : l.b) === (d && d.id));
+    if (!ports.length) return;
+    const sw = 6, gap = 2.5, wanGap = 6;
+    const hasWan = ports.some(p => p.wan);
+    const total = ports.length * sw + (ports.length - 1) * gap + (hasWan ? wanGap - gap : 0);
+    let x = -total / 2;
+    const row = el('g', { class: 'sockets' }, g);
+    ports.forEach((p, k) => {
+      const r = el('rect', { x, y: BOX.h / 2 - 12, width: sw, height: 6, rx: 1.2, class: 'sock' + (p.wan ? ' wan' : '') + (p.link && !loose(p.link) ? ' used' : '') }, row);
+      el('title', {}, r).textContent = p.name + (p.other ? ': ' + p.other.name : ': frei');
+      x += sw + (p.wan && k < ports.length - 1 ? wanGap : gap);
+    });
   }
 
   /** Erkannte Topologie oben links anzeigen (antippbar für eine Erklärung). */

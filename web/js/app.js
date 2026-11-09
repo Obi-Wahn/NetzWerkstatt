@@ -39,13 +39,19 @@
   // Lehrkraft springt aus ihrer Ansicht direkt ins freie Bauen (…/?frei=1)
   const freeParam = new URLSearchParams(location.search).has('frei');
   if (freeParam) history.replaceState(null, '', location.pathname);
+  // Aus einer Vorführung direkt zur passenden Aufgabe (…/?aufgabe=webseite)
+  const taskParam = new URLSearchParams(location.search).get('aufgabe');
+  if (taskParam) history.replaceState(null, '', location.pathname);
 
   async function start() {
     if (!S.token) { show('login'); if (roomParam) setTimeout(() => $('login-name').focus(), 50); return; }
     try {
       setMe(await api('GET', '/api/me', undefined, S.token));
       const free = NWTasks.all().find(t => t.free);
-      if (freeParam && free && visible(free)) openTask(free.id); else showTasks();
+      const wanted = taskParam && NWTasks.byId(taskParam);
+      if (freeParam && free && visible(free)) openTask(free.id);
+      else if (wanted && visible(wanted)) openTask(wanted.id);
+      else showTasks();
     } catch (e) {
       if (e.status === 401) { store.del('nw_token'); S.token = null; }
       show('login');
@@ -64,7 +70,8 @@
       $('login-code').value = '';
       if (r.newCode) toast(`Dein Code ist gespeichert, ${r.name}. Merke ihn dir gut!`, 'ok');
       else if (r.returning) toast(`Willkommen zurück, ${r.name}!`);
-      showTasks();
+      const wanted = taskParam && NWTasks.byId(taskParam);
+      if (wanted && visible(wanted)) openTask(wanted.id); else showTasks();
     } catch (e) {
       $('login-error').textContent = e.message;
     }
@@ -125,7 +132,7 @@
         const sol = S.me && S.me.released[t.id] ? '<span class="badge sol">Musterlösung da</span>' : '';
         const b = document.createElement('button');
         b.className = 'task-tile' + (t.free ? ' free' : '') + (t.custom ? ' custom' : '') + (w && w.submitted ? ' done' : '');
-        b.innerHTML = `<div class="tile-num">${t.free ? '∞' : t.num}</div><div class="tile-body"><h4>${esc(t.title)}</h4><p>${esc(t.intro)}</p><div class="tile-meta">${t.free ? '' : status}${sol}${t.goals.length ? `<span class="muted small">${t.goals.length} Ziele</span>` : ''}</div></div>`;
+        b.innerHTML = `<div class="tile-num">${t.free ? '∞' : t.num}</div><div class="tile-body"><h4>${esc(t.title)}</h4><p>${esc(t.intro)}</p><div class="tile-meta">${NWStufen.stars(t) ? `<span class="stars" title="Anspruch: ${t.level} von 3">${NWStufen.stars(t)}</span>` : ''}${t.free ? '' : status}${sol}${t.goals.length ? `<span class="muted small">${t.goals.length} Ziele</span>` : ''}</div></div>`;
         b.addEventListener('click', () => openTask(t.id));
         grid.appendChild(b);
       }
@@ -152,7 +159,9 @@
     $('task-title').textContent = task.title;
     $('task-intro').textContent = task.intro;
     $('task-tip').textContent = task.tip || '';
-    $('task-tip-wrap').hidden = !task.tip;
+    // Schwierigkeitsgrad: neue Aufgaben beginnen mit der zuletzt gewählten Stufe
+    if (!task.free && !saved) { const last = store.get('nw_stufe'); if (NWStufen.valid(last)) S.net.level = last; }
+    applyLevel(true);
     $('task-think').textContent = task.think || '';
     $('task-think-wrap').hidden = !task.think;
     $('btn-submit').hidden = !!task.free;
@@ -196,6 +205,7 @@
     const before = NW.clone(S.net), task = S.task;
     S.net = task.start();
     if (!S.net.events) S.net.events = [];
+    if (before.level) S.net.level = before.level; // Neu anfangen behält den Schwierigkeitsgrad
     S.selected = null; S.pending = null; S.netKind = null;
     setTool('move');
     $('log').innerHTML = LOG_EMPTY;
@@ -416,6 +426,7 @@
 
   function renderAll() {
     applyFeatures();
+    applyLevel();
     renderCanvas();
     renderGoals();
     renderInspector();
@@ -426,9 +437,35 @@
     document.body.classList.toggle('is-readonly', readOnly());
   }
 
+  // ---------------------------------------------------------------- Schwierigkeitsgrad
+  const level = () => (S.task && !S.task.free ? NWStufen.of(S.net) : 'mittel');
+  /** Stufe anzeigen: Auswahl, Tipp und 💡-Vorschläge (über die Klasse am body). */
+  function applyLevel(changed) {
+    const lv = level();
+    const pick = $('level-pick');
+    pick.hidden = !!S.task.free;
+    pick.innerHTML = NWStufen.LEVELS.map(l => `<button data-level="${l.id}" class="${l.id === lv ? 'on' : ''}" aria-pressed="${l.id === lv}" title="${esc(l.text)}" ${readOnly() ? 'disabled' : ''}>${esc(l.label)}</button>`).join('');
+    for (const l of NWStufen.LEVELS) document.body.classList.toggle('stufe-' + l.id, l.id === lv);
+    $('task-tip-wrap').hidden = !S.task.tip || lv === 'schwer';
+    if (changed) $('task-tip-wrap').open = lv === 'leicht';
+  }
+  $('level-pick').addEventListener('click', ev => {
+    const b = ev.target.closest('button[data-level]');
+    if (!b || readOnly() || !S.task || S.task.free) return;
+    S.net.level = b.dataset.level;
+    store.set('nw_stufe', b.dataset.level);
+    applyLevel(true);
+    renderAll();
+    scheduleSave();
+  });
+
   function renderGoals() {
     const res = NWTasks.evaluate(S.task, S.net);
-    $('goals').innerHTML = S.task.goals.map((g, i) => `<li class="${res[i] ? 'done' : ''}">${esc(g.text)}</li>`).join('');
+    const next = level() === 'leicht' ? res.findIndex(x => !x) : -1;
+    $('goals').innerHTML = S.task.goals.map((g, i) => {
+      const h = i === next ? NWStufen.help(S.task, i) : '';
+      return `<li class="${res[i] ? 'done' : ''}${i === next ? ' next' : ''}">${esc(g.text)}${h ? `<span class="goal-help">👉 ${esc(h)}</span>` : ''}</li>`;
+    }).join('');
     $('all-done').hidden = !(S.task.goals.length && res.every(Boolean)) || readOnly();
     renderQuiz();
   }
@@ -828,7 +865,7 @@
   function sec(key, title, body, feat, cls) {
     if (!body) return '';
     let open = feat ? !S.task.free && NWTasks.showOf(S.task).includes(feat) : true;
-    if (key === 'conn') open = false;
+    if (key === 'conn' || key === 'ports') open = false;
     const k = (S.task.free ? 'frei:' : 'aufgabe:') + key;
     if (k in openSecs) open = openSecs[k];
     return `<details class="group sec${cls ? ' ' + cls : ''}" data-sec="${k}" ${open ? 'open' : ''}><summary><h4>${title}</h4></summary>${body}</details>`;
@@ -894,11 +931,12 @@
       for (const [r, port] of [[a, link.aPort], [b, link.bPort]]) {
         if (!T[r.type].router || port === undefined) continue;
         const isWan = NW.iface(port) === NW.WAN;
-        plug += `<p class="small">Steckt bei <b>${esc(r.name)}</b> ${link.kind === 'wlan' ? 'im WLAN des Heimnetzes' : isWan ? 'im Internet-Anschluss (WAN)' : 'in einem LAN-Anschluss (Heimnetz)'}.</p>`;
+        plug += `<p class="small">Steckt bei <b>${esc(r.name)}</b> ${link.kind === 'wlan' ? 'im WLAN des Heimnetzes' : isWan ? 'im Internet-Anschluss (WAN)' : `im Anschluss ${esc(NW.portName(S.net, r, link))} (Heimnetz)`}.</p>`;
         const toIsp = T[(r === a ? b : a).type].isp;
         if (toIsp) plug += '<p class="muted small">Das ist die Leitung zum Internetanbieter (z. B. DSL oder Kabel). Sie gehört immer in den Internet-Anschluss.</p>';
         if (link.kind === 'kabel' && !ro && !link.locked && !toIsp) plug += `<button class="btn small" data-act="replug" data-dev="${esc(r.id)}">Umstecken: ${isWan ? 'in einen LAN-Anschluss' : 'in den Internet-Anschluss (WAN)'}</button>`;
       }
+      for (const sw of [a, b]) if (sw.type === 'switch' && link.kind === 'kabel') plug += `<p class="small">Steckt bei <b>${esc(sw.name)}</b> im Anschluss ${esc(NW.portName(S.net, sw, link))}.</p>`;
       const brk = link.kind !== 'kabel' ? '' : (link.broken ? '<p class="fault-note">⚡ Kabelbruch: Dieses Kabel überträgt keine Daten mehr.</p>' : '')
         + (ro || !has('ausfall') ? '' : `<div class="group"><h4>Ausfall testen</h4><button class="btn small ${link.broken ? 'primary' : ''}" data-act="fault">${link.broken ? 'Kabel reparieren' : '⚡ Kabelbruch simulieren'}</button></div>`);
       const title = { kabel: link.stadt ? 'Glasfaserleitung' : 'Netzwerkkabel', wlan: 'WLAN-Verbindung', bluetooth: 'Bluetooth-Kopplung' }[link.kind];
@@ -1080,7 +1118,8 @@ ${faultFinderHTML(link, ro)}
           const o = NW.dev(S.net, l.a === d.id ? l.b : l.a);
           const can = l.kind === 'kabel' && !ro && !l.locked && !T[o.type].isp;
           const btn = can ? ` <button class="btn small replug-btn" data-act="replug" data-dev="${esc(d.id)}" data-link="${esc(l.id)}" title="${which === NW.WAN ? 'In einen LAN-Anschluss (Heimnetz) umstecken' : 'In den Internet-Anschluss (WAN) umstecken'}">Umstecken → ${which === NW.WAN ? 'LAN' : 'WAN'}</button>` : '';
-          return `<li><span class="kind ${l.kind}">${l.kind === 'kabel' ? 'Kabel' : 'WLAN'}</span> ${esc(o.name)}${btn}</li>`;
+          const pn = l.kind === 'kabel' ? `<span class="port-name${which === NW.WAN ? ' wan' : ''}">${esc(NW.portName(S.net, d, l))}</span> ` : '';
+          return `<li>${pn}<span class="kind ${l.kind}">${l.kind === 'kabel' ? 'Kabel' : 'WLAN'}</span> ${esc(o.name)}${btn}</li>`;
         });
       const connList = (list, empty) => list.length ? `<ul class="conn router-conn">${list.join('')}</ul>` : `<p class="small"><span class="muted">${empty}</span></p>`;
       const lanConns = conns(NW.LAN), wanConns = conns(NW.WAN);
@@ -1088,6 +1127,7 @@ ${faultFinderHTML(link, ro)}
       // Heimnetz (LAN)
       let b = `<p class="muted small">Drei LAN-Anschlüsse${has('wlan') ? ' und das WLAN des Routers' : ''} gehören zum selben Heimnetz – wie ein eingebauter Switch. Hier hat der Router eine feste Adresse; Endgeräte tragen sie als Gateway ein.</p>
         ${connList(lanConns, 'Noch nichts angeschlossen.')}
+        ${(fl => fl.length ? `<p class="muted small">Frei: ${fl.map(x => esc(x.name)).join(', ')}</p>` : '<p class="muted small">Alle LAN-Anschlüsse sind belegt. Für mehr Geräte schließe einen Switch an.</p>')(NW.portList(S.net, d).filter(x => !x.wan && !x.link))}
         <div class="port-fields">${field('IP-Adresse des Routers', `ports.${i}.ip`, p.ip, 'portip', { disabled: dis })}${field('Subnetzmaske', `ports.${i}.mask`, p.mask, 'mask', { disabled: dis })}</div>`;
       if (has('wlan')) b += `<label class="toggle"><input type="checkbox" data-path="wlan" ${d.wlan ? 'checked' : ''} ${dis ? 'disabled' : ''}> WLAN (eingebauter Access Point)</label>`;
       const dh = NW.dhcpOf(p);
@@ -1177,6 +1217,13 @@ ${faultFinderHTML(link, ro)}
 
     if (t.bus) h += '<p class="muted small">Das Bus-Kabel braucht keine IP-Adresse. Schließe alle Geräte mit einem Kabel daran an.</p>';
     else if (t.l2) h += `<p class="muted small">Ein ${esc(t.label)} braucht keine IP-Adresse – er leitet die Pakete nur weiter.</p>`;
+    if (d.type === 'switch') {
+      // Anschlüsse des Switches mit Belegung
+      const ports = NW.portList(S.net, d);
+      const free = ports.filter(p => !p.link).length;
+      h += sec('ports', 'Anschlüsse (Ports)', `<p class="muted small">${ports.length} Anschlüsse, davon ${free} frei. Alle Anschlüsse gehören zum selben Netz – es gibt keinen besonderen Internet-Anschluss wie beim Router.</p>
+        <ul class="conn router-conn">${ports.map(p => `<li><span class="port-name">${esc(p.name)}</span> ${p.other ? esc(p.other.name) : '<span class="muted">frei</span>'}</li>`).join('')}</ul>`);
+    }
     if (t.btOnly) h += '<p class="muted small">Kopfhörer brauchen keine IP-Adresse. Sie werden per Bluetooth mit einem Gerät in der Nähe gekoppelt (Werkzeug „Bluetooth“).</p>';
 
     if (!ro && has('ausfall')) {
