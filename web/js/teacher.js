@@ -117,6 +117,7 @@
         const done = res.filter(Boolean).length;
         prog = res.length ? `<div class="progress"><div class="bar"><i style="width:${Math.round(100 * done / res.length)}%"></i></div>${done}/${res.length}</div>` : '';
         status = w.submitted ? '<span class="badge ok">abgegeben ✓</span>' : '<span class="badge new">arbeitet</span>';
+        if (!task.free && w.network.level) status += ` <span class="badge" title="Gewählter Schwierigkeitsgrad">${esc(NWStufen.label(NWStufen.of(w.network)))}</span>`;
         when = new Date(w.updated * 1000).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
       }
       const has = w && w.network;

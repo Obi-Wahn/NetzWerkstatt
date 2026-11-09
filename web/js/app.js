@@ -39,13 +39,19 @@
   // Lehrkraft springt aus ihrer Ansicht direkt ins freie Bauen (…/?frei=1)
   const freeParam = new URLSearchParams(location.search).has('frei');
   if (freeParam) history.replaceState(null, '', location.pathname);
+  // Aus einer Vorführung direkt zur passenden Aufgabe (…/?aufgabe=webseite)
+  const taskParam = new URLSearchParams(location.search).get('aufgabe');
+  if (taskParam) history.replaceState(null, '', location.pathname);
 
   async function start() {
     if (!S.token) { show('login'); if (roomParam) setTimeout(() => $('login-name').focus(), 50); return; }
     try {
       setMe(await api('GET', '/api/me', undefined, S.token));
       const free = NWTasks.all().find(t => t.free);
-      if (freeParam && free && visible(free)) openTask(free.id); else showTasks();
+      const wanted = taskParam && NWTasks.byId(taskParam);
+      if (freeParam && free && visible(free)) openTask(free.id);
+      else if (wanted && visible(wanted)) openTask(wanted.id);
+      else showTasks();
     } catch (e) {
       if (e.status === 401) { store.del('nw_token'); S.token = null; }
       show('login');
@@ -64,7 +70,8 @@
       $('login-code').value = '';
       if (r.newCode) toast(`Dein Code ist gespeichert, ${r.name}. Merke ihn dir gut!`, 'ok');
       else if (r.returning) toast(`Willkommen zurück, ${r.name}!`);
-      showTasks();
+      const wanted = taskParam && NWTasks.byId(taskParam);
+      if (wanted && visible(wanted)) openTask(wanted.id); else showTasks();
     } catch (e) {
       $('login-error').textContent = e.message;
     }
@@ -125,7 +132,7 @@
         const sol = S.me && S.me.released[t.id] ? '<span class="badge sol">Musterlösung da</span>' : '';
         const b = document.createElement('button');
         b.className = 'task-tile' + (t.free ? ' free' : '') + (t.custom ? ' custom' : '') + (w && w.submitted ? ' done' : '');
-        b.innerHTML = `<div class="tile-num">${t.free ? '∞' : t.num}</div><div class="tile-body"><h4>${esc(t.title)}</h4><p>${esc(t.intro)}</p><div class="tile-meta">${t.free ? '' : status}${sol}${t.goals.length ? `<span class="muted small">${t.goals.length} Ziele</span>` : ''}</div></div>`;
+        b.innerHTML = `<div class="tile-num">${t.free ? '∞' : t.num}</div><div class="tile-body"><h4>${esc(t.title)}</h4><p>${esc(t.intro)}</p><div class="tile-meta">${NWStufen.stars(t) ? `<span class="stars" title="Anspruch: ${t.level} von 3">${NWStufen.stars(t)}</span>` : ''}${t.free ? '' : status}${sol}${t.goals.length ? `<span class="muted small">${t.goals.length} Ziele</span>` : ''}</div></div>`;
         b.addEventListener('click', () => openTask(t.id));
         grid.appendChild(b);
       }
@@ -152,7 +159,9 @@
     $('task-title').textContent = task.title;
     $('task-intro').textContent = task.intro;
     $('task-tip').textContent = task.tip || '';
-    $('task-tip-wrap').hidden = !task.tip;
+    // Schwierigkeitsgrad: neue Aufgaben beginnen mit der zuletzt gewählten Stufe
+    if (!task.free && !saved) { const last = store.get('nw_stufe'); if (NWStufen.valid(last)) S.net.level = last; }
+    applyLevel(true);
     $('task-think').textContent = task.think || '';
     $('task-think-wrap').hidden = !task.think;
     $('btn-submit').hidden = !!task.free;
@@ -196,6 +205,7 @@
     const before = NW.clone(S.net), task = S.task;
     S.net = task.start();
     if (!S.net.events) S.net.events = [];
+    if (before.level) S.net.level = before.level; // Neu anfangen behält den Schwierigkeitsgrad
     S.selected = null; S.pending = null; S.netKind = null;
     setTool('move');
     $('log').innerHTML = LOG_EMPTY;
@@ -416,6 +426,7 @@
 
   function renderAll() {
     applyFeatures();
+    applyLevel();
     renderCanvas();
     renderGoals();
     renderInspector();
@@ -426,9 +437,35 @@
     document.body.classList.toggle('is-readonly', readOnly());
   }
 
+  // ---------------------------------------------------------------- Schwierigkeitsgrad
+  const level = () => (S.task && !S.task.free ? NWStufen.of(S.net) : 'mittel');
+  /** Stufe anzeigen: Auswahl, Tipp und 💡-Vorschläge (über die Klasse am body). */
+  function applyLevel(changed) {
+    const lv = level();
+    const pick = $('level-pick');
+    pick.hidden = !!S.task.free;
+    pick.innerHTML = NWStufen.LEVELS.map(l => `<button data-level="${l.id}" class="${l.id === lv ? 'on' : ''}" aria-pressed="${l.id === lv}" title="${esc(l.text)}" ${readOnly() ? 'disabled' : ''}>${esc(l.label)}</button>`).join('');
+    for (const l of NWStufen.LEVELS) document.body.classList.toggle('stufe-' + l.id, l.id === lv);
+    $('task-tip-wrap').hidden = !S.task.tip || lv === 'schwer';
+    if (changed) $('task-tip-wrap').open = lv === 'leicht';
+  }
+  $('level-pick').addEventListener('click', ev => {
+    const b = ev.target.closest('button[data-level]');
+    if (!b || readOnly() || !S.task || S.task.free) return;
+    S.net.level = b.dataset.level;
+    store.set('nw_stufe', b.dataset.level);
+    applyLevel(true);
+    renderAll();
+    scheduleSave();
+  });
+
   function renderGoals() {
     const res = NWTasks.evaluate(S.task, S.net);
-    $('goals').innerHTML = S.task.goals.map((g, i) => `<li class="${res[i] ? 'done' : ''}">${esc(g.text)}</li>`).join('');
+    const next = level() === 'leicht' ? res.findIndex(x => !x) : -1;
+    $('goals').innerHTML = S.task.goals.map((g, i) => {
+      const h = i === next ? NWStufen.help(S.task, i) : '';
+      return `<li class="${res[i] ? 'done' : ''}${i === next ? ' next' : ''}">${esc(g.text)}${h ? `<span class="goal-help">👉 ${esc(h)}</span>` : ''}</li>`;
+    }).join('');
     $('all-done').hidden = !(S.task.goals.length && res.every(Boolean)) || readOnly();
     renderQuiz();
   }
