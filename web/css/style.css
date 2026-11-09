@@ -611,8 +611,8 @@ table.cmp col.k { width: 26%; }
 /* Auf der Stufe „Schwer“ gibt es keine 💡-Vorschläge */
 .stufe-schwer .chip.suggest { display: none; }
 .stufe-schwer .chips:not(:has(.chip:not(.suggest))) { display: none; }
-.list-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
-.list-head h2 { margin-right: auto; }
+.list-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 16px; }
+.list-head h2 { margin: 0 auto 0 0; }
 
 /* ---------------------------------------------------------------- Vorführungen */
 .workspace.demo-space { grid-template-columns: minmax(0, 1fr) 360px; }
