@@ -1,0 +1,66 @@
+NetzWerkstatt – Netzwerke bauen und verstehen
+==============================================
+
+So geht's (keine Installation nötig, für Macs mit Apple-Chip und mit Intel):
+
+1. Die ZIP-Datei per Doppelklick entpacken und den Ordner
+   „NetzWerkstatt-Mac“ an einen festen Ort legen, z. B. in „Dokumente“.
+
+2. Beim ersten Start: mit der rechten Maustaste (oder Ctrl + Klick) auf
+   „start.command“ klicken, „Öffnen“ wählen und die Frage noch einmal mit
+   „Öffnen“ bestätigen.
+
+   Warum? Die NetzWerkstatt ist kostenlos und nicht bei Apple registriert.
+   macOS warnt deshalb vor „nicht verifizierten Entwicklern“.
+
+   Neuere macOS-Versionen (ab macOS 15 „Sequoia“) bieten „Öffnen“ dort nicht
+   mehr an. Dann so:
+     - Doppelklick auf „start.command“, die Meldung mit „Fertig“ schließen.
+     - Systemeinstellungen → „Datenschutz & Sicherheit“ öffnen, nach unten
+       scrollen und bei „start.command“ auf „Dennoch öffnen“ klicken.
+     - Noch einmal „Dennoch öffnen“ wählen und mit dem Mac-Passwort
+       bestätigen.
+
+   Ab dem zweiten Mal genügt ein Doppelklick auf „start.command“.
+
+3. Es öffnet sich ein Terminal-Fenster. Fragt macOS, ob das Terminal auf den
+   Ordner (z. B. „Dokumente“) zugreifen darf, mit „Erlauben“ antworten.
+   Fragt macOS, ob eingehende Netzwerkverbindungen erlaubt werden sollen,
+   ebenfalls „Erlauben“ wählen – sonst erreichen die Schüler-Geräte die
+   NetzWerkstatt nicht.
+
+4. Das Programm prüft alles selbst und öffnet danach die Lehrkraft-Ansicht
+   im Browser. Im Terminal stehen:
+     - die Adresse für die Schülerinnen und Schüler
+     - der Raumcode
+     - das Lehrer-Passwort
+   Das Terminal-Fenster während der Stunde offen lassen.
+
+5. In der Lehrkraft-Ansicht auf „Zugang am Beamer“ klicken.
+   Die Schülerinnen und Schüler öffnen die Adresse im Browser (PC oder iPad)
+   und melden sich mit Vornamen oder Kürzel, dem Raumcode und einem
+   selbst ausgedachten vierstelligen Code an. Vergessene Codes setzt die
+   Lehrkraft in ihrer Ansicht mit „Code zurücksetzen“ zurück.
+
+Beenden: im Terminal-Fenster Ctrl + C drücken oder das Fenster schließen.
+
+Datenschutz
+-----------
+Alle Daten bleiben auf diesem Mac in der Datei „netzwerkstatt-daten.json“
+in diesem Ordner. Das Programm lädt nichts aus dem Internet und sendet nichts
+dorthin. Nach der Unterrichtseinheit kann die Datei einfach gelöscht werden.
+
+Probleme?
+---------
+- „start.command“ lässt sich gar nicht öffnen: Wurde die ZIP-Datei vorher
+  entpackt? Den Schritt 2 oben genau so ausführen.
+- Die Schüler-Geräte erreichen die Adresse nicht: Sind alle Geräte im selben
+  Netz? Unter Systemeinstellungen → „Netzwerk“ → „Firewall“ → „Optionen“
+  prüfen, ob „netzwerkstatt-apple“ bzw. „netzwerkstatt-intel“ eingehende
+  Verbindungen erlaubt sind.
+- Der Raumcode ist nach jedem Start ein neuer. Wer schon angemeldet ist,
+  arbeitet trotzdem einfach weiter.
+- Neues Lehrer-Passwort: Programm beenden, die Datei
+  „netzwerkstatt-daten.json“ umbenennen oder löschen, neu starten.
+
+Weitere Infos und neue Versionen: https://github.com/Obi-Wahn/NetzWerkstatt
