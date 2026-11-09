@@ -24,10 +24,14 @@
       <label>Raumcode (steht an der Tafel)
         <input id="login-room" inputmode="numeric" maxlength="12" required spellcheck="false">
       </label>
+      <label>Dein Geheimcode (4 Ziffern)
+        <input id="login-code" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" minlength="4" required spellcheck="false" autocomplete="off" title="Genau 4 Ziffern">
+        <span class="small muted hint">Beim ersten Mal denkst du dir den Code aus. Merke ihn dir gut – nur mit ihm kommst du wieder an deine Arbeit.</span>
+      </label>
       <p id="login-error" class="error" role="alert"></p>
       <button class="btn primary big" type="submit">Los geht's</button>
     </form>
-    <p class="small muted">Es werden nur dein Name und deine Netzwerke gespeichert – und zwar nur auf dem Rechner deiner Lehrkraft.</p>
+    <p class="small muted">Es werden nur dein Name, dein Code und deine Netzwerke gespeichert – und zwar nur auf dem Rechner deiner Lehrkraft.</p>
   </div>
 </section>
 
@@ -56,6 +60,7 @@
     <h1 id="task-title" class="task-title"></h1>
     <div class="spacer"></div>
     <span id="save-state" class="save-state"></span>
+    <button id="btn-reset" class="btn ghost" title="Alles löschen und die Aufgabe noch einmal von vorn beginnen" aria-label="Neu anfangen">↺<span class="lbl"> Neu anfangen</span></button>
     <button id="btn-solution" class="btn ghost" hidden>Musterlösung</button>
     <button id="btn-submit" class="btn primary">Abgeben</button>
   </header>
@@ -90,6 +95,7 @@
         <h3>Aufgabe</h3>
         <div id="level-pick" class="seg level-pick" role="group" aria-label="Schwierigkeitsgrad"></div>
         <p id="task-intro"></p>
+        <button id="task-more" type="button">Ganzen Aufgabentext lesen</button>
         <ul id="goals" class="goals"></ul>
         <div id="quiz" class="quiz" hidden></div>
         <div id="all-done" class="all-done" hidden>Alle Ziele erreicht! Du kannst jetzt abgeben.</div>
@@ -116,6 +122,8 @@
 <script src="js/eigene.js"></script>
 <script src="js/view.js"></script>
 <script src="js/common.js"></script>
+<script src="js/loesungen.js"></script>
+<script src="js/details.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

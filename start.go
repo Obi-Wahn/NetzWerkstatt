@@ -201,7 +201,7 @@ func main() {
 		warn("Dieser Rechner hat keine Netzwerkverbindung. Die NetzWerkstatt funktioniert\n    nur auf diesem Rechner. Für die Klasse bitte mit dem Schulnetz (LAN/WLAN) verbinden.")
 	}
 
-	srv := &Server{port: p, store: store, teacherTokens: map[string]time.Time{}}
+	srv := &Server{port: p, store: store, teacherTokens: map[string]time.Time{}, codeFails: map[string]*codeFail{}}
 
 	// Einmal-Anmeldung für die automatisch geöffnete Lehrkraft-Ansicht
 	autoTok := randomToken(16)

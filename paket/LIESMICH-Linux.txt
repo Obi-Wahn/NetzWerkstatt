@@ -18,7 +18,9 @@ So geht's (keine Installation nötig):
 
 4. In der Lehrkraft-Ansicht auf „Zugang am Beamer zeigen“ klicken.
    Die Schülerinnen und Schüler öffnen die Adresse im Browser (PC oder iPad)
-   und melden sich mit Vornamen oder Kürzel und dem Raumcode an.
+   und melden sich mit Vornamen oder Kürzel, dem Raumcode und einem
+   selbst ausgedachten vierstelligen Code an. Vergessene Codes setzt die
+   Lehrkraft in ihrer Ansicht mit „Code zurücksetzen“ zurück.
 
 Beenden: im Terminal Strg+C drücken oder das Fenster schließen.
 

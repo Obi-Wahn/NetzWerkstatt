@@ -5,6 +5,9 @@
   const T = NW.TYPES;
   const $ = id => document.getElementById(id);
 
+  // Hinweis im leeren Paket-Protokoll
+  const LOG_EMPTY = '<div class="log-empty">Hier erscheinen die Datenpakete, sobald du einen Ping sendest, eine Webseite aufrufst, einen Internetdienst nutzt oder per DHCP eine Adresse anforderst. <b>So geht’s:</b> Tippe auf der Arbeitsfläche ein Gerät an und dann oben bei „Testen“ z. B. auf „Ping“.</div>';
+
   const S = {
     token: store.get('nw_token'),
     me: null,
@@ -60,11 +63,13 @@
     ev.preventDefault();
     $('login-error').textContent = '';
     try {
-      const r = await api('POST', '/api/login', { name: $('login-name').value, room: $('login-room').value });
+      const r = await api('POST', '/api/login', { name: $('login-name').value, room: $('login-room').value, code: $('login-code').value });
       S.token = r.token;
       store.set('nw_token', r.token);
       setMe(await api('GET', '/api/me', undefined, S.token));
-      if (r.returning) toast(`Willkommen zurück, ${r.name}!`);
+      $('login-code').value = '';
+      if (r.newCode) toast(`Dein Code ist gespeichert, ${r.name}. Merke ihn dir gut!`, 'ok');
+      else if (r.returning) toast(`Willkommen zurück, ${r.name}!`);
       const wanted = taskParam && NWTasks.byId(taskParam);
       if (wanted && visible(wanted)) openTask(wanted.id); else showTasks();
     } catch (e) {
@@ -73,10 +78,10 @@
   });
 
   $('btn-logout').addEventListener('click', async () => {
-    if (!(await confirmBox('Wirklich abmelden? Deine Arbeit bleibt gespeichert. Du kannst dich mit demselben Namen wieder anmelden.', 'Abmelden'))) return;
+    if (!(await confirmBox('Wirklich abmelden? Deine Arbeit bleibt gespeichert. Du kannst dich mit demselben Namen und deinem Code wieder anmelden.', 'Abmelden'))) return;
     store.del('nw_token');
     S.token = null; S.me = null;
-    $('login-name').value = ''; $('login-room').value = '';
+    $('login-name').value = ''; $('login-room').value = ''; $('login-code').value = '';
     show('login');
   });
 
@@ -160,7 +165,7 @@
     $('task-think').textContent = task.think || '';
     $('task-think-wrap').hidden = !task.think;
     $('btn-submit').hidden = !!task.free;
-    $('log').innerHTML = '<div class="log-empty">Hier erscheinen die Datenpakete, sobald du einen Ping sendest, eine Webseite aufrufst, einen Internetdienst nutzt oder per DHCP eine Adresse anforderst.</div>';
+    $('log').innerHTML = LOG_EMPTY;
     $('save-state').textContent = '';
     show('editor');
     updateSolutionButton();
@@ -186,7 +191,30 @@
 
   $('btn-solution').addEventListener('click', () => {
     const sol = S.task.solution();
-    showNetwork('Musterlösung: ' + S.task.title, sol, '<p class="muted">Vergleiche mit deinem Netzwerk. Es gibt oft mehrere richtige Lösungen!</p>' + NWCommon.quizHTML(S.task, sol));
+    NWDetails.open('Musterlösung: ' + S.task.title, S.task, sol, { solution: true, intro: '<p class="muted">Vergleiche mit deinem Netzwerk. Es gibt oft mehrere richtige Lösungen!</p>' });
+  });
+
+  // ---------------------------------------------------------------- Neu anfangen
+  $('btn-reset').addEventListener('click', async () => {
+    if (readOnly()) return;
+    const text = S.task.free
+      ? 'Willst du wirklich neu anfangen? Alle Geräte und Verbindungen auf der Arbeitsfläche werden gelöscht.'
+      : 'Willst du die Aufgabe wirklich neu anfangen? Alles, was du gebaut und eingestellt hast, wird gelöscht und die Aufgabe beginnt wieder wie am Anfang.';
+    if (!(await confirmBox(text, 'Ja, neu anfangen', true))) return;
+    if (readOnly() || $('screen-editor').hidden) return;
+    const before = NW.clone(S.net), task = S.task;
+    S.net = task.start();
+    if (!S.net.events) S.net.events = [];
+    if (before.level) S.net.level = before.level; // Neu anfangen behält den Schwierigkeitsgrad
+    S.selected = null; S.pending = null; S.netKind = null;
+    setTool('move');
+    $('log').innerHTML = LOG_EMPTY;
+    renderAll(); scheduleSave();
+    toast('Die Aufgabe beginnt wieder von vorn.', 'ok', { label: 'Rückgängig', run: () => {
+      if (readOnly() || S.task !== task || $('screen-editor').hidden) return;
+      S.net = before; S.selected = null; renderAll(); scheduleSave();
+      toast('Dein altes Netzwerk ist wieder da.', 'ok');
+    } });
   });
 
   // ---------------------------------------------------------------- Speichern
@@ -330,7 +358,7 @@
   });
 
   const HINTS = {
-    move: 'Tippe ein Gerät oder eine Verbindung an, um es einzustellen und zu testen. Geräte kannst du auch verschieben. Zum Verbinden tippe in der Geräteleiste z. B. auf „Netzwerkkabel“.',
+    move: 'Tippe ein Gerät oder eine Verbindung an, um es einzustellen und zu testen (z. B. Ping). Geräte kannst du auch verschieben. Zum Verbinden tippe in der Geräteleiste z. B. auf „Netzwerkkabel“.',
     kabel: 'Tippe nacheinander auf die zwei Geräte, die du mit einem Kabel verbinden willst.',
     glasfaser: 'Tippe nacheinander auf die zwei Geräte (z. B. Switches in verschiedenen Gebäuden), die eine Glasfaserleitung quer durch die Stadt verbinden soll.',
     wlan: 'Tippe auf einen Access Point oder Router und dann auf ein Tablet, Smartphone oder einen Laptop.',
@@ -404,6 +432,7 @@
     renderInspector();
     $('readonly-banner').hidden = !readOnly();
     $('btn-submit').disabled = readOnly();
+    $('btn-reset').disabled = readOnly();
     $('btn-submit').textContent = readOnly() ? 'Abgegeben ✓' : 'Abgeben';
     document.body.classList.toggle('is-readonly', readOnly());
   }
@@ -585,6 +614,15 @@
       <span class="fhint" data-for="${path}"></span></label>`;
   }
 
+  /** Aufklappbare Erklärung zu Netz, Subnetzmaske und Gateway. */
+  function netHelpHTML(d, withGw) {
+    return `<details class="desc"><summary>Was bedeuten Netz, Subnetzmaske und Gateway?</summary>
+      <p><b>Netz:</b> Geräte im selben Netz haben gleiche Anfangszahlen in der IP-Adresse, z. B. 192.168.1.x. Das <b>x</b> steht für die Zahl, die bei jedem Gerät anders ist (meist 1 bis 254). Geräte im selben Netz erreichen sich direkt über Kabel, Switch oder WLAN.</p>
+      <p><b>Subnetzmaske:</b> Sie sagt, welcher Teil der Adresse das Netz ist. Bei 255.255.255.0 sind die ersten drei Zahlen das Netz, die letzte Zahl ist das Gerät. Manchmal schreibt man dafür kurz „/24“.</p>
+      ${withGw ? `<p><b>Gateway:</b> das „Tor nach draußen“. Liegt das Ziel in einem anderen Netz, z. B. im Internet, schickt ${esc(d.name)} das Paket an das Gateway. Das ist der Router, genauer: seine Adresse in diesem Netz. Der Router leitet das Paket dann weiter. Für Geräte im eigenen Netz braucht man kein Gateway.</p>` : ''}
+    </details>`;
+  }
+
   const KIND_LABEL = { kabel: 'Kabel', wlan: 'WLAN', bluetooth: 'Bluetooth' };
   function kindLabel(l) { return l.kind === 'kabel' && l.stadt ? 'Glasfaser' : KIND_LABEL[l.kind] || l.kind; }
 
@@ -614,7 +652,7 @@
     const mine = NW.filesOf(d), theirs = T[o.type].services ? NW.fileStore(o).files : NW.filesOf(o);
     const m = [];
     if (mine.length) m.push('send');
-    if (theirs.some(f => !mine.includes(f))) m.push('get');
+    if (theirs.length) m.push('get');
     return m;
   }
   function markFileButtons() {
@@ -709,6 +747,8 @@
     get: '<path d="M12 4v15m-6-6 6 6 6-6"/><path d="M5 4h14"/>',
     music: '<path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>',
     dhcp: '<path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/>',
+    svc: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+    files: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
   };
   /** Hervorgehobener Aktionsknopf mit Symbol. */
   function actBtn(act, icon, label, extra) {
@@ -794,6 +834,34 @@
       <div class="name-dns" data-svc="${k}">${nameStatusHTML(d, k, dis)}</div></div>`;
   }
 
+  /**
+   * Leiste ganz oben bei Endgeräten und Servern: Knöpfe zu Ping, Browser, Diensten und Dateien.
+   * Ein Tipp öffnet den Abschnitt, rollt ihn ins Bild und setzt den Cursor ins Eingabefeld.
+   */
+  function jumpBar(d) {
+    const items = [['ping', 'ping', 'Ping']];
+    if (has('web')) items.push(['browser', 'browse', 'Browser']);
+    if (has('dienste')) items.push(['svc-use', 'svc', 'Dienste']);
+    if (!T[d.type].services && has('dateien')) items.push(['files', 'files', 'Dateien']);
+    if (NW.btPartners(S.net, d.id).some(o => T[o.type].btOnly)) items.push(['bt', 'music', 'Musik']);
+    return `<div class="jump" role="group" aria-label="Testen"><span class="jump-label">Testen:</span>${items.map(([k, ico, label]) =>
+      `<button class="jump-btn" data-jump="${k}"><svg class="act-ico" viewBox="0 0 24 24" aria-hidden="true">${ACT_ICONS[ico]}</svg><span>${label}</span></button>`).join('')}</div>`;
+  }
+  function jumpTo(key) {
+    const el = insp.querySelector(`[data-sec$=":${key}"]`);
+    if (!el) return;
+    el.open = true;
+    if (wide.matches) {
+      // Rechte Spalte: Abschnitt direkt unter die oben stehende Aufgabe rollen
+      const side = document.querySelector('.side');
+      const top = el.getBoundingClientRect().top - $('task-card').getBoundingClientRect().bottom - 8;
+      side.scrollBy({ top, behavior: 'smooth' });
+    } else el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const inp = el.querySelector('input:not([type="checkbox"]):not([disabled])');
+    if (inp) setTimeout(() => inp.focus({ preventScroll: true }), 350);
+    el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+  }
+
   function sec(key, title, body, feat, cls) {
     if (!body) return '';
     let open = feat ? !S.task.free && NWTasks.showOf(S.task).includes(feat) : true;
@@ -809,51 +877,34 @@
     store.set('nw-open', JSON.stringify(openSecs));
   }, true);
 
-  // ---------------------------------------------------------------- Einstellungsfenster am Gerät
-  // Auf großen Bildschirmen schwebt das Fenster direkt neben dem angetippten Gerät
-  // auf der Arbeitsfläche. Auf schmalen Bildschirmen (Tablet hochkant) steht es unter der Arbeitsfläche.
+  // ---------------------------------------------------------------- Einstellungen neben der Arbeitsfläche
+  // Auf großen Bildschirmen stehen die Einstellungen oben in der rechten Spalte, die Aufgabe
+  // rückt kompakt darunter. So verdecken sie nie Geräte oder Verbindungen auf der Arbeitsfläche.
+  // Auf schmalen Bildschirmen (Tablet hochkant) sind sie eine Leiste unten; die Seite rollt dann
+  // so, dass die Arbeitsfläche darüber frei bleibt.
   const wide = window.matchMedia('(min-width: 861px)');
-  function placeInspectorBox() {
-    const target = wide.matches ? document.querySelector('.canvas-wrap') : document.querySelector('.side');
-    if (insp.parentElement !== target) target.appendChild(insp);
-    insp.classList.toggle('floating', wide.matches);
-  }
-  /** Schiebt das Fenster neben das gewählte Gerät (bzw. neben die Mitte der gewählten Verbindung). */
+  let lastSel = null;
   function positionInspector() {
-    if (!wide.matches || insp.hidden || !S.selected) return;
-    const link = S.net.links.find(l => l.id === S.selected);
-    const d = NW.dev(S.net, S.selected);
-    let x, y;
-    if (link) { const a = NW.dev(S.net, link.a), b = NW.dev(S.net, link.b); x = (a.x + b.x) / 2; y = (a.y + b.y) / 2; }
-    else if (d) { x = d.x; y = d.y; }
-    else return;
-    const m = canvas.getScreenCTM();
-    const wrap = insp.parentElement.getBoundingClientRect();
-    if (!m) return;
-    const pt = canvas.createSVGPoint(); pt.x = x; pt.y = y;
-    const c = pt.matrixTransform(m);
-    const cx = c.x - wrap.left, cy = c.y - wrap.top;
-    const half = (link ? 14 : NWView.BOX.w / 2 + 6) * m.a;
-    const w = insp.offsetWidth, h = insp.offsetHeight, gap = 12;
-    const top = Math.min(Math.max(8, cy - 60), Math.max(8, wrap.height - h - 8));
-    // Rechts oder links vom Gerät – dort, wo das Fenster weniger andere Geräte verdeckt
-    const clampL = l => Math.min(Math.max(8, l), Math.max(8, wrap.width - w - 8));
-    const covered = l => S.net.devices.filter(o => {
-      const q = canvas.createSVGPoint(); q.x = o.x; q.y = o.y;
-      const r = q.matrixTransform(m), ox = r.x - wrap.left, oy = r.y - wrap.top;
-      return ox > l - 30 && ox < l + w + 30 && oy > top - 30 && oy < top + h + 30;
-    }).length;
-    // Kandidaten: direkt rechts, direkt links, ganz rechts, ganz links (das Fenster darf das gewählte Gerät nie verdecken)
-    const self = l => cx + half > l && cx - half < l + w;
-    const cands = [cx + half + gap, cx - half - gap - w, wrap.width - w - 8, 8].map(clampL).filter(l => !self(l));
-    let left = cands.length ? cands[0] : clampL(cx + half + gap), best = Infinity;
-    for (const l of cands) { const n = covered(l) * 1000 + Math.abs(l + w / 2 - cx); if (n < best) { best = n; left = l; } }
-    insp.style.left = Math.round(left) + 'px';
-    insp.style.top = Math.round(top) + 'px';
+    const sel = S.selected;
+    if (!sel || sel === lastSel) { lastSel = sel; return; }
+    lastSel = sel;
+    if (wide.matches) { document.querySelector('.side').scrollTop = 0; return; }
+    // Tablet hochkant: Arbeitsfläche über die Leiste schieben
+    requestAnimationFrame(() => {
+      const wrap = document.querySelector('.canvas-wrap').getBoundingClientRect();
+      const free = window.innerHeight - insp.offsetHeight;
+      const y = wrap.height <= free ? wrap.bottom - free : wrap.top;
+      if (Math.abs(y) > 4) window.scrollBy({ top: y, behavior: 'smooth' });
+    });
   }
-  wide.addEventListener('change', () => { placeInspectorBox(); renderInspector(); });
-  window.addEventListener('resize', () => positionInspector());
-  placeInspectorBox();
+  wide.addEventListener('change', () => { lastSel = null; renderInspector(); });
+  // Aufgabentext ist bei gewähltem Gerät auf zwei Zeilen gekürzt – antippen zeigt ihn ganz
+  const toggleIntro = () => {
+    const full = $('task-intro').classList.toggle('full');
+    $('task-more').textContent = full ? 'Aufgabentext kürzen' : 'Ganzen Aufgabentext lesen';
+  };
+  $('task-intro').addEventListener('click', () => { if (document.querySelector('.side.has-sel')) toggleIntro(); });
+  $('task-more').addEventListener('click', toggleIntro);
 
   function renderInspector() {
     renderInspectorBody();
@@ -918,6 +969,7 @@
     let h = `<div class="insp-head">${NWView.iconSVG(d.cloud ? 'switch' : d.type, 30)}<div><div class="insp-type">${esc(d.cloud ? 'Internet (vereinfacht)' : t.label)}</div>
       <input class="insp-name" data-path="name" value="${esc(d.name)}" ${dis ? 'disabled' : ''} maxlength="24" aria-label="Name"></div></div>`;
     h += `<details class="desc"><summary>Wozu dient dieses Gerät?</summary><p>${esc(d.cloud ? 'Hier vereinfacht: Das Internet ist ein riesiger Zusammenschluss vieler Netze. Viele Router leiten die Pakete Schritt für Schritt weiter.' : NW.DESCRIPTIONS[d.type])}</p></details>`;
+    if (t.host) h += jumpBar(d);
     if (d.locked) h += '<p class="locked-note">🔒 Dieses Gerät gehört zur Aufgabe. Du kannst es ansehen und benutzen, aber nicht ändern.</p>';
     if (d.off) h += `<p class="fault-note">✕ ${esc(d.name)} ist ausgefallen. Es sendet, empfängt und leitet nichts weiter.</p>`;
     if (t.bus && d.broken) h += '<p class="fault-note">⚡ Kabelbruch im Bus-Kabel: Das ganze Busnetz ist gestört.</p>';
@@ -950,6 +1002,7 @@
         b += field('DNS-Server', 'dns', d.dns, 'dns', { disabled: fdis, placeholder: auto ? 'kommt per DHCP' : 'nur nötig für Namen wie www…' });
         if (sg.dns) b += chip('suggest-dns', `DNS-Server ${sg.dns} übernehmen`);
       }
+      b += netHelpHTML(d, has('gateway') || (d.gw || '').trim());
       h += sec('net', 'Netzwerk-Einstellungen', b);
     }
 
@@ -1212,6 +1265,8 @@
           const pr = NW.ipProblem(v, mask);
           if (pr) return ['bad', pr];
           if (NW.isApipa(NW.parseIP(v))) return ['warn', 'Notfall-Adresse (APIPA): Es wurde kein DHCP-Server gefunden. Sie funktioniert nur direkt im selben Netz.'];
+          const ah = check === 'ip' && !d.locked && !d.dhcp ? NW.addrHint(S.net, d.id) : '';
+          if (ah) return ['warn', ah];
           return ['ok', NW.isPrivate(NW.parseIP(v)) ? 'lokale (private) Adresse' : 'öffentliche (externe) Adresse'];
         }
       case 'mask':
@@ -1222,7 +1277,8 @@
         const g = NW.parseIP(v);
         if (g === null) return ['bad', 'Keine gültige IPv4-Adresse.'];
         const a = NW.ifaceAddr(d, 0);
-        if (a && !NW.sameNet(g, a.ip, a.prefix)) return ['bad', 'Das Gateway muss im selben Netz liegen wie das Gerät.'];
+        if (a && !NW.sameNet(g, a.ip, a.prefix) && !d.locked && !d.dhcp && NW.addrHint(S.net, d.id)) return ['warn', 'Gateway und IP-Adresse liegen in verschiedenen Netzen. Prüfe zuerst die IP-Adresse oben.'];
+        if (a && !NW.sameNet(g, a.ip, a.prefix)) return ['bad', `Das Gateway muss im selben Netz liegen wie das Gerät, hier also ${NW.netName(a.ip, a.prefix)}.`];
         if (a && g === a.ip) return ['bad', 'Das ist die eigene Adresse – hier gehört die Adresse des Routers hin.'];
         return ['', ''];
       }
@@ -1342,8 +1398,9 @@
   });
 
   insp.addEventListener('click', async ev => {
-    const b = ev.target.closest('[data-act], [data-fill]');
+    const b = ev.target.closest('[data-act], [data-fill], [data-jump]');
     if (!b) return;
+    if (b.dataset.jump) { jumpTo(b.dataset.jump); return; }
     if (b.dataset.fill) {
       const target = $({ ping: 'ping-target', url: 'url-target', file: 'file-target', svc: 'svc-target' }[b.dataset.fill]);
       target.value = b.dataset.val;
@@ -1496,7 +1553,7 @@
       if (res.v6) logResult(true, `Ping per IPv6 erfolgreich: ${t.name} (${target}) hat geantwortet.` + (res.linkLocal ? ' Link-Local-Adressen funktionieren nur im eigenen Netz.' : res.viaRouter ? ` Kein NAT: ${t.name} hat die echte Adresse ${res.seenSrc} von ${d.name} gesehen.` : ''));
       else logResult(true, `Ping erfolgreich: ${t.name} (${target}) hat geantwortet.` + natText(res.nat));
     } else logResult(false, res.error, res.hint);
-    NW.logEvent(S.net, Object.assign({ type: 'ping', src: d.id, target: res.target, ok: !!res.ok, fault: res.fault || '', faults: NW.activeFaults(S.net) }, res.v6 ? { v6: true, ll: !!res.linkLocal } : {}));
+    NW.logEvent(S.net, Object.assign({ type: 'ping', src: d.id, target: res.target, ok: !!res.ok, to: target, error: res.ok ? '' : res.error || '', fault: res.fault || '', faults: NW.activeFaults(S.net) }, res.v6 ? { v6: true, ll: !!res.linkLocal } : {}));
     renderGoals(); scheduleSave();
   }
 
@@ -1526,7 +1583,7 @@
     if (res.steps.length) await runSteps(res.steps);
     if (res.ok) logResult(true, `${NW.dev(S.net, res.target).name} spielen die Musik von ${d.name}. Die Töne kommen per Bluetooth – ohne IP-Adresse, ohne Router, nur über wenige Meter (PAN).`);
     else logResult(false, res.error, res.hint);
-    NW.logEvent(S.net, { type: 'music', src: d.id, target: res.target || null, ok: !!res.ok });
+    NW.logEvent(S.net, { type: 'music', src: d.id, target: res.target || null, ok: !!res.ok, error: res.ok ? '' : res.error || '' });
     renderGoals(); scheduleSave();
   }
 
@@ -1543,7 +1600,7 @@
         : `Peer-to-Peer: ${d.name} und ${t.name} tauschen direkt, ohne Server. Beide sind gleichberechtigt – jedes Gerät kann Dateien anbieten und holen. Dafür müssen beide gleichzeitig erreichbar sein.`;
       logResult(true, (dir === 'send' ? `„${res.files[0]}“ ist bei ${t.name} angekommen. ` : `${d.name} hat ${res.files.map(f => '„' + f + '“').join(', ')} von ${t.name} bekommen. `) + how);
     } else logResult(false, res.error, res.hint);
-    NW.logEvent(S.net, { type: 'file', src: d.id, target: res.target || null, mode: res.mode || null, dir, files: res.files || [], ok: !!res.ok });
+    NW.logEvent(S.net, { type: 'file', src: d.id, target: res.target || null, mode: res.mode || null, dir, files: res.files || [], ok: !!res.ok, error: res.ok ? '' : res.error || '' });
     renderAll(); scheduleSave();
   }
 
@@ -1558,7 +1615,7 @@
     const res = NW.browse(S.net, d.id, url, { tcp: S.tcp && has('dienste') });
     if (res.steps.length) await runSteps(res.steps);
     const u = NW.parseURL(url);
-    NW.logEvent(S.net, { type: 'web', src: d.id, host: u ? u.host : url, ok: !!res.ok, lost: !!res.lost, tcp: !!res.tcp });
+    NW.logEvent(S.net, { type: 'web', src: d.id, host: u ? u.host : url, ok: !!res.ok, lost: !!res.lost, tcp: !!res.tcp, error: res.ok ? '' : res.error || '' });
     if (res.ok) {
       logResult(true, res.message + natText(res.nat));
       openModal(`<div class="browser"><div class="browser-bar"><span class="dots"><i></i><i></i><i></i></span><span class="browser-url">http://${esc(res.page.host)}/</span></div>
@@ -1576,7 +1633,7 @@
     const res = NW.useService(S.net, d.id, action, target, { tcp: S.tcp && has('dienste') });
     if (res.steps.length) await runSteps(res.steps);
     const u = NW.parseURL(target);
-    NW.logEvent(S.net, { type: 'svc', action, src: d.id, host: u ? u.host : target, ok: !!res.ok, lost: !!res.lost, tcp: !!res.tcp });
+    NW.logEvent(S.net, { type: 'svc', action, src: d.id, host: u ? u.host : target, ok: !!res.ok, lost: !!res.lost, tcp: !!res.tcp, error: res.ok ? '' : res.error || '' });
     if (res.ok) {
       const srv = NW.dev(S.net, res.target);
       if (action === 'mail') {
