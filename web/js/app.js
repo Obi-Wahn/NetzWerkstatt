@@ -113,6 +113,8 @@
     listSig = JSON.stringify(S.me);
     $('who').textContent = S.me ? S.me.name : '';
     $('preview-note').hidden = !(S.me && S.me.preview);
+    // Vorführungen erst, wenn die Lehrkraft mindestens eine freigegeben hat
+    $('btn-demos').hidden = !(S.me && (S.me.allDemos || Object.keys(S.me.demos || {}).length));
     const list = $('task-list');
     list.innerHTML = '';
     let shown = 0;

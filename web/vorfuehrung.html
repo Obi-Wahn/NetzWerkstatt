@@ -20,7 +20,18 @@
   </header>
   <main class="task-list-wrap">
     <h2>Vorführungen</h2>
-    <p class="muted">Hier ist das Netz schon fertig aufgebaut. Schritt für Schritt wird erklärt, was passiert, und die Datenpakete laufen wirklich durch das Netz. Mit „Weiter“ und „Zurück“ bestimmst du das Tempo.</p>
+    <p id="intro-student" class="muted" hidden>Hier ist das Netz schon fertig aufgebaut. Schritt für Schritt wird erklärt, was passiert, und die Datenpakete laufen wirklich durch das Netz. Mit „Weiter“ und „Zurück“ bestimmst du das Tempo.</p>
+    <div id="intro-teacher" class="demo-intro-teacher" hidden>
+      <p class="muted">Fertig aufgebaute Netze zum Vorführen am Beamer. Schritt für Schritt wird erklärt, was passiert, und die Datenpakete laufen wirklich durch das Netz. Mit „Weiter“ und „Zurück“ (oder den Pfeiltasten) bestimmst du das Tempo und kannst an jeder Stelle mit der Klasse besprechen, was gerade passiert.</p>
+      <p class="muted">Schülerinnen und Schüler sehen eine Vorführung erst, wenn du sie freigibst. So kannst du sie zuerst gemeinsam ansehen und danach zum Nachschauen freigeben.</p>
+      <div class="demo-admin">
+        <span id="demo-open-count" class="demo-open-count"></span>
+        <div class="spacer"></div>
+        <button id="btn-open-all" class="btn small">Alle freigeben</button>
+        <button id="btn-close-all" class="btn small ghost">Alle sperren</button>
+      </div>
+    </div>
+    <p id="demo-msg" class="demo-msg" hidden></p>
     <div id="demo-list" class="task-grid"></div>
   </main>
 </section>
@@ -58,6 +69,9 @@
   </div>
 </section>
 
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script src="js/common.js"></script>
 <script src="js/sim.js"></script>
 <script src="js/tasks.js"></script>
 <script src="js/view.js"></script>
