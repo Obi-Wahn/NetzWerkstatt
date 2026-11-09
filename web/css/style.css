@@ -384,24 +384,36 @@ select { font: inherit; width: 100%; padding: 8px; border: 1px solid var(--line)
 .toast-act { font: inherit; font-weight: 700; padding: 6px 12px; min-height: 36px; border-radius: 8px; border: 2px solid currentColor; background: transparent; color: inherit; cursor: pointer; flex: none; }
 
 /* ---------------------------------------------------------------- Tablet hochkant / schmale Fenster */
-/* Einstellungsfenster direkt am Gerät (große Bildschirme) */
+/* Einstellungen: oben in der rechten Spalte, die Aufgabe kompakt darunter (die Arbeitsfläche bleibt frei) */
 .inspector { position: relative; }
-.inspector.floating { position: absolute; z-index: 5; width: 310px; max-height: calc(100% - 16px); overflow-y: auto; overscroll-behavior: contain;
-  box-shadow: 0 10px 30px rgba(20, 35, 60, .22), 0 2px 6px rgba(20, 35, 60, .12); padding: 12px 14px; }
 .insp-close { position: absolute; top: 6px; right: 6px; z-index: 1; min-height: 34px; min-width: 34px; padding: 4px 8px; }
 .inspector .insp-head, .inspector > h3 { padding-right: 34px; }
+.side.has-sel .inspector { order: -1; border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); padding: 12px 14px; }
+.side.has-sel #task-intro, .side.has-sel #task-tip-wrap, .side.has-sel #task-think-wrap { display: none; }
+.side.has-sel .task-card { padding: 10px 12px; }
+.side.has-sel .goals li { padding-top: 4px; padding-bottom: 4px; font-size: .86em; }
+.side.has-sel .goals li::before { top: 5px; }
+.side.has-sel .goals li.done::after { top: 8px; }
+/* Leiste „Testen“: führt direkt zu Ping, Browser, Diensten und Dateien */
+.jump { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 2px; padding: 8px; border-radius: 10px; background: var(--brand-soft); }
+.jump-label { font-size: .82em; font-weight: 700; color: var(--brand); margin-right: 2px; }
+.jump-btn { font: inherit; font-size: .88em; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; min-height: 36px; padding: 4px 11px; border-radius: 99px;
+  border: 1px solid var(--brand); background: var(--panel); color: var(--brand); cursor: pointer; touch-action: manipulation; }
+.jump-btn:hover { background: var(--brand); color: var(--on-color); }
+.jump-btn .act-ico { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+details.sec { scroll-margin-top: 8px; }
+details.sec.flash > summary h4 { animation: secflash 1.2s ease-out; }
+@keyframes secflash { 0%, 40% { color: var(--brand); } 100% { color: inherit; } }
 @media (max-width: 860px) {
   /* Tablet hochkant: Einstellungen als Leiste unten, die Arbeitsfläche bleibt darüber sichtbar */
   .inspector.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; max-height: 46vh; overflow-y: auto; overscroll-behavior: contain;
     border-radius: 16px 16px 0 0; box-shadow: 0 -8px 28px rgba(20, 35, 60, .22); padding-bottom: max(14px, env(safe-area-inset-bottom)); }
   body.has-sheet .screen.editor { padding-bottom: 46vh; }
-  /* Wenn ein Gerät gewählt ist: Aufgabe kompakt, damit die Einstellungen sichtbar bleiben */
-  .side.has-sel #task-intro, .side.has-sel #task-tip-wrap, .side.has-sel #task-think-wrap { display: none; }
-  .side.has-sel .goals li { padding-top: 4px; padding-bottom: 4px; font-size: .86em; }
-  .side.has-sel .goals li::before { top: 5px; }
-  .side.has-sel .goals li.done::after { top: 8px; }
+  details.sec { scroll-margin-top: 4px; }
 }
 @media (max-width: 1100px) {
+  .jump { gap: 5px; padding: 7px; }
+  .jump-btn { padding: 4px 8px; gap: 4px; }
   .workspace { grid-template-columns: 136px minmax(0, 1fr) 290px; }
   .tool-hint { flex-basis: 100%; padding-left: 2px; }
 }
@@ -418,7 +430,6 @@ select { font: inherit; width: 100%; padding: 8px; border: 1px solid var(--line)
   .pal-btn { width: 70px; min-height: 54px; flex: none; }
   .canvas-wrap { flex: none; aspect-ratio: 900 / 560; min-height: 0; }
   .side { border-left: 0; overflow: visible; }
-  .side.has-sel .inspector { order: -1; }
 }
 
 /* Umschalter „Von Hand" / „Automatisch (DHCP)" */
@@ -462,11 +473,12 @@ table.cmp col.k { width: 26%; }
 .svc-ask b { color: var(--ink); }
 .svc-box { background: var(--brand-soft); border-radius: 12px; padding: 8px 10px 10px; margin: 4px 0 10px; }
 .svc-box .svc-ask { margin-top: 0; }
-.svc-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.svc-btns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; }
 .svc-act { font: inherit; font-size: .88em; font-weight: 600; display: flex; align-items: center; gap: 8px; text-align: left;
   min-height: 42px; padding: 6px 10px; border-radius: 10px; cursor: pointer;
   background: var(--panel); color: var(--brand); border: 2px solid var(--brand); }
 .svc-act:hover { background: var(--panel-2); }
+.svc-act span { min-width: 0; hyphens: auto; -webkit-hyphens: auto; overflow-wrap: anywhere; }
 .svc-act:active { transform: translateY(1px); }
 .svc-act .svc-ico { flex: none; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .svc-act.match { background: var(--brand); color: var(--brand-ink); box-shadow: 0 0 0 3px var(--brand-soft), 0 0 0 5px var(--brand); }
