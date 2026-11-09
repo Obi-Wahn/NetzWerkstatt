@@ -5,6 +5,9 @@
   const T = NW.TYPES;
   const $ = id => document.getElementById(id);
 
+  // Hinweis im leeren Paket-Protokoll
+  const LOG_EMPTY = '<div class="log-empty">Hier erscheinen die Datenpakete, sobald du einen Ping sendest, eine Webseite aufrufst, einen Internetdienst nutzt oder per DHCP eine Adresse anforderst.</div>';
+
   const S = {
     token: store.get('nw_token'),
     me: null,
@@ -151,7 +154,7 @@
     $('task-think').textContent = task.think || '';
     $('task-think-wrap').hidden = !task.think;
     $('btn-submit').hidden = !!task.free;
-    $('log').innerHTML = '<div class="log-empty">Hier erscheinen die Datenpakete, sobald du einen Ping sendest, eine Webseite aufrufst, einen Internetdienst nutzt oder per DHCP eine Adresse anforderst.</div>';
+    $('log').innerHTML = LOG_EMPTY;
     $('save-state').textContent = '';
     show('editor');
     updateSolutionButton();
@@ -178,6 +181,28 @@
   $('btn-solution').addEventListener('click', () => {
     const sol = S.task.solution();
     showNetwork('Musterlösung: ' + S.task.title, sol, '<p class="muted">Vergleiche mit deinem Netzwerk. Es gibt oft mehrere richtige Lösungen!</p>' + NWCommon.quizHTML(S.task, sol));
+  });
+
+  // ---------------------------------------------------------------- Neu anfangen
+  $('btn-reset').addEventListener('click', async () => {
+    if (readOnly()) return;
+    const text = S.task.free
+      ? 'Willst du wirklich neu anfangen? Alle Geräte und Verbindungen auf der Arbeitsfläche werden gelöscht.'
+      : 'Willst du die Aufgabe wirklich neu anfangen? Alles, was du gebaut und eingestellt hast, wird gelöscht und die Aufgabe beginnt wieder wie am Anfang.';
+    if (!(await confirmBox(text, 'Ja, neu anfangen', true))) return;
+    if (readOnly() || $('screen-editor').hidden) return;
+    const before = NW.clone(S.net), task = S.task;
+    S.net = task.start();
+    if (!S.net.events) S.net.events = [];
+    S.selected = null; S.pending = null; S.netKind = null;
+    setTool('move');
+    $('log').innerHTML = LOG_EMPTY;
+    renderAll(); scheduleSave();
+    toast('Die Aufgabe beginnt wieder von vorn.', 'ok', { label: 'Rückgängig', run: () => {
+      if (readOnly() || S.task !== task || $('screen-editor').hidden) return;
+      S.net = before; S.selected = null; renderAll(); scheduleSave();
+      toast('Dein altes Netzwerk ist wieder da.', 'ok');
+    } });
   });
 
   // ---------------------------------------------------------------- Speichern
@@ -394,6 +419,7 @@
     renderInspector();
     $('readonly-banner').hidden = !readOnly();
     $('btn-submit').disabled = readOnly();
+    $('btn-reset').disabled = readOnly();
     $('btn-submit').textContent = readOnly() ? 'Abgegeben ✓' : 'Abgeben';
     document.body.classList.toggle('is-readonly', readOnly());
   }

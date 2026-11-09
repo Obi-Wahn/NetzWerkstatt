@@ -563,6 +563,8 @@ table.cmp col.k { width: 26%; }
 .theme-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .login-screen > .theme-btn { position: absolute; top: 12px; right: 12px; }
 @media (max-width: 600px) { .topbar .theme-btn span { display: none; } }
+/* „Neu anfangen“ auf schmalen Bildschirmen nur als Symbol, damit die Kopfzeile nicht umbricht */
+@media (max-width: 900px) { #btn-reset .lbl { display: none; } #btn-reset { font-size: 1.15em; } }
 .preview-note { background: var(--brand-soft); color: var(--ink); border-left: 4px solid var(--brand); border-radius: 8px; padding: 10px 14px; margin: 0 0 14px; }
 .task-tile.custom .tile-num { font-size: .85em; }
 /* Name eines Dienstes im Internet (unter dem Schalter des Dienstes) */
