@@ -1056,4 +1056,15 @@ test('Dateitausch: nur mitmachende Geräte sind Partner, gesperrte Partner werde
   assert.doesNotMatch(r.hint, /schalte/i);
 });
 
+// Jede eingebaute Aufgabe mit Musterlösung hat einen Lösungsweg und Antworten zum Denkanstoß
+const { of: loesungOf } = require('../web/js/loesungen.js');
+for (const t of TASKS) {
+  if (!t.solution) continue;
+  test(`Lösungsweg zu „${t.title}" vorhanden`, () => {
+    const w = loesungOf(t);
+    assert.ok(w && w.steps.length >= 2, 'Lösungsweg fehlt');
+    if (t.think) assert.ok((w.answers || []).length > 0, 'Antworten zum Denkanstoß fehlen');
+  });
+}
+
 console.log(`\n${n} Tests bestanden.`);
