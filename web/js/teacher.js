@@ -125,6 +125,7 @@
         <td class="name">${esc(s.name)}</td><td>${status}</td><td>${prog}</td><td class="muted">${when}</td>
         <td class="actions">${has ? `<button class="btn small" data-view="${s.id}">Zeigen</button>` : ''}
           ${w && w.submitted ? `<button class="btn small ghost" data-return="${s.id}" title="Abgabe zurückgeben, damit weitergearbeitet werden kann">Zurückgeben</button>` : ''}
+          ${s.hasCode ? `<button class="btn small ghost" data-code="${s.id}" title="Vergessenen Code zurücksetzen">Code zurücksetzen</button>` : '<span class="badge" title="Beim nächsten Anmelden gilt der neu eingegebene Code">Code frei</span>'}
           <button class="btn small ghost" data-del="${s.id}" title="Schüler/in mit allen Arbeiten löschen">✕</button></td></tr>`;
     }).join('');
     // nicht mehr vorhandene Auswahl entfernen
@@ -201,6 +202,13 @@
     const v = ev.target.closest('[data-view]');
     const r = ev.target.closest('[data-return]');
     const del = ev.target.closest('[data-del]');
+    const code = ev.target.closest('[data-code]');
+    if (code) {
+      const s = student(code.dataset.code);
+      if (!(await confirmBox(`Code von ${s.name} zurücksetzen? Beim nächsten Anmelden gilt der Code, den ${s.name} dann eingibt. Die Arbeiten bleiben erhalten.`, 'Zurücksetzen'))) return;
+      try { await api('POST', '/api/teacher/reset-code', { student: s.id }, S.token); toast(`Code von ${s.name} zurückgesetzt. Jetzt neu anmelden lassen.`, 'ok'); await load(); }
+      catch (e) { toast(e.message, 'error'); }
+    }
     if (v) {
       const s = student(v.dataset.view);
       const t = taskObj();

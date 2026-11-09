@@ -24,10 +24,14 @@
       <label>Raumcode (steht an der Tafel)
         <input id="login-room" inputmode="numeric" maxlength="12" required spellcheck="false">
       </label>
+      <label>Dein Geheimcode (4 Ziffern)
+        <input id="login-code" type="password" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" minlength="4" required spellcheck="false" autocomplete="off" title="Genau 4 Ziffern">
+        <span class="small muted hint">Beim ersten Mal denkst du dir den Code aus. Merke ihn dir gut – nur mit ihm kommst du wieder an deine Arbeit.</span>
+      </label>
       <p id="login-error" class="error" role="alert"></p>
       <button class="btn primary big" type="submit">Los geht's</button>
     </form>
-    <p class="small muted">Es werden nur dein Name und deine Netzwerke gespeichert – und zwar nur auf dem Rechner deiner Lehrkraft.</p>
+    <p class="small muted">Es werden nur dein Name, dein Code und deine Netzwerke gespeichert – und zwar nur auf dem Rechner deiner Lehrkraft.</p>
   </div>
 </section>
 

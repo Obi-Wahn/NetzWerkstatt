@@ -8,6 +8,8 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
+	"crypto/subtle"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
@@ -39,6 +41,21 @@ type Student struct {
 	// Teacher markiert den Baukasten-Zugang der Lehrkraft: Er sieht alle Aufgaben
 	// und taucht nicht in der Schülerliste auf.
 	Teacher bool `json:"teacher,omitempty"`
+	// CodeHash ist der Prüfwert des vierstelligen Schüler-Codes. Leer heißt:
+	// Noch kein Code (oder von der Lehrkraft zurückgesetzt) – der nächste
+	// eingegebene Code wird übernommen.
+	CodeHash string `json:"codeHash,omitempty"`
+}
+
+var codeRe = regexp.MustCompile(`^[0-9]{4}$`)
+
+func codeHash(st *Student, code string) string {
+	h := sha256.Sum256([]byte("netzwerkstatt:" + st.ID + ":" + code))
+	return hex.EncodeToString(h[:])
+}
+
+func (st *Student) codeOK(code string) bool {
+	return subtle.ConstantTimeCompare([]byte(st.CodeHash), []byte(codeHash(st, code))) == 1
 }
 
 type Work struct {
@@ -238,13 +255,54 @@ type Server struct {
 	store         *Store
 	teacherTokens map[string]time.Time
 	tmu           sync.Mutex
+	// Fehlversuche beim Schüler-Code (Schüler-ID -> Anzahl, Sperre bis)
+	codeFails map[string]*codeFail
 }
+
+type codeFail struct {
+	n     int
+	until time.Time
+}
+
+const maxCodeFails = 5
+const codeLockTime = time.Minute
 
 func (srv *Server) isTeacher(r *http.Request) bool {
 	srv.tmu.Lock()
 	defer srv.tmu.Unlock()
 	_, ok := srv.teacherTokens[bearer(r)]
 	return ok
+}
+
+// codeLocked sagt, wie lange ein Schülerkonto nach zu vielen falschen Codes noch gesperrt ist.
+func (srv *Server) codeLocked(id string) time.Duration {
+	srv.tmu.Lock()
+	defer srv.tmu.Unlock()
+	if f := srv.codeFails[id]; f != nil {
+		return time.Until(f.until)
+	}
+	return 0
+}
+
+func (srv *Server) addCodeFail(id string) {
+	srv.tmu.Lock()
+	defer srv.tmu.Unlock()
+	f := srv.codeFails[id]
+	if f == nil {
+		f = &codeFail{}
+		srv.codeFails[id] = f
+	}
+	f.n++
+	if f.n >= maxCodeFails {
+		f.n = 0
+		f.until = time.Now().Add(codeLockTime)
+	}
+}
+
+func (srv *Server) clearCodeFails(id string) {
+	srv.tmu.Lock()
+	defer srv.tmu.Unlock()
+	delete(srv.codeFails, id)
 }
 
 func normName(n string) string {
@@ -264,9 +322,9 @@ func (srv *Server) routes() http.Handler {
 		writeJSON(w, 200, map[string]string{"app": "NetzWerkstatt", "version": Version})
 	})
 
-	// Schüler-Anmeldung: Name + Raumcode
+	// Schüler-Anmeldung: Name + Raumcode + eigener vierstelliger Code
 	mux.HandleFunc("POST /api/login", func(w http.ResponseWriter, r *http.Request) {
-		var req struct{ Name, Room string }
+		var req struct{ Name, Room, Code string }
 		if err := readBody(r, &req); err != nil {
 			fail(w, 400, "Ungültige Anfrage.")
 			return
@@ -276,22 +334,54 @@ func (srv *Server) routes() http.Handler {
 			fail(w, 400, "Bitte gib deinen Namen ein.")
 			return
 		}
+		code := strings.TrimSpace(req.Code)
+		if !codeRe.MatchString(code) {
+			fail(w, 400, "Dein Code muss genau 4 Ziffern haben, z. B. 4711.")
+			return
+		}
 		s.mu.Lock()
-		defer s.mu.Unlock()
 		if strings.TrimSpace(req.Room) != s.RoomCode {
+			s.mu.Unlock()
 			fail(w, 403, "Der Raumcode stimmt nicht. Schau an die Tafel oder frag deine Lehrkraft.")
 			return
 		}
 		for _, st := range s.Students {
-			if !st.Teacher && strings.EqualFold(st.Name, name) {
-				writeJSON(w, 200, map[string]any{"token": st.Token, "name": st.Name, "returning": true})
+			if st.Teacher || !strings.EqualFold(st.Name, name) {
+				continue
+			}
+			if st.CodeHash == "" {
+				// erster Code für einen alten Eintrag oder nach dem Zurücksetzen
+				st.CodeHash = codeHash(st, code)
+				s.saveLocked()
+				s.mu.Unlock()
+				srv.clearCodeFails(st.ID)
+				writeJSON(w, 200, map[string]any{"token": st.Token, "name": st.Name, "returning": true, "newCode": true})
 				return
 			}
+			if wait := srv.codeLocked(st.ID); wait > 0 {
+				s.mu.Unlock()
+				fail(w, 429, fmt.Sprintf("Zu viele falsche Versuche. Warte %d Sekunden oder frag deine Lehrkraft.", int(wait.Seconds())+1))
+				return
+			}
+			ok := st.codeOK(code)
+			id, tok, n := st.ID, st.Token, st.Name
+			s.mu.Unlock()
+			if !ok {
+				srv.addCodeFail(id)
+				time.Sleep(700 * time.Millisecond)
+				fail(w, 403, "Diesen Namen gibt es schon, aber der Code passt nicht. Hast du dich vertippt? Wenn du deinen Code vergessen hast, kann deine Lehrkraft ihn zurücksetzen. Bist du neu, nimm einen anderen Namen oder hänge einen Buchstaben an (z. B. „Lena M.“).")
+				return
+			}
+			srv.clearCodeFails(id)
+			writeJSON(w, 200, map[string]any{"token": tok, "name": n, "returning": true})
+			return
 		}
 		st := &Student{ID: randomToken(6), Name: name, Token: randomToken(16), Created: time.Now().Unix()}
+		st.CodeHash = codeHash(st, code)
 		s.Students = append(s.Students, st)
 		s.saveLocked()
-		writeJSON(w, 200, map[string]any{"token": st.Token, "name": st.Name})
+		s.mu.Unlock()
+		writeJSON(w, 200, map[string]any{"token": st.Token, "name": st.Name, "newCode": true})
 	})
 
 	// Eigener Stand: Name, Arbeiten (nur Status), freigegebene Lösungen
@@ -401,9 +491,10 @@ func (srv *Server) routes() http.Handler {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		type row struct {
-			ID    string          `json:"id"`
-			Name  string          `json:"name"`
-			Works map[string]Work `json:"works"`
+			ID      string          `json:"id"`
+			Name    string          `json:"name"`
+			Works   map[string]Work `json:"works"`
+			HasCode bool            `json:"hasCode"`
 		}
 		rows := []row{}
 		var own map[string]Work
@@ -412,7 +503,7 @@ func (srv *Server) routes() http.Handler {
 				own = s.Works[st.ID]
 				continue
 			}
-			rows = append(rows, row{ID: st.ID, Name: st.Name, Works: s.Works[st.ID]})
+			rows = append(rows, row{ID: st.ID, Name: st.Name, Works: s.Works[st.ID], HasCode: st.CodeHash != ""})
 		}
 		sort.Slice(rows, func(i, j int) bool { return strings.ToLower(rows[i].Name) < strings.ToLower(rows[j].Name) })
 		addrs := []string{}
@@ -572,6 +663,37 @@ func (srv *Server) routes() http.Handler {
 			s.saveLocked()
 		}
 		s.mu.Unlock()
+		writeJSON(w, 200, map[string]bool{"ok": true})
+	})
+
+	// Vergessenen Schüler-Code zurücksetzen: Beim nächsten Anmelden gilt der neu eingegebene Code.
+	mux.HandleFunc("POST /api/teacher/reset-code", func(w http.ResponseWriter, r *http.Request) {
+		if !srv.isTeacher(r) {
+			fail(w, 401, "Bitte als Lehrkraft anmelden.")
+			return
+		}
+		var req struct{ Student string }
+		if err := readBody(r, &req); err != nil {
+			fail(w, 400, "Ungültige Anfrage.")
+			return
+		}
+		s.mu.Lock()
+		found := false
+		for _, st := range s.Students {
+			if st.ID == req.Student && !st.Teacher {
+				st.CodeHash = ""
+				found = true
+			}
+		}
+		if found {
+			s.saveLocked()
+		}
+		s.mu.Unlock()
+		if !found {
+			fail(w, 404, "Diese Schülerin oder diesen Schüler gibt es nicht mehr.")
+			return
+		}
+		srv.clearCodeFails(req.Student)
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	})
 
