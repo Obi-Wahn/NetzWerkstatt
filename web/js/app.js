@@ -577,6 +577,15 @@
       <span class="fhint" data-for="${path}"></span></label>`;
   }
 
+  /** Aufklappbare Erklärung zu Netz, Subnetzmaske und Gateway. */
+  function netHelpHTML(d, withGw) {
+    return `<details class="desc"><summary>Was bedeuten Netz, Subnetzmaske und Gateway?</summary>
+      <p><b>Netz:</b> Geräte im selben Netz haben gleiche Anfangszahlen in der IP-Adresse, z. B. 192.168.1.x. Das <b>x</b> steht für die Zahl, die bei jedem Gerät anders ist (meist 1 bis 254). Geräte im selben Netz erreichen sich direkt über Kabel, Switch oder WLAN.</p>
+      <p><b>Subnetzmaske:</b> Sie sagt, welcher Teil der Adresse das Netz ist. Bei 255.255.255.0 sind die ersten drei Zahlen das Netz, die letzte Zahl ist das Gerät. Manchmal schreibt man dafür kurz „/24“.</p>
+      ${withGw ? `<p><b>Gateway:</b> das „Tor nach draußen“. Liegt das Ziel in einem anderen Netz, z. B. im Internet, schickt ${esc(d.name)} das Paket an das Gateway. Das ist der Router, genauer: seine Adresse in diesem Netz. Der Router leitet das Paket dann weiter. Für Geräte im eigenen Netz braucht man kein Gateway.</p>` : ''}
+    </details>`;
+  }
+
   const KIND_LABEL = { kabel: 'Kabel', wlan: 'WLAN', bluetooth: 'Bluetooth' };
   function kindLabel(l) { return l.kind === 'kabel' && l.stadt ? 'Glasfaser' : KIND_LABEL[l.kind] || l.kind; }
 
@@ -956,6 +965,7 @@
         b += field('DNS-Server', 'dns', d.dns, 'dns', { disabled: fdis, placeholder: auto ? 'kommt per DHCP' : 'nur nötig für Namen wie www…' });
         if (sg.dns) b += chip('suggest-dns', `DNS-Server ${sg.dns} übernehmen`);
       }
+      b += netHelpHTML(d, has('gateway') || (d.gw || '').trim());
       h += sec('net', 'Netzwerk-Einstellungen', b);
     }
 
@@ -1218,6 +1228,8 @@
           const pr = NW.ipProblem(v, mask);
           if (pr) return ['bad', pr];
           if (NW.isApipa(NW.parseIP(v))) return ['warn', 'Notfall-Adresse (APIPA): Es wurde kein DHCP-Server gefunden. Sie funktioniert nur direkt im selben Netz.'];
+          const ah = check === 'ip' && !d.locked && !d.dhcp ? NW.addrHint(S.net, d.id) : '';
+          if (ah) return ['warn', ah];
           return ['ok', NW.isPrivate(NW.parseIP(v)) ? 'lokale (private) Adresse' : 'öffentliche (externe) Adresse'];
         }
       case 'mask':
@@ -1228,7 +1240,8 @@
         const g = NW.parseIP(v);
         if (g === null) return ['bad', 'Keine gültige IPv4-Adresse.'];
         const a = NW.ifaceAddr(d, 0);
-        if (a && !NW.sameNet(g, a.ip, a.prefix)) return ['bad', 'Das Gateway muss im selben Netz liegen wie das Gerät.'];
+        if (a && !NW.sameNet(g, a.ip, a.prefix) && !d.locked && !d.dhcp && NW.addrHint(S.net, d.id)) return ['warn', 'Gateway und IP-Adresse liegen in verschiedenen Netzen. Prüfe zuerst die IP-Adresse oben.'];
+        if (a && !NW.sameNet(g, a.ip, a.prefix)) return ['bad', `Das Gateway muss im selben Netz liegen wie das Gerät, hier also ${NW.netName(a.ip, a.prefix)}.`];
         if (a && g === a.ip) return ['bad', 'Das ist die eigene Adresse – hier gehört die Adresse des Routers hin.'];
         return ['', ''];
       }

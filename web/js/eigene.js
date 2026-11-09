@@ -20,6 +20,8 @@
 
   const FORMAT = 'netzwerkstatt-aufgaben';
   const VERSION = 1;
+  // Netz für den Schülertext: 192.168.1.0/24 → 192.168.1.x
+  const netName = n => { const [a, p] = String(n).split('/'); const ip = NW.parseIP(a); return ip === null || !p ? n : NW.netName(ip, Number(p)); };
   const LIMITS = { tasks: 60, goals: 15, devices: 80, links: 160, events: 40, title: 80, intro: 1500, tip: 1000, goalText: 300 };
 
   // ---------------------------------------------------------------- Geräte-Auswahl in Zielen
@@ -70,7 +72,7 @@
     'ip-netz': {
       label: 'IP-Adressen vergeben',
       fields: { device: { label: 'Geräte', options: HOST_SEL, def: 'endgeraet' }, net: { label: 'Netz (z. B. 192.168.1.0/24)', net: true, def: '192.168.1.0/24' }, gw: { label: 'Gateway (leer = egal)', ip: true, def: '' } },
-      text: g => `Gib jedem ${label(g.device)} eine eigene IP-Adresse im Netz ${g.net}${g.gw ? ` und trage ${g.gw} als Gateway ein` : ''}.`,
+      text: g => `Gib jedem ${label(g.device)} eine eigene IP-Adresse im Netz ${netName(g.net)}${g.gw ? ` und trage ${g.gw} als Gateway ein` : ''}.`,
       check: g => c => {
         const [addr, prefix] = g.net.split('/');
         const list = c.net.devices.filter(matcher(g.device));
