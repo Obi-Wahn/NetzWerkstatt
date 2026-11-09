@@ -69,6 +69,17 @@
     return [];
   }
 
+  /** Lange IPv6-Adressen auf zwei Zeilen verteilen (Umbruch nach einem Doppelpunkt nahe der Mitte). */
+  function splitV6(txt) {
+    if (txt.length <= 20) return [txt];
+    const pre = txt.startsWith('extern ') ? 'extern ' : '';
+    const a = txt.slice(pre.length);
+    let best = -1;
+    for (let i = 0; i < a.length; i++) if (a[i] === ':' && (best < 0 || Math.abs(i - a.length / 2) < Math.abs(best - a.length / 2))) best = i;
+    if (best < 0) return [txt];
+    return [pre + a.slice(0, best + 1), a.slice(best + 1)];
+  }
+
   const isBus = d => d && NW.TYPES[d.type] && NW.TYPES[d.type].bus;
 
   /** Punkt, an dem eine Verbindung an einem Gerät ankommt (beim Bus-Kabel: senkrecht darüber oder darunter). */
@@ -99,9 +110,165 @@
    * Zeichnet ein Netzwerk in ein <svg>.
    * opts: { selected, pending, highlight:Set, interactive, v6 }  (v6: IPv6-Adressen statt IPv4 anzeigen)
    */
+  /**
+   * Schriftfaktor für eine Zeichenfläche: Wird das Netz klein dargestellt (z. B. auf dem iPad quer),
+   * wachsen die Beschriftungen mit, damit die IP-Adressen mindestens MIN_IP Pixel groß bleiben.
+   */
+  const MIN_IP = 11.5, MAX_TS = 1.4;
+  function textScale(svg) {
+    const r = svg.getBoundingClientRect();
+    if (!r.width || !r.height) return svg._ts || 1;
+    const k = svg._zoom ? svg._zoom.k : 1;
+    const s = Math.min(r.width / WORLD.w, r.height / WORLD.h) * k;
+    const ts = Math.max(1, Math.min(MAX_TS, MIN_IP / (12.5 * s)));
+    return Math.round(ts * 20) / 20;
+  }
+
+  /** Bei Größenänderung (z. B. iPad drehen) neu zeichnen, wenn sich der Schriftfaktor ändert. */
+  function watchSize(svg) {
+    if (svg._ro || typeof ResizeObserver === 'undefined') return;
+    svg._ro = new ResizeObserver(() => {
+      clearTimeout(svg._roT);
+      svg._roT = setTimeout(function again() {
+        if (!svg._args || textScale(svg) === svg._ts) return;
+        // Während Datenpakete laufen nicht neu zeichnen, sonst verschwinden sie
+        const ov = svg.querySelector('g.overlay');
+        if (ov && ov.childNodes.length) { svg._roT = setTimeout(again, 400); return; }
+        render(svg, svg._args[0], svg._args[1]);
+      }, 120);
+    });
+    svg._ro.observe(svg);
+  }
+
+  // ---------------------------------------------------------------- Vergrößern (Zoom)
+  const ZOOM_MAX = 3;
+  /** Sichtbarer Ausschnitt: bei Zoom k ein Ausschnitt um den Mittelpunkt (cx, cy), sonst die ganze Fläche. */
+  function viewBox(svg) {
+    const z = svg._zoom;
+    if (!z || z.k <= 1) return `0 0 ${WORLD.w} ${WORLD.h}`;
+    const w = WORLD.w / z.k, h = WORLD.h / z.k;
+    return `${z.cx - w / 2} ${z.cy - h / 2} ${w} ${h}`;
+  }
+  /** Zoom setzen; (ax, ay) ist der Weltpunkt, der dabei an seiner Stelle auf dem Bildschirm bleibt. */
+  function setZoom(svg, k, ax, ay) {
+    const old = svg._zoom || { k: 1, cx: WORLD.w / 2, cy: WORLD.h / 2 };
+    k = Math.max(1, Math.min(ZOOM_MAX, k));
+    if (ax === undefined) { ax = old.cx; ay = old.cy; }
+    // Der Ankerpunkt behält seinen Abstand zur Mitte (im Verhältnis zum Zoom)
+    let cx = ax - (ax - old.cx) * old.k / k, cy = ay - (ay - old.cy) * old.k / k;
+    const hw = WORLD.w / k / 2, hh = WORLD.h / k / 2;
+    cx = Math.max(hw, Math.min(WORLD.w - hw, cx)); cy = Math.max(hh, Math.min(WORLD.h - hh, cy));
+    svg._zoom = k <= 1.001 ? null : { k, cx, cy };
+    applyZoom(svg);
+  }
+  function panBy(svg, dx, dy) {
+    const z = svg._zoom; if (!z) return;
+    const hw = WORLD.w / z.k / 2, hh = WORLD.h / z.k / 2;
+    z.cx = Math.max(hw, Math.min(WORLD.w - hw, z.cx - dx)); z.cy = Math.max(hh, Math.min(WORLD.h - hh, z.cy - dy));
+    applyZoom(svg);
+  }
+  function applyZoom(svg) {
+    // Ändert sich durch den Zoom die nötige Schriftgröße, neu zeichnen, sonst nur den Ausschnitt verschieben
+    if (svg._args && svg._args[1].fit && textScale(svg) !== svg._ts && !(svg.querySelector('g.overlay') || { childNodes: [] }).childNodes.length) render(svg, svg._args[0], svg._args[1]);
+    else svg.setAttribute('viewBox', viewBox(svg));
+    if (svg._onZoom) svg._onZoom(zoomLevel(svg));
+  }
+  const pinching = svg => !!svg._pinching;
+  const zoomLevel = svg => (svg._zoom ? svg._zoom.k : 1);
+  function resetZoom(svg) { svg._zoom = null; applyZoom(svg); }
+
+  /**
+   * Zwei Finger: vergrößern/verkleinern und verschieben. Ein Finger auf freier Fläche verschiebt,
+   * wenn vergrößert ist (bei anywhere: true überall, z. B. in der Vorführung).
+   * onZoom(k) wird bei jeder Änderung aufgerufen (für die Knöpfe).
+   */
+  function enableZoom(svg, o) {
+    o = o || {};
+    if (o.buttons) {
+      // Knöpfe oben rechts auf der Fläche: vergrößern, verkleinern, alles zeigen
+      const bar = document.createElement('div');
+      bar.className = 'zoom-ctl';
+      bar.innerHTML = '<button type="button" class="zoom-btn" data-zoom="in" aria-label="Vergrößern" title="Vergrößern">+</button>' +
+        '<button type="button" class="zoom-btn" data-zoom="out" aria-label="Verkleinern" title="Verkleinern">−</button>' +
+        '<button type="button" class="zoom-btn zoom-fit" data-zoom="fit" title="Ganze Arbeitsfläche zeigen" hidden>Alles zeigen</button>';
+      o.buttons.appendChild(bar);
+      bar.addEventListener('click', ev => {
+        const b = ev.target.closest('[data-zoom]'); if (!b) return;
+        const k = zoomLevel(svg);
+        if (b.dataset.zoom === 'in') setZoom(svg, k * 1.5);
+        else if (b.dataset.zoom === 'out') setZoom(svg, k / 1.5);
+        else resetZoom(svg);
+      });
+      const paint = k => {
+        bar.querySelector('[data-zoom="in"]').disabled = k >= ZOOM_MAX - 0.01;
+        bar.querySelector('[data-zoom="out"]').disabled = k <= 1;
+        bar.querySelector('[data-zoom="fit"]').hidden = k <= 1;
+        bar.classList.toggle('zoomed', k > 1);
+      };
+      paint(1);
+      svg._onZoom = k => { paint(k); if (o.onZoom) o.onZoom(k); };
+    } else svg._onZoom = o.onZoom;
+    const pts = new Map();
+    let pinch = null, pan = null;
+    const client = ev => ({ x: ev.clientX, y: ev.clientY });
+    const worldPerPx = () => { const m = svg.getScreenCTM(); return m ? 1 / m.a : 1; };
+    svg.addEventListener('pointerdown', ev => {
+      pts.set(ev.pointerId, client(ev));
+      if (pts.size === 2) {
+        const [a, b] = [...pts.values()];
+        pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, k: zoomLevel(svg), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
+        svg._pinching = true; pan = null;
+        try { svg.setPointerCapture(ev.pointerId); } catch (e) { /* egal */ }
+      } else if (pts.size === 1 && zoomLevel(svg) > 1 && (o.anywhere || !ev.target.closest('[data-dev], [data-link], [data-topo]'))) {
+        pan = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, moved: false };
+        svg._panMoved = false;
+        try { svg.setPointerCapture(ev.pointerId); } catch (e) { /* egal */ }
+      }
+    }, true);
+    svg.addEventListener('pointermove', ev => {
+      if (!pts.has(ev.pointerId)) return;
+      pts.set(ev.pointerId, client(ev));
+      if (pinch && pts.size >= 2) {
+        const [a, b] = [...pts.values()];
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const f = worldPerPx();
+        panBy(svg, (mid.x - pinch.mid.x) * f, (mid.y - pinch.mid.y) * f);
+        pinch.mid = mid;
+        const at = toWorld(svg, { clientX: mid.x, clientY: mid.y });
+        setZoom(svg, pinch.k * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, at.x, at.y);
+      } else if (pan && pan.id === ev.pointerId) {
+        const dx = ev.clientX - pan.x, dy = ev.clientY - pan.y;
+        if (!pan.moved && Math.hypot(dx, dy) < 6) return;
+        pan.moved = svg._panMoved = true;
+        const f = worldPerPx();
+        panBy(svg, dx * f, dy * f);
+        pan.x = ev.clientX; pan.y = ev.clientY;
+      }
+    }, true);
+    const up = ev => {
+      pts.delete(ev.pointerId);
+      if (pts.size < 2 && pinch) { pinch = null; setTimeout(() => { svg._pinching = false; }, 0); }
+      if (pan && pan.id === ev.pointerId) pan = null;
+    };
+    svg.addEventListener('pointerup', up, true);
+    svg.addEventListener('pointercancel', up, true);
+    // Am PC: Strg + Mausrad bzw. Zwei-Finger-Geste auf dem Touchpad
+    svg.addEventListener('wheel', ev => {
+      if (!ev.ctrlKey) return;
+      ev.preventDefault();
+      const at = toWorld(svg, ev);
+      setZoom(svg, zoomLevel(svg) * Math.exp(-ev.deltaY / 200), at.x, at.y);
+    }, { passive: false });
+  }
+
   function render(svg, net, opts) {
     opts = opts || {};
-    svg.setAttribute('viewBox', `0 0 ${WORLD.w} ${WORLD.h}`);
+    // fit: Beschriftung an die Darstellungsgröße anpassen (Arbeitsfläche, Vorführung, Musterlösung)
+    const T = opts.fit ? textScale(svg) : 1;
+    if (opts.fit) { svg._args = [net, opts]; watchSize(svg); }
+    svg._ts = T;
+    svg.style.setProperty('--ts', T);
+    svg.setAttribute('viewBox', viewBox(svg));
     svg.innerHTML = '';
     const defs = el('defs', {}, svg);
     const pat = el('pattern', { id: 'grid', width: 30, height: 30, patternUnits: 'userSpaceOnUse' }, defs);
@@ -150,9 +317,9 @@
       if (l.stadt) {
         const txt = 'Glasfaser · Stadt';
         const lab = el('g', { class: 'port-label stadt-label' }, g);
-        const w = txt.length * 6.6 + 10, x = (pa.x + pb.x) / 2, y = (pa.y + pb.y) / 2;
-        el('rect', { x: x - w / 2, y: y - 9, width: w, height: 18, rx: 9 }, lab);
-        el('text', { x, y: y + 4, 'text-anchor': 'middle' }, lab).textContent = txt;
+        const w = (txt.length * 6.6 + 10) * T, x = (pa.x + pb.x) / 2, y = (pa.y + pb.y) / 2;
+        el('rect', { x: x - w / 2, y: y - 9 * T, width: w, height: 18 * T, rx: 9 * T }, lab);
+        el('text', { x, y: y + 4 * T, 'text-anchor': 'middle' }, lab).textContent = txt;
       }
       // Am Router und am Switch steht am Kabelende, in welchem Anschluss es steckt (WAN, LAN 1, Port 3 …)
       const tags = [];
@@ -163,14 +330,14 @@
         if (l.unplugged && (l.unplugged === 'a' ? l.a : l.b) === d.id) continue;
         const wan = txt === 'WAN';
         if (wan && d.modem) txt = 'Internet';
-        const w = txt.length * 6.2 + 10;
+        const w = (txt.length * 6.2 + 10) * T;
         // Schild knapp außerhalb des Geräts (unten stehen Name und Adressen) – höchstens bis zur Kabelmitte
         const dx = other.x - d.x, dy = other.y - d.y, dist = Math.max(1, Math.hypot(dx, dy));
         const ux = Math.abs(dx) / dist, uy = Math.abs(dy) / dist;
         const subs = NW.TYPES[d.type].router ? routerLabels(d) : [];
-        const below = BOX.h / 2 + 24 + 15 * subs.length;
+        const below = BOX.h / 2 + (24 + 15 * subs.length) * T;
         // Unter dem Gerät ist der Text breiter als der Kasten
-        const half = dy > 0 ? Math.max(BOX.w / 2, d.name.length * 4.5, ...subs.map(x => x.length * 3.8)) : BOX.w / 2;
+        const half = dy > 0 ? Math.max(BOX.w / 2, d.name.length * 4.5 * T, ...subs.map(x => x.length * 3.8 * T)) : BOX.w / 2;
         const off = Math.min((half + w / 2 + 4) / (ux || 1e-6), ((dy > 0 ? below : BOX.h / 2) + 12) / (uy || 1e-6));
         const t = Math.min(NW.portName(net, other, l) ? 0.45 : 0.7, off / dist);
         tags.push({ x: d.x + dx * t, y: d.y + dy * t, w, txt, wan });
@@ -178,11 +345,11 @@
       // Bei kurzen Kabeln würden sich beide Schilder überdecken: dann eins über, eins unter das Kabel
       if (tags.length === 2) {
         const [p, q] = tags;
-        if (Math.abs(p.x - q.x) < (p.w + q.w) / 2 + 2 && Math.abs(p.y - q.y) < 20) {
+        if (Math.abs(p.x - q.x) < (p.w + q.w) / 2 + 2 && Math.abs(p.y - q.y) < 20 * T) {
           const len = Math.max(1, Math.hypot(b.x - a.x, b.y - a.y));
           let nx = -(b.y - a.y) / len, ny = (b.x - a.x) / len;
           if (ny > 0) { nx = -nx; ny = -ny; }
-          const sh = 11 + 10 * Math.abs(nx);
+          const sh = (11 + 10 * Math.abs(nx)) * T;
           p.x += nx * sh; p.y += ny * sh; q.x -= nx * sh; q.y -= ny * sh;
         }
       }
@@ -193,7 +360,7 @@
       for (let i = 0; i < allTags.length; i++) for (let j = i + 1; j < allTags.length; j++) {
         const p = allTags[i], q = allTags[j];
         const over = (p.w + q.w) / 2 + 3 - Math.abs(p.x - q.x);
-        if (over > 0 && Math.abs(p.y - q.y) < 19) {
+        if (over > 0 && Math.abs(p.y - q.y) < 19 * T) {
           const s = p.x <= q.x ? -1 : 1;
           p.x += s * over / 2; q.x -= s * over / 2;
         }
@@ -201,8 +368,8 @@
     }
     for (const tg of allTags) {
       const lab = el('g', { class: 'port-label' + (tg.wan ? ' wan' : ' lan') }, tg.g);
-      el('rect', { x: tg.x - tg.w / 2, y: tg.y - 9, width: tg.w, height: 18, rx: 9 }, lab);
-      el('text', { x: tg.x, y: tg.y + 4, 'text-anchor': 'middle' }, lab).textContent = tg.txt;
+      el('rect', { x: tg.x - tg.w / 2, y: tg.y - 9 * T, width: tg.w, height: 18 * T, rx: 9 * T }, lab);
+      el('text', { x: tg.x, y: tg.y + 4 * T, 'text-anchor': 'middle' }, lab).textContent = tg.txt;
     }
 
     const v6map = opts.v6 ? NW.ip6Map(net) : null;
@@ -228,7 +395,7 @@
         } else el('path', { d: `M${-hw + 8} 0H${hw - 8}`, class: 'bus-line' }, g);
         el('rect', { x: -hw + 2, y: -7, width: 6, height: 14, rx: 2, class: 'bus-end' }, g);
         el('rect', { x: hw - 8, y: -7, width: 6, height: 14, rx: 2, class: 'bus-end' }, g);
-        el('text', { x: 0, y: hh + 17, 'text-anchor': 'middle', class: 'name' }, g).textContent = d.name;
+        el('text', { x: 0, y: hh + 17 * T, 'text-anchor': 'middle', class: 'name' }, g).textContent = d.name;
         continue;
       }
       if (d.cloud) {
@@ -238,11 +405,17 @@
       }
       const icon = el('g', { class: 'glyph', transform: 'translate(-20,-22)' }, g);
       icon.innerHTML = ICONS[d.cloud ? 'cloud' : d.type];
-      const name = el('text', { x: 0, y: BOX.h / 2 + 17, 'text-anchor': 'middle', class: 'name' }, g);
+      // Beschriftung nicht über den Rand hinaus: geschätzte Breite, notfalls zur Mitte hin verschieben
+      const inside = (len, px) => { const hw = len * px * 0.6 * T / 2; return Math.max(4 + hw - d.x, Math.min(WORLD.w - 4 - hw - d.x, 0)); };
+      let subs = d.off ? ['✕ ausgefallen'] : opts.v6 ? (v6map ? v6Labels(d, v6map) : []) : NW.TYPES[d.type].router && !d.cloud ? routerLabels(d) : [hostLabel(d), serverNames(d)].filter(Boolean);
+      if (opts.v6) subs = subs.flatMap(splitV6);
+      // Ganz unten auf der Fläche passt die Beschriftung nicht mehr darunter: dann über das Gerät
+      const lines = subs.length ? (33 + 15 * (subs.length - 1) + 5) * T : 22 * T;
+      const up = d.y + BOX.h / 2 + lines > WORLD.h ? -(BOX.h + lines + 8 * T) : 0;
+      const name = el('text', { x: inside(d.name.length, 14), y: up + BOX.h / 2 + 17 * T, 'text-anchor': 'middle', class: 'name' }, g);
       name.textContent = d.name;
-      const subs = d.off ? ['✕ ausgefallen'] : opts.v6 ? (v6map ? v6Labels(d, v6map) : []) : NW.TYPES[d.type].router && !d.cloud ? routerLabels(d) : [hostLabel(d), serverNames(d)].filter(Boolean);
       subs.forEach((sub, k) => {
-        const s = el('text', { x: 0, y: BOX.h / 2 + 33 + k * 15, 'text-anchor': 'middle', class: 'ip' + (/keine IP|ausgefallen/.test(sub) ? ' missing' : '') }, g);
+        const s = el('text', { x: inside(sub.length, 12.5), y: up + BOX.h / 2 + (33 + k * 15) * T, 'text-anchor': 'middle', class: 'ip' + (/keine IP|ausgefallen/.test(sub) ? ' missing' : '') }, g);
         s.textContent = sub;
       });
       if ((NW.TYPES[d.type].router || d.type === 'switch') && !d.cloud) drawSockets(g, NW.portList(net, d), d);
@@ -258,7 +431,7 @@
         el('path', { d: 'M3 6h6v5H3zM4 6V4a2 2 0 0 1 4 0v2' }, lk);
       }
     }
-    if (opts.topo !== false) drawTopo(svg, net);
+    if (opts.topo !== false) drawTopo(svg, net, T);
   }
 
   /** Anschlüsse als kleine Buchsen unten im Gerät: WAN farbig abgesetzt, belegte Buchsen gefüllt. */
@@ -279,15 +452,15 @@
   }
 
   /** Erkannte Topologie oben links anzeigen (antippbar für eine Erklärung). */
-  function drawTopo(svg, net) {
+  function drawTopo(svg, net, T) {
     const t = topoLabel(net);
     if (!t) return;
     const g = el('g', { class: 'topo-badge' + (t.bad ? ' bad' : ''), 'data-topo': '1', transform: 'translate(12,12)' });
     svg.insertBefore(g, svg.querySelector('g.overlay'));
-    const w = t.text.length * 7.4 + 38;
-    el('rect', { x: 0, y: 0, width: w, height: 28, rx: 14 }, g);
-    el('text', { x: 14, y: 19 }, g).textContent = t.text;
-    el('text', { x: w - 18, y: 19, class: 'topo-info' }, g).textContent = 'ⓘ';
+    const w = (t.text.length * 7.4 + 38) * T;
+    el('rect', { x: 0, y: 0, width: w, height: 28 * T, rx: 14 * T }, g);
+    el('text', { x: 14 * T, y: 19 * T }, g).textContent = t.text;
+    el('text', { x: w - 18 * T, y: 19 * T, class: 'topo-info' }, g).textContent = 'ⓘ';
   }
 
   /** Punkt in Weltkoordinaten aus einem Pointer-Ereignis. */
@@ -309,14 +482,17 @@
   }
 
   /** Freie Stelle für ein neues Gerät suchen (spiralförmig um die Mitte). */
-  function freeSpot(net, type) {
-    const cx = WORLD.w / 2, cy = WORLD.h / 2 - 20;
+  function freeSpot(net, type, svg) {
+    // Bei vergrößerter Fläche: im sichtbaren Ausschnitt suchen, damit das neue Gerät nicht außerhalb landet
+    const z = svg && svg._zoom;
+    const cx = z ? z.cx : WORLD.w / 2, cy = z ? z.cy - 20 / z.k : WORLD.h / 2 - 20;
+    const seen = p => !z || (Math.abs(p.x - z.cx) <= WORLD.w / z.k / 2 - BOX.w / 2 && Math.abs(p.y - z.cy) <= WORLD.h / z.k / 2 - BOX.h);
     const width = d => (isBus(d) ? BUS.w : BOX.w);
     const wNew = type && NW.TYPES[type] && NW.TYPES[type].bus ? BUS.w : BOX.w;
     for (let r = 0; r < 500; r += 30) {
       for (let a = 0; a < 360; a += 30) {
         const p = clampPos(cx + r * Math.cos(a * Math.PI / 180) * 1.4, cy + r * Math.sin(a * Math.PI / 180), type);
-        if (net.devices.every(d => Math.abs(d.x - p.x) > (width(d) + wNew) / 2 + 70 || Math.abs(d.y - p.y) > BOX.h + 70)) return p;
+        if (seen(p) && net.devices.every(d => Math.abs(d.x - p.x) > (width(d) + wNew) / 2 + 70 || Math.abs(d.y - p.y) > BOX.h + 70)) return p;
       }
     }
     return { x: cx, y: cy };
@@ -331,6 +507,7 @@
   function animate(svg, net, steps, onStep, speed) {
     const overlay = svg.querySelector('g.overlay');
     const hop = speed || 420;
+    const T = svg._ts || 1;
     // Ein Schritt kann mehrere Wege gleichzeitig haben (Broadcast „an alle")
     const one = (step, path, withLabel) => new Promise(resolve => {
       // Ein Wegpunkt ist eine Geräte-ID oder {mid:[a, b]} (Mitte einer Verbindung, z. B. für verlorene Pakete)
@@ -354,9 +531,9 @@
       if (withLabel) {
         const label = el('g', { class: 'packet-label' }, g);
         const txt = step.label;
-        const w = txt.length * 7 + 16;
-        el('rect', { x: -w / 2, y: -40, width: w, height: 22, rx: 11 }, label);
-        el('text', { x: 0, y: -25, 'text-anchor': 'middle' }, label).textContent = txt;
+        const w = (txt.length * 7 + 16) * T;
+        el('rect', { x: -w / 2, y: -18 - 22 * T, width: w, height: 22 * T, rx: 11 * T }, label);
+        el('text', { x: 0, y: -18 - 7 * T, 'text-anchor': 'middle' }, label).textContent = txt;
       }
       if (pts.length < 2) {
         if (pts[0]) g.setAttribute('transform', `translate(${pts[0].x},${pts[0].y})`);
@@ -396,5 +573,5 @@
     }), Promise.resolve());
   }
 
-  root.NWView = { render, toWorld, clampPos, freeSpot, animate, iconSVG, topoLabel, WORLD, BOX };
+  root.NWView = { render, pinching, panMoved: svg => !!svg._panMoved, enableZoom, setZoom, resetZoom, zoomLevel, toWorld, clampPos, freeSpot, animate, iconSVG, topoLabel, WORLD, BOX };
 })(window);

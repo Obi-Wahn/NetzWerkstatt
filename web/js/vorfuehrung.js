@@ -27,6 +27,7 @@
   function openDemo(id, k) {
     const demo = NWDemos.byId(id);
     if (!demo) { showList(); return; }
+    if (!S.demo || S.demo.id !== id) NWView.resetZoom($('canvas'));
     S.demo = demo;
     $('demo-title').textContent = demo.title;
     show('demo');
@@ -55,7 +56,7 @@
 
   function render(net) {
     const st = S.demo.steps[S.k];
-    NWView.render($('canvas'), net, { highlight: new Set(st.focus || []) });
+    NWView.render($('canvas'), net, { highlight: new Set(st.focus || []), fit: true });
   }
 
   async function goTo(k) {
@@ -101,6 +102,9 @@
     if (ev.key === 'ArrowRight' && S.k < S.demo.steps.length - 1) goTo(S.k + 1);
     if (ev.key === 'ArrowLeft' && S.k > 0) goTo(S.k - 1);
   });
+
+  // Vergrößern mit Knöpfen oder zwei Fingern; vergrößert verschiebt ein Finger die Fläche
+  NWView.enableZoom($('canvas'), { buttons: document.querySelector('#screen-demo .canvas-wrap'), anywhere: true });
 
   const start = location.hash.slice(1);
   if (start && NWDemos.byId(start)) openDemo(start, 0); else showList();

@@ -177,8 +177,9 @@
       </div>`, { wide: true, full: true });
     const svg = body.querySelector('svg');
     let selected = null;
-    const draw = () => NWView.render(svg, net, { selected });
+    const draw = () => NWView.render(svg, net, { selected, fit: true });
     draw();
+    NWView.enableZoom(svg, { buttons: body.querySelector('.det-view') });
     const tab = id => {
       for (const b of body.querySelectorAll('.det-tab')) { const on = b.dataset.tab === id; b.classList.toggle('active', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); }
       for (const p of body.querySelectorAll('.det-pane')) p.hidden = p.dataset.pane !== id;

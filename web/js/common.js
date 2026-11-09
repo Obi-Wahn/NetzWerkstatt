@@ -80,7 +80,7 @@
   function showNetwork(title, net, extraHTML, opts) {
     const body = openModal(`<h2 class="modal-title">${esc(title)}</h2>${extraHTML || ''}<div class="view-wrap"><svg class="canvas view"></svg></div>`, { wide: true, full: opts && opts.full });
     const svg = body.querySelector('svg');
-    NWView.render(svg, net, {});
+    NWView.render(svg, net, { fit: true });
     return body;
   }
 

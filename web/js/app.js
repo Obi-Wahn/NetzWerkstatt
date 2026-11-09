@@ -143,6 +143,7 @@
 
   // ---------------------------------------------------------------- Aufgabe öffnen
   async function openTask(id) {
+    NWView.resetZoom($('canvas'));
     const task = NWTasks.byId(id);
     if (!task) { toast('Diese Aufgabe gibt es nicht mehr.', 'error'); showTasks(); return; }
     let saved = null;
@@ -270,7 +271,7 @@
   const PALETTE = [
     ['endgeraete', 'Endgeräte', [['pc', 'PC'], ['laptop', 'Laptop', 'wlan'], ['tablet', 'Tablet'], ['smartphone', 'Smart\u00adphone'], ['headset', 'Kopf\u00adhörer', 'pan']]],
     ['aktiv', 'Aktive Komponenten', [['switch', 'Switch'], ['ap', 'Access Point', 'wlan'], ['router', 'Router']]],
-    ['verbindungen', 'Verbindungen (passiv)', [['tool:kabel', 'Netzwerk\u00adkabel'], ['tool:glasfaser', 'Glas\u00adfaser', 'netzarten'], ['tool:wlan', 'WLAN', 'wlan'], ['tool:bluetooth', 'Blue\u00adtooth', 'pan'], ['bus', 'Bus-Kabel', 'topologie']]],
+    ['verbindungen', 'Verbindungen (passiv)', [['tool:kabel', 'Netz\u00adwerk\u00adkabel'], ['tool:glasfaser', 'Glas\u00adfaser', 'netzarten'], ['tool:wlan', 'WLAN', 'wlan'], ['tool:bluetooth', 'Blue\u00adtooth', 'pan'], ['bus', 'Bus-Kabel', 'topologie']]],
     ['server', 'Server', [['server', 'Server'], ['server:web', 'Web\u00adserver', 'web'], ['server:dns', 'DNS-Server', 'web'], ['server:mail', 'Mail\u00adserver', 'dienste'], ['server:video', 'Video\u00adserver', 'dienste'], ['server:call', 'Telefonie-Server', 'dienste'], ['server:game', 'Spiele-Server', 'dienste']]],
     ['internet', 'Internet', [['isp', 'Internet\u00adanbieter', 'internet'], ['rz', 'Rechen\u00adzentrum', 'internet']]],
   ];
@@ -340,7 +341,7 @@
     // Verbindungswerkzeug: noch einmal antippen schaltet zurück auf „Auswählen“
     if (b.dataset.tool) { setTool(S.tool === b.dataset.tool ? 'move' : b.dataset.tool); return; }
     const [type, preset] = b.dataset.type.split(':');
-    const p = NWView.freeSpot(S.net, type);
+    const p = NWView.freeSpot(S.net, type, $('canvas'));
     const d = NW.createDevice(S.net, type, p.x, p.y);
     if (preset && SERVER_PRESETS[preset]) {
       const names = new Set(S.net.devices.map(o => o.name));
@@ -394,7 +395,7 @@
     if (S.netKind && !kinds.some(k => k.kind === S.netKind)) S.netKind = null;
     const highlight = new Set();
     kinds.filter(k => k.kind === S.netKind).forEach(k => k.devices.forEach(id => highlight.add(id)));
-    NWView.render($('canvas'), S.net, { selected: S.selected, pending: S.pending, highlight, v6: S.v6 });
+    NWView.render($('canvas'), S.net, { selected: S.selected, pending: S.pending, highlight, v6: S.v6, fit: true });
     renderNetKinds(kinds);
     positionInspector();
   }
@@ -502,7 +503,18 @@
 
   // ---------------------------------------------------------------- Zeiger (Maus, Finger, Stift)
   const canvas = $('canvas');
+  // Vergrößern: Knöpfe auf der Fläche, zwei Finger oder Strg + Mausrad; vergrößert verschiebt ein Finger auf freier Fläche
+  NWView.enableZoom(canvas, { buttons: document.querySelector('.canvas-wrap') });
+  // Antippen der freien Fläche bei Zoom: erst beim Loslassen auswerten, denn es könnte ein Verschieben werden
+  let bgTap = null;
+  canvas.addEventListener('pointerup', () => {
+    const t = bgTap; bgTap = null;
+    if (!t || NWView.panMoved(canvas) || NWView.pinching(canvas)) return;
+    if (t === 'pending') { S.pending = null; $('tool-hint').textContent = HINTS[S.tool]; renderCanvas(); }
+    else { S.selected = null; renderCanvas(); renderInspector(); }
+  });
   canvas.addEventListener('pointerdown', ev => {
+    if (NWView.pinching(canvas)) { cancelDrag(); bgTap = null; return; }
     if (S.busy) return;
     if (ev.target.closest('[data-topo]')) { showTopoInfo(); return; }
     const devEl = ev.target.closest('[data-dev]');
@@ -516,6 +528,8 @@
         canvas.setPointerCapture(ev.pointerId);
       } else if (linkEl) {
         S.selected = linkEl.dataset.link; renderCanvas(); renderInspector();
+      } else if (NWView.zoomLevel(canvas) > 1) {
+        bgTap = 'select';
       } else {
         S.selected = null; renderCanvas(); renderInspector();
       }
@@ -528,6 +542,7 @@
         S.selected = linkEl.dataset.link; renderCanvas(); renderInspector();
         return;
       }
+      if (!devEl && NWView.zoomLevel(canvas) > 1) { bgTap = 'pending'; return; }
       if (!devEl) { S.pending = null; $('tool-hint').textContent = HINTS[S.tool]; renderCanvas(); return; }
       const id = devEl.dataset.dev;
       if (!S.pending) {
@@ -568,6 +583,7 @@
   canvas.addEventListener('pointermove', ev => {
     const dr = S.drag;
     if (!dr || dr.pid !== ev.pointerId) return;
+    if (NWView.pinching(canvas)) { cancelDrag(); return; }
     const p = NWView.toWorld(canvas, ev);
     if (!dr.moved && Math.hypot(p.x - dr.sx, p.y - dr.sy) < 6) return;
     if (readOnly()) return;
@@ -577,9 +593,17 @@
     d.x = Math.round(c.x); d.y = Math.round(c.y);
     renderCanvas();
   });
+  // Zweiter Finger kommt dazu: Gerät nicht weiter verschieben, sondern zurück an seinen Platz
+  function cancelDrag() {
+    const dr = S.drag; if (!dr) return;
+    S.drag = null;
+    const d = NW.dev(S.net, dr.id);
+    if (d && dr.moved) { d.x = dr.ox; d.y = dr.oy; renderCanvas(); }
+  }
   function endDrag(ev) {
     const dr = S.drag;
     if (!dr || dr.pid !== ev.pointerId) return;
+    if (NWView.pinching(canvas)) { cancelDrag(); return; }
     S.drag = null;
     if (dr.moved) scheduleSave();
     else { S.selected = dr.id; renderCanvas(); renderInspector(); }
