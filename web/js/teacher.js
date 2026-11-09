@@ -126,8 +126,8 @@
         <td class="name">${esc(s.name)}</td><td>${status}</td><td>${prog}</td><td class="muted">${when}</td>
         <td class="actions">${has ? `<button class="btn small" data-view="${s.id}">Zeigen</button>` : ''}
           ${w && w.submitted ? `<button class="btn small ghost" data-return="${s.id}" title="Abgabe zurückgeben, damit weitergearbeitet werden kann">Zurückgeben</button>` : ''}
-          ${s.hasCode ? `<button class="btn small ghost" data-code="${s.id}" title="Vergessenen Code zurücksetzen">Code zurücksetzen</button>` : '<span class="badge" title="Beim nächsten Anmelden gilt der neu eingegebene Code">Code frei</span>'}
-          <button class="btn small ghost" data-del="${s.id}" title="Schüler/in mit allen Arbeiten löschen">✕</button></td></tr>`;
+          <span class="keep">${s.hasCode ? `<button class="btn small ghost" data-code="${s.id}" title="Vergessenen Code zurücksetzen">Code zurücksetzen</button>` : '<span class="badge" title="Beim nächsten Anmelden gilt der neu eingegebene Code">Code frei</span>'}
+          <button class="btn small ghost" data-del="${s.id}" title="Schüler/in mit allen Arbeiten löschen">✕</button></span></td></tr>`;
     }).join('');
     // nicht mehr vorhandene Auswahl entfernen
     for (const id of [...S.selected]) {
@@ -381,7 +381,7 @@
 
     const body = openModal(`<form id="ed" class="editor-form" autocomplete="off">
       <h2 class="modal-title">${editing ? 'Eigene Aufgabe bearbeiten' : 'Neue eigene Aufgabe'}</h2>
-      <p class="muted small">Tipp: Start und Musterlösung baust du am einfachsten im <b>Baukasten</b> (Knopf oben „Baukasten öffnen“). Danach wählst du sie hier aus.</p>
+      <p class="muted small">Tipp: Start und Musterlösung baust du am einfachsten im <b>Baukasten</b> (Knopf oben „Baukasten“). Danach wählst du sie hier aus.</p>
       <div class="ed-grid">
         <div class="ed-col">
           <label>Titel<input id="ed-title" maxlength="80" required value="${esc(t.title)}"></label>

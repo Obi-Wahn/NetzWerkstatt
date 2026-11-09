@@ -16,7 +16,7 @@ So geht's (keine Installation nötig):
      - das Lehrer-Passwort
    Das Terminal während der Stunde offen lassen.
 
-4. In der Lehrkraft-Ansicht auf „Zugang am Beamer zeigen“ klicken.
+4. In der Lehrkraft-Ansicht auf „Zugang am Beamer“ klicken.
    Die Schülerinnen und Schüler öffnen die Adresse im Browser (PC oder iPad)
    und melden sich mit Vornamen oder Kürzel, dem Raumcode und einem
    selbst ausgedachten vierstelligen Code an. Vergessene Codes setzt die

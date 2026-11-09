@@ -1,6 +1,11 @@
 /* NetzWerkstatt – Lehrkraft-Ansicht */
 .room { background: var(--warn-soft); color: var(--warn); padding: 6px 12px; border-radius: 10px; font-weight: 600; }
 .room b { font-size: 1.15em; letter-spacing: .08em; color: var(--ink); }
+.room { white-space: nowrap; }
+/* Kopfzeile in einer Zeile: Hell/Dunkel nur als Symbol, auf schmaleren Bildschirmen nur das Logo */
+#screen-dash .topbar .btn { white-space: nowrap; padding-left: 13px; padding-right: 13px; }
+#screen-dash .topbar .theme-btn span { display: none; }
+@media (max-width: 1300px) { #screen-dash .brand-text { display: none; } }
 .dash { max-width: 1400px; margin: 0 auto; padding: 16px; display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 16px; align-items: start; }
 .dash-main { min-width: 0; }
 .task-nav { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px; position: sticky; top: 12px; max-height: calc(100vh - 90px); overflow-y: auto; }
@@ -49,6 +54,17 @@ table.students { width: 100%; border-collapse: collapse; }
 .students tr:last-child td { border-bottom: 0; }
 .students .actions { text-align: right; }
 .students .actions .btn { margin-left: 4px; }
+/* Ist die Tabelle zu schmal (iPad, Lehreransicht mit Aufgabenliste), brechen Status und Knöpfe um,
+   statt seitlich herauszuragen */
+.students td:nth-child(3) { white-space: normal; }
+.students td:nth-child(3) .badge { display: inline-block; margin: 1px 0; white-space: nowrap; }
+.students .actions { white-space: normal; }
+.students .actions .btn { margin: 2px 0 2px 4px; }
+.students .actions .keep { display: inline-block; white-space: nowrap; }
+@media (max-width: 1000px) {
+  .students th, .students td { padding: 8px 8px; }
+  .bar { width: 56px; }
+}
 .progress { display: flex; align-items: center; gap: 8px; }
 .bar { width: 110px; height: 9px; border-radius: 99px; background: var(--chip-bg); overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--ok); }
