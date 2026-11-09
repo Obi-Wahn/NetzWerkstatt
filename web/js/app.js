@@ -177,7 +177,7 @@
 
   $('btn-solution').addEventListener('click', () => {
     const sol = S.task.solution();
-    showNetwork('Musterlösung: ' + S.task.title, sol, '<p class="muted">Vergleiche mit deinem Netzwerk. Es gibt oft mehrere richtige Lösungen!</p>' + NWCommon.quizHTML(S.task, sol));
+    NWDetails.open('Musterlösung: ' + S.task.title, S.task, sol, { solution: true, intro: '<p class="muted">Vergleiche mit deinem Netzwerk. Es gibt oft mehrere richtige Lösungen!</p>' });
   });
 
   // ---------------------------------------------------------------- Speichern
@@ -1460,7 +1460,7 @@
       if (res.v6) logResult(true, `Ping per IPv6 erfolgreich: ${t.name} (${target}) hat geantwortet.` + (res.linkLocal ? ' Link-Local-Adressen funktionieren nur im eigenen Netz.' : res.viaRouter ? ` Kein NAT: ${t.name} hat die echte Adresse ${res.seenSrc} von ${d.name} gesehen.` : ''));
       else logResult(true, `Ping erfolgreich: ${t.name} (${target}) hat geantwortet.` + natText(res.nat));
     } else logResult(false, res.error, res.hint);
-    NW.logEvent(S.net, Object.assign({ type: 'ping', src: d.id, target: res.target, ok: !!res.ok, fault: res.fault || '', faults: NW.activeFaults(S.net) }, res.v6 ? { v6: true, ll: !!res.linkLocal } : {}));
+    NW.logEvent(S.net, Object.assign({ type: 'ping', src: d.id, target: res.target, ok: !!res.ok, to: target, error: res.ok ? '' : res.error || '', fault: res.fault || '', faults: NW.activeFaults(S.net) }, res.v6 ? { v6: true, ll: !!res.linkLocal } : {}));
     renderGoals(); scheduleSave();
   }
 
@@ -1490,7 +1490,7 @@
     if (res.steps.length) await runSteps(res.steps);
     if (res.ok) logResult(true, `${NW.dev(S.net, res.target).name} spielen die Musik von ${d.name}. Die Töne kommen per Bluetooth – ohne IP-Adresse, ohne Router, nur über wenige Meter (PAN).`);
     else logResult(false, res.error, res.hint);
-    NW.logEvent(S.net, { type: 'music', src: d.id, target: res.target || null, ok: !!res.ok });
+    NW.logEvent(S.net, { type: 'music', src: d.id, target: res.target || null, ok: !!res.ok, error: res.ok ? '' : res.error || '' });
     renderGoals(); scheduleSave();
   }
 
@@ -1507,7 +1507,7 @@
         : `Peer-to-Peer: ${d.name} und ${t.name} tauschen direkt, ohne Server. Beide sind gleichberechtigt – jedes Gerät kann Dateien anbieten und holen. Dafür müssen beide gleichzeitig erreichbar sein.`;
       logResult(true, (dir === 'send' ? `„${res.files[0]}“ ist bei ${t.name} angekommen. ` : `${d.name} hat ${res.files.map(f => '„' + f + '“').join(', ')} von ${t.name} bekommen. `) + how);
     } else logResult(false, res.error, res.hint);
-    NW.logEvent(S.net, { type: 'file', src: d.id, target: res.target || null, mode: res.mode || null, dir, files: res.files || [], ok: !!res.ok });
+    NW.logEvent(S.net, { type: 'file', src: d.id, target: res.target || null, mode: res.mode || null, dir, files: res.files || [], ok: !!res.ok, error: res.ok ? '' : res.error || '' });
     renderAll(); scheduleSave();
   }
 
@@ -1522,7 +1522,7 @@
     const res = NW.browse(S.net, d.id, url, { tcp: S.tcp && has('dienste') });
     if (res.steps.length) await runSteps(res.steps);
     const u = NW.parseURL(url);
-    NW.logEvent(S.net, { type: 'web', src: d.id, host: u ? u.host : url, ok: !!res.ok, lost: !!res.lost, tcp: !!res.tcp });
+    NW.logEvent(S.net, { type: 'web', src: d.id, host: u ? u.host : url, ok: !!res.ok, lost: !!res.lost, tcp: !!res.tcp, error: res.ok ? '' : res.error || '' });
     if (res.ok) {
       logResult(true, res.message + natText(res.nat));
       openModal(`<div class="browser"><div class="browser-bar"><span class="dots"><i></i><i></i><i></i></span><span class="browser-url">http://${esc(res.page.host)}/</span></div>
@@ -1540,7 +1540,7 @@
     const res = NW.useService(S.net, d.id, action, target, { tcp: S.tcp && has('dienste') });
     if (res.steps.length) await runSteps(res.steps);
     const u = NW.parseURL(target);
-    NW.logEvent(S.net, { type: 'svc', action, src: d.id, host: u ? u.host : target, ok: !!res.ok, lost: !!res.lost, tcp: !!res.tcp });
+    NW.logEvent(S.net, { type: 'svc', action, src: d.id, host: u ? u.host : target, ok: !!res.ok, lost: !!res.lost, tcp: !!res.tcp, error: res.ok ? '' : res.error || '' });
     if (res.ok) {
       const srv = NW.dev(S.net, res.target);
       if (action === 'mail') {

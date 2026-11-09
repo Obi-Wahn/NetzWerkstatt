@@ -182,9 +182,7 @@
   $('btn-show-solution').addEventListener('click', () => {
     const t = taskObj();
     if (!t.solution) return;
-    const net = t.solution();
-    const body = openModal(`<h2 class="modal-title">Musterlösung: ${esc(t.title)}</h2><div class="view-head">${goalsHTML(t, net)}</div><div class="view-wrap"><svg class="canvas view"></svg></div>`, { wide: true, full: true });
-    NWView.render(body.querySelector('svg'), net, {});
+    NWDetails.open('Musterlösung: ' + t.title, t, t.solution(), { solution: true });
   });
 
   $('rows').addEventListener('change', ev => {
@@ -206,8 +204,7 @@
       const t = taskObj();
       const net = s.works[S.task].network;
       const title = anon() ? `Lösung: ${t.title}` : `${s.name}: ${t.title}`;
-      const body = openModal(`<h2 class="modal-title">${esc(title)}</h2><div class="view-head">${goalsHTML(t, net)}</div><div class="view-wrap"><svg class="canvas view"></svg></div>`, { wide: true, full: true });
-      NWView.render(body.querySelector('svg'), net, {});
+      NWDetails.open(title, t, net);
     }
     if (r) {
       try { await api('POST', '/api/teacher/return', { student: r.dataset.return, task: S.task }, S.token); toast('Abgabe zurückgegeben.', 'ok'); await load(); }
