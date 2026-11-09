@@ -57,9 +57,11 @@ Es muss nichts installiert werden.
 1. Unter [**Releases**](https://github.com/Obi-Wahn/NetzWerkstatt/releases/latest) das passende Paket herunterladen:
    - Windows: `NetzWerkstatt-Windows.zip`
    - Linux: `NetzWerkstatt-Linux.tar.gz`
+   - Mac (Apple-Chip und Intel): `NetzWerkstatt-Mac.zip`
 2. Das Paket entpacken und den Ordner an einen festen Ort legen (z. B. „Dokumente“ oder USB-Stick).
-3. Starten: unter Windows Doppelklick auf `NetzWerkstatt.exe`, unter Linux `start.sh`.
+3. Starten: unter Windows Doppelklick auf `NetzWerkstatt.exe`, unter Linux `start.sh`, auf dem Mac `start.command`.
    - Windows zeigt beim ersten Start evtl. „Der Computer wurde durch Windows geschützt“ → „Weitere Informationen“ → „Trotzdem ausführen“. Die Frage nach dem Netzwerkzugriff mit „Zugriff zulassen“ beantworten.
+   - Der Mac blockiert das Programm beim ersten Start, weil es nicht bei Apple registriert ist: Rechtsklick auf `start.command` → „Öffnen“ → „Öffnen“. Ab macOS 15 stattdessen unter Systemeinstellungen → „Datenschutz & Sicherheit“ auf „Dennoch öffnen“ klicken. Die genaue Anleitung steht in der LIESMICH.txt.
 4. Das Programm prüft Speicherort, Port und Netzwerkverbindung selbst, meldet Probleme verständlich und öffnet danach die **Lehrkraft-Ansicht** im Browser – bereits angemeldet.
 5. In der Lehrkraft-Ansicht „Zugang am Beamer“ wählen. Die Schülerinnen und Schüler öffnen die angezeigte Adresse im Browser (Edge, Chrome, Firefox oder Safari auf dem iPad) und melden sich mit Vornamen oder Kürzel, dem Raumcode und einem selbst ausgedachten vierstelligen Code an. Mit diesem Code kann sich niemand unter fremdem Namen anmelden. Hat jemand den Code vergessen, setzt ihn die Lehrkraft in ihrer Ansicht mit „Code zurücksetzen“ zurück; beim nächsten Anmelden gilt dann der neu eingegebene Code.
 
@@ -89,7 +91,7 @@ Unter Linux lassen sich beide über die Paketverwaltung installieren, z. B. `sud
 ```
 go run .                      # Server lokal starten
 node test/simulation.test.js  # Tests für Simulation und Aufgaben
-./build.sh v0.2.0             # Download-Pakete für Windows und Linux in dist/ erzeugen
+./build.sh v0.2.0             # Download-Pakete für Windows, Linux und Mac in dist/ erzeugen
 ```
 
 **Neue Version veröffentlichen:** Auf GitHub unter Releases → „Draft a new release“ einen neuen Tag wie `v0.2.0` anlegen und veröffentlichen. GitHub baut die Pakete dann automatisch und hängt sie an das Release an. Auf einem Windows-Rechner genügt zum Bauen auch `go build -o NetzWerkstatt.exe .`, unter Linux `go build -o netzwerkstatt .`
