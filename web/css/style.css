@@ -189,7 +189,11 @@ input:disabled { background: var(--chip-bg); color: var(--muted); }
 .tool.active { background: var(--brand); color: var(--on-color); border-color: var(--brand); }
 .tool[data-tool="delete"].active { background: var(--bad); border-color: var(--bad); }
 .is-readonly .tool:not([data-tool="move"]) { opacity: .4; }
-.tool-hint { color: var(--brand); font-weight: 600; font-size: .92em; padding-left: 6px; }
+.tool-hint { color: var(--brand); font-weight: 600; font-size: .92em; padding-left: 2px; line-height: 1.35;
+  /* eigene Zeile unter den Knöpfen; alle Hinweise übereinander, damit die Höhe gleich bleibt */
+  order: 10; flex: 0 0 100%; min-width: 0; display: grid; }
+.tool-hint > span { grid-area: 1 / 1; visibility: hidden; }
+.tool-hint > span.on { visibility: visible; }
 
 .canvas-wrap { position: relative; flex: 1; min-height: 260px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
 .canvas { width: 100%; height: 100%; display: block; touch-action: none; user-select: none; -webkit-user-select: none; }
@@ -432,7 +436,6 @@ details.sec.flash > summary h4 { animation: secflash 1.2s ease-out; }
   .jump { gap: 5px; padding: 7px; }
   .jump-btn { padding: 4px 8px; gap: 4px; }
   .workspace { grid-template-columns: 136px minmax(0, 1fr) 290px; }
-  .tool-hint { flex-basis: 100%; padding-left: 2px; }
 }
 @media (max-width: 600px) { .tool span { display: none; } }
 @media (max-width: 860px) {

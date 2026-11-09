@@ -368,13 +368,37 @@
     bluetooth: 'Tippe auf ein Smartphone, Tablet, einen Laptop oder PC und dann auf die Kopfhörer.',
     delete: 'Tippe auf ein Gerät oder eine Verbindung, um es zu löschen.',
   };
+  // Alle Hinweise liegen übereinander in derselben Zeile; nur einer ist sichtbar.
+  // So ist die Zeile immer so hoch wie der längste Hinweis, und die Arbeitsfläche
+  // springt beim Wechsel des Werkzeugs nicht nach oben oder unten.
+  const hintBox = $('tool-hint');
+  for (const k of [...Object.keys(HINTS), 'live']) {
+    const sp = document.createElement('span');
+    sp.dataset.k = k;
+    if (k !== 'live') sp.textContent = HINTS[k];
+    hintBox.appendChild(sp);
+  }
+  // Platzhalter für den Hinweis beim zweiten Gerät (mit einem langen Gerätenamen)
+  const pendingText = name => `${name} gewählt – tippe jetzt auf das zweite Gerät. Noch einmal antippen öffnet die Einstellungen.`;
+  const sizer = document.createElement('span');
+  sizer.dataset.k = 'sizer';
+  sizer.textContent = pendingText('Webserver Rechenzentrum 1');
+  hintBox.appendChild(sizer);
+  function showHint(k, text) {
+    if (k === 'live') hintBox.querySelector('[data-k="live"]').textContent = text;
+    hintBox.querySelectorAll('span').forEach(sp => {
+      const on = sp.dataset.k === k;
+      sp.classList.toggle('on', on);
+      sp.setAttribute('aria-hidden', String(!on));
+    });
+  }
   function setTool(t) {
     S.tool = t; S.pending = null;
     // Beim Verbinden oder Löschen stört das Einstellungsfenster nur
     if (t !== 'move' && S.selected && S.net) { S.selected = null; renderInspector(); }
     document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
     renderPalette();
-    $('tool-hint').textContent = HINTS[t];
+    showHint(t);
     if (S.net) renderCanvas();
   }
   document.querySelectorAll('.tool').forEach(b => b.addEventListener('click', () => {
@@ -512,7 +536,7 @@
   canvas.addEventListener('pointerup', () => {
     const t = bgTap; bgTap = null;
     if (!t || NWView.panMoved(canvas) || NWView.pinching(canvas)) return;
-    if (t === 'pending') { S.pending = null; $('tool-hint').textContent = HINTS[S.tool]; renderCanvas(); }
+    if (t === 'pending') { S.pending = null; showHint(S.tool); renderCanvas(); }
     else { S.selected = null; renderCanvas(); renderInspector(); }
   });
   canvas.addEventListener('pointerdown', ev => {
@@ -545,11 +569,11 @@
         return;
       }
       if (!devEl && NWView.zoomLevel(canvas) > 1) { bgTap = 'pending'; return; }
-      if (!devEl) { S.pending = null; $('tool-hint').textContent = HINTS[S.tool]; renderCanvas(); return; }
+      if (!devEl) { S.pending = null; showHint(S.tool); renderCanvas(); return; }
       const id = devEl.dataset.dev;
       if (!S.pending) {
         S.pending = id;
-        $('tool-hint').textContent = `${NW.dev(S.net, id).name} gewählt – tippe jetzt auf das zweite Gerät. Noch einmal antippen öffnet die Einstellungen.`;
+        showHint('live', pendingText(NW.dev(S.net, id).name));
       } else if (S.pending === id) {
         // Zweimal dasselbe Gerät: Schüler will es einstellen, nicht verbinden
         setTool('move');
@@ -563,7 +587,7 @@
           const fiberHint = S.tool === 'kabel' && has('netzarten') ? ' Für eine Glasfaserleitung tippe das Kabel an – oder nimm gleich das Werkzeug „Glasfaser“.' : '';
           toast({ kabel: 'Kabel verbunden.', glasfaser: 'Glasfaserleitung quer durch die Stadt verlegt.', wlan: 'WLAN verbunden.', bluetooth: 'Per Bluetooth gekoppelt.' }[S.tool] + fiberHint, 'ok'); scheduleSave();
         }
-        S.pending = null; $('tool-hint').textContent = HINTS[S.tool];
+        S.pending = null; showHint(S.tool);
         renderGoals(); renderInspector();
         if (r.ok) { renderCanvas(); autoDhcp(); return; }
       }
