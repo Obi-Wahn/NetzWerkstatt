@@ -37,8 +37,16 @@ Die NetzWerkstatt ist für den Informatikunterricht der Sekundarstufe I gedacht.
   14. TCP und UDP im Vergleich (Video-Streaming und Videoanruf über eine gestörte WLAN-Verbindung)
   15. Dienste einordnen: TCP oder UDP? (Dienste ausprobieren und Anwendungen zuordnen)
   16. Eigene Internetdienste anbieten (E-Mail-Server und Spiele-Server mit DNS-Namen)
-  17. Freies Bauen
-- **Lehrkraft-Ansicht:** Live-Übersicht über alle Schülerinnen und Schüler, Abgaben am Beamer zeigen (auf Wunsch ohne Namen), zwei Lösungen nebeneinander vergleichen, Musterlösungen zeigen oder für die Klasse freigeben, Abgaben zurückgeben.
+  17. Fehlersuche im Computerraum
+  18. Fehlersuche im Heimnetz
+  19. Fehlersuche: Das Internet geht nicht
+  20. Freies Bauen
+- **Fehler im Netzwerk finden:** In den Fehlersuche-Aufgaben steckt ein Kabel nicht richtig, ein Kabel ist kaputt (das zeigt erst der Kabeltester) oder bei einem Gerät ist das WLAN aus. Ping und Webseite verraten nur, zwischen welchen Geräten kein Signal ankommt. Im freien Bauen lassen sich solche Fehler auch selbst einbauen, z. B. für eigene Aufgaben.
+- **Anschlüsse:** Am Router und am Switch steht an jedem Kabel, in welchem Anschluss es steckt (WAN, LAN 1–3, Port 1–8). Belegte Buchsen sind im Gerät gefüllt.
+- **Schwierigkeitsgrade:** Jede Aufgabe lässt sich auf „Leicht“ (Tipp offen, Hinweis zum nächsten Schritt), „Mittel“ oder „Schwer“ (ohne Tipp und ohne Vorschläge) stellen. Die Schülerinnen und Schüler wählen selbst; die Lehrkraft sieht die gewählte Stufe in ihrer Übersicht.
+- **Neu anfangen:** Eine Aufgabe lässt sich nach einer Sicherheitsabfrage auf den Anfang zurücksetzen; direkt danach kann man das noch rückgängig machen.
+- **Vorführungen:** Fertige Netze, in denen Schritt für Schritt erklärt wird, was passiert (Webseite aufrufen, NAT, DHCP, Gateway, Topologien, TCP und UDP) – zum Vorführen am Beamer oder zum Nachschauen. Am Ende geht es direkt zur passenden Aufgabe.
+- **Lehrkraft-Ansicht:** Live-Übersicht über alle Schülerinnen und Schüler, Abgaben am Beamer zeigen (auf Wunsch ohne Namen), zwei Lösungen nebeneinander vergleichen, jede Lösung genau ansehen (Ziele, Einstellungen, durchgeführte Tests), Musterlösungen mit Lösungsweg zeigen oder für die Klasse freigeben, Abgaben zurückgeben.
 - **Aufgaben freischalten:** Die Lehrkraft bestimmt, welche Aufgaben und Themen (auch das freie Bauen) die Klasse sieht. Änderungen erscheinen bei den Schülern sofort, ohne Neuladen. Ab Werk sind die Aufgaben 1–5 und das freie Bauen freigeschaltet.
 - **Eigene Aufgaben:** Im Aufgaben-Editor der Lehrkraft-Ansicht entstehen eigene Aufgaben aus Text, automatisch geprüften Zielen, Startaufbau und Musterlösung. Start und Musterlösung baut die Lehrkraft im „Baukasten“ (Schüleransicht mit allen Aufgaben) oder übernimmt sie aus einer Schülerarbeit oder einer eingebauten Aufgabe. Eigene Aufgaben lassen sich als Datei exportieren und bei anderen Lehrkräften importieren. Importierte Dateien werden genau geprüft; sie enthalten keinen Programmcode.
 

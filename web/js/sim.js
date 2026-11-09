@@ -1033,10 +1033,6 @@
     return { ok: true, updated: false, host, ip: ipStr(ip) };
   }
 
-  function linkBetween(net, a, b) {
-    return net.links.find(l => (l.a === a && l.b === b) || (l.a === b && l.b === a)) || null;
-  }
-
   /** Erste gestörte Verbindung auf einem Weg: Index i (zwischen path[i] und path[i+1]) oder -1. */
   function lossAt(net, path) {
     for (let i = 0; i + 1 < path.length; i++) {
