@@ -5,6 +5,7 @@ set -e
 cd "$(dirname "$0")"
 VERSION="${1:-Entwicklungsstand}"
 node test/simulation.test.js
+node test/demos.test.js
 rm -rf dist
 mkdir -p dist/NetzWerkstatt-Windows dist/NetzWerkstatt-Linux
 export CGO_ENABLED=0
