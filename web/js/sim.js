@@ -79,6 +79,19 @@
   function maskOf(prefix) { return prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0; }
   function sameNet(a, b, prefix) { const m = maskOf(prefix); return ((a & m) >>> 0) === ((b & m) >>> 0); }
   function netStr(ip, prefix) { return ipStr((ip & maskOf(prefix)) >>> 0) + '/' + prefix; }
+  /**
+   * Netz in Schülerschreibweise: 192.168.10.x statt 192.168.10.0/24
+   * (bei /16 192.168.x.x, bei /8 10.x.x.x; andere Längen bleiben mit Schrägstrich).
+   */
+  function netName(ip, prefix) {
+    if (prefix % 8) return netStr(ip, prefix);
+    const parts = ipStr((ip & maskOf(prefix)) >>> 0).split('.');
+    return parts.map((p, i) => i < prefix / 8 ? p : 'x').join('.');
+  }
+  /** Was im selben Netz gleich sein muss, z. B. „die ersten drei Zahlen“. */
+  function netRule(prefix) {
+    return { 8: 'die erste Zahl', 16: 'die ersten zwei Zahlen', 24: 'die ersten drei Zahlen' }[prefix] || `die ersten ${prefix} Bit`;
+  }
 
   /** Prüft eine IP auf typische Fehler und liefert einen Hinweis (oder null). */
   function ipProblem(ipS, maskS) {
@@ -660,27 +673,50 @@
         const fx = explainFault(net, curId, curPort, dstIP);
         if (fx) return Object.assign(fail(path.concat(fx.path.slice(1)), fx.error, fx.hint), { fault: fx.fault });
         const elsewhere = devicesWithIP(net, dstIP);
-        let hint = `Kein Gerät im Netz ${netStr(ca.ip, ca.prefix)} hat diese Adresse.`;
-        if (elsewhere.length) hint = `${elsewhere[0].name} hat die Adresse ${ipStr(dstIP)}, ist aber nicht mit diesem Netz verbunden.`;
+        const known = eps.map(e => ({ d: e.dev, a: ifaceAddr(e.dev, e.port) })).filter(x => x.a && x.d !== cd).slice(0, 4);
+        let hint = `Kein Gerät im Netz ${netName(ca.ip, ca.prefix)} hat diese Adresse.` + (known.length
+          ? ` Erreichbar sind hier z. B. ${known.map(x => `${x.d.name} (${ipStr(x.a.ip)})`).join(', ')}. Prüfe die Adresse auf Tippfehler.`
+          : ' Ist das Ziel mit einem Kabel oder per WLAN angeschlossen?');
+        if (elsewhere.length) hint = `${elsewhere[0].name} hat die Adresse ${ipStr(dstIP)}, ist aber nicht mit diesem Netz verbunden. Prüfe die Kabel und WLAN-Verbindungen.`;
         return fail(path, `Im Netz von ${cd.name} antwortet niemand unter ${ipStr(dstIP)}.`, hint);
       }
       // Ziel liegt in einem anderen Netz → weiter zum Gateway (Router oder Internetanbieter)
       const isHost = TYPES[cd.type].host;
+      // Hängt das Ziel direkt im selben Netz (Switch, WLAN), hat aber eine Adresse aus einem anderen Netz?
+      if (isHost) {
+        const near = eps.find(e => e.dev !== cd && (() => { const a = ifaceAddr(e.dev, e.port); return a && a.ip === dstIP; })());
+        if (near) return fail(path.concat(near.path.slice(1)), `${cd.name} und ${near.dev.name} sind direkt verbunden, aber ihre IP-Adressen gehören zu verschiedenen Netzen.`,
+          `Bei der Subnetzmaske ${ipStr(maskOf(ca.prefix))} müssen ${netRule(ca.prefix)} gleich sein. ${cd.name} ist im Netz ${netName(ca.ip, ca.prefix)}, ${near.dev.name} hat ${ipStr(dstIP)}. Ändere eine der beiden Adressen, sodass beide im selben Netz liegen.`);
+      }
+      // Router im eigenen Netz (für konkrete Tipps zum Gateway)
+      const gwE = eps.find(e => (TYPES[e.dev.type].router || TYPES[e.dev.type].isp) && ifaceAddr(e.dev, e.port));
+      const gwA = gwE && ifaceAddr(gwE.dev, gwE.port);
+      const gwTip = !gwE ? ''
+        : sameNet(gwA.ip, ca.ip, ca.prefix) ? `Der Router in diesem Netz ist ${gwE.dev.name} mit der Adresse ${ipStr(gwA.ip)}. Trage diese Adresse bei ${cd.name} als Gateway ein.`
+        : `Der Router ${gwE.dev.name} hat hier die Adresse ${ipStr(gwA.ip)}, ${cd.name} ist aber im Netz ${netName(ca.ip, ca.prefix)}. Ändere zuerst die IP-Adresse von ${cd.name}, sodass ${netRule(gwA.prefix)} wie beim Router sind.` + (isHost && parseIP(cd.gw || '') === gwA.ip ? '' : ` Trage dann ${ipStr(gwA.ip)} als Gateway ein.`);
       const gw = parseIP(isHost ? cd.gw : (cd.ports[WAN].gw || ''));
       if (gw === null) {
-        if (isHost) return fail(path, `${cd.name}: Das Ziel ${ipStr(dstIP)} liegt in einem anderen Netz. Dafür braucht ${cd.name} ein Gateway.`, cd.dhcp
-          ? `${cd.name} steht auf „Automatisch (DHCP)“ und bekommt das Gateway vom DHCP-Server mitgeschickt. Fordere die Adresse neu an. Klappt das nicht, stelle ${cd.name} auf „Von Hand“ und trage die IP-Adresse des Routers als Gateway ein.`
-          : 'Trage beim Gerät als Gateway die IP-Adresse des Routers ein.');
+        if (isHost) {
+          const why = `${cd.name} ist im Netz ${netName(ca.ip, ca.prefix)}, das Ziel ${ipStr(dstIP)} liegt in einem anderen Netz. Pakete in andere Netze schickt ein Gerät an sein Gateway – das ist der Router, der die Netze verbindet. Bei ${cd.name} ist kein Gateway eingetragen.`;
+          if (!gwE && !cd.dhcp) return fail(path, why, `In diesem Netz gibt es keinen Router, also kommt das Paket nicht in ein anderes Netz. Ist die Zieladresse richtig? Sonst schließe einen Router an.`);
+          return fail(path, why, cd.dhcp
+            ? `${cd.name} steht auf „Automatisch (DHCP)“ und bekommt das Gateway vom DHCP-Server mitgeschickt. Fordere die Adresse neu an. Klappt das nicht, stelle ${cd.name} auf „Von Hand“ und trage die IP-Adresse des Routers als Gateway ein.`
+            : gwTip);
+        }
         return fail(path, `Der Router ${cd.name} kennt kein Netz, in dem ${ipStr(dstIP)} liegt.`, 'Ein Router kennt die Netze, an die er angeschlossen ist. Alles andere schickt er über den Internet-Anschluss (WAN) weiter – dafür braucht er dort ein Gateway, z. B. vom Internetanbieter.');
       }
-      if (!sameNet(gw, ca.ip, ca.prefix)) return fail(path, `Das Gateway ${ipStr(gw)} von ${cd.name} liegt nicht im eigenen Netz.`, 'Das Gateway muss im selben Netz liegen wie das Gerät selbst.');
+      if (!sameNet(gw, ca.ip, ca.prefix)) {
+        // Steht beim Gerät schon die richtige Router-Adresse, ist die eigene IP-Adresse das Problem
+        if (gwA && gwA.ip === gw) return fail(path, `Das Gateway ${ipStr(gw)} ist richtig, aber die IP-Adresse von ${cd.name} passt nicht dazu: Beide müssen im selben Netz liegen.`, gwTip);
+        return fail(path, `Das Gateway ${ipStr(gw)} von ${cd.name} liegt nicht im eigenen Netz.`, `Das Gateway muss im selben Netz liegen wie das Gerät selbst, hier also ${netName(ca.ip, ca.prefix)}. ${gwTip}`.trim());
+      }
       const hop = eps.find(e => { const a = ifaceAddr(e.dev, e.port); return (TYPES[e.dev.type].router || TYPES[e.dev.type].isp) && a && a.ip === gw; });
       if (!hop) {
         const fx = explainFault(net, curId, curPort, gw);
         if (fx) return Object.assign(fail(path.concat(fx.path.slice(1)), fx.error, fx.hint), { fault: fx.fault });
         const other = eps.find(e => { const a = ifaceAddr(e.dev, e.port); return a && a.ip === gw; });
-        if (other) return fail(path, `Das Gateway ${ipStr(gw)} ist ${other.dev.name} – das ist kein Router.`, 'Als Gateway muss ein Router eingetragen werden.');
-        return fail(path, `Das Gateway ${ipStr(gw)} ist von ${cd.name} aus nicht erreichbar.`, 'Ist der Router angeschlossen und hat sein Anschluss genau diese IP-Adresse?');
+        if (other) return fail(path, `Das Gateway ${ipStr(gw)} ist ${other.dev.name} – das ist kein Router.`, `Als Gateway muss ein Router eingetragen werden, denn nur ein Router leitet Pakete in andere Netze weiter. ${gwTip}`.trim());
+        return fail(path, `Das Gateway ${ipStr(gw)} ist von ${cd.name} aus nicht erreichbar.`, gwTip ? `Unter ${ipStr(gw)} gibt es keinen Router. ${gwTip}` : 'In diesem Netz ist kein Router zu finden. Ist der Router angeschlossen und hat sein Anschluss genau diese IP-Adresse?');
       }
       path = path.concat(hop.path.slice(1));
       const r = hop.dev;
@@ -1400,6 +1436,23 @@
   }
 
   /**
+   * Hinweis zur eigenen IP-Adresse eines Endgeräts im Vergleich zu den Geräten,
+   * mit denen es direkt verbunden ist: doppelt vergeben oder anderes Netz (sonst '').
+   */
+  function addrHint(net, hostId) {
+    const h = dev(net, hostId);
+    const own = h && TYPES[h.type].host ? ifaceAddr(h, 0) : null;
+    if (!own || !linksOf(net, hostId).length) return '';
+    const others = l2Endpoints(net, hostId, 0).filter(e => e.dev !== h).map(e => ({ d: e.dev, a: ifaceAddr(e.dev, e.port) })).filter(x => x.a);
+    const twin = others.find(x => x.a.ip === own.ip);
+    if (twin) return `${twin.d.name} hat schon dieselbe Adresse. Jede IP-Adresse darf im Netz nur einmal vorkommen.`;
+    const ref = others.find(x => TYPES[x.d.type].router || TYPES[x.d.type].isp) || others[0];
+    if (ref && !sameNet(own.ip, ref.a.ip, ref.a.prefix))
+      return `${ref.d.name} ist im Netz ${netName(ref.a.ip, ref.a.prefix)}. Damit sich die Geräte direkt erreichen, müssen ${netRule(ref.a.prefix)} gleich sein.`;
+    return '';
+  }
+
+  /**
    * Vorschläge für die manuelle Einstellung eines Endgeräts, abgeleitet aus den
    * Geräten im selben Netz. Liefert {ip, mask, gw, dns} (jeweils oder null).
    */
@@ -1883,7 +1936,7 @@
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
 
   const NW = {
-    TYPES, DESCRIPTIONS, parseIP, ipStr, parseMask, sameNet, netStr, ipProblem, isPrivate,
+    TYPES, DESCRIPTIONS, parseIP, ipStr, parseMask, sameNet, netStr, netName, netRule, addrHint, ipProblem, isPrivate,
     emptyNetwork, createDevice, dev, linksOf, portOf, canLink, addLink, removeDevice, removeLink,
     allLinksOf, filesOf, fileStore, fileReady, newFile, sendFile, getFiles, btPartners, playMusic, NET_KINDS, netKinds,
     ifaceAddr, l2Endpoints, route, roundTrip, ping, browse, parseURL, logEvent, topology, topologies, TOPOLOGY_INFO, ringOf, activeFaults, setFault, clone, newId,
