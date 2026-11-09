@@ -546,11 +546,11 @@
       level: 1,
       manual: true,
       intro: 'Im Computerraum rufen zwei Schüler: „Bei mir geht das Netz nicht!“ Alle PCs sind richtig eingestellt – der Fehler muss also bei den Kabeln liegen. Finde heraus, welche PCs betroffen sind und was kaputt ist. Behebe dann die Fehler.',
-      tip: 'Gehe Schritt für Schritt vor: Pinge von PC 1 aus nacheinander die anderen PCs an. Die Animation zeigt dir, wo das Paket hängen bleibt. Tippe dann dieses Kabel an: Steckt es richtig? Was sagt der Kabeltester?',
+      tip: 'Gehe Schritt für Schritt vor: Pinge von PC 1 aus nacheinander die anderen PCs an. Die Animation zeigt dir, wo das Paket hängen bleibt. Tippe dann dieses Kabel an (die Linie zwischen den Geräten) oder tippe einen PC an und nimm unter „Kabel prüfen“ den Kabeltester: Steckt es richtig? Was sagt der Kabeltester?',
       think: 'Warum sieht man einem kaputten Kabel von außen oft nichts an? Wie gehst du vor, wenn du in einem großen Netz einen Fehler suchen musst?',
       goals: [
         { text: 'Ein Kabel steckt nicht richtig. Finde es und stecke es richtig ein.', check: c => c.linkFixed('p3', 'sw') },
-        { text: 'Ein Kabel ist kaputt. Finde es mit dem Kabeltester und tausche es aus.', check: c => c.linkFixed('p4', 'sw') },
+        { text: 'Ein Kabel ist kaputt. Tippe die Kabel an, prüfe sie mit dem Kabeltester und tausche das kaputte Kabel aus.', check: c => c.linkFixed('p4', 'sw') },
         { text: 'Zeige mit einem Ping von PC 3 zu PC 4, dass jetzt wieder alles funktioniert.', check: c => c.pingOk(d => d.id === 'p3', d => d.id === 'p4') },
       ],
       start: () => computerraumStart(),
@@ -589,7 +589,7 @@
       level: 3,
       manual: true,
       intro: 'Im Büro des Sportvereins geht das Internet nicht: Weder am PC noch am Smartphone lässt sich die Seite http://www.netzwerkstatt.de öffnen. Die Einstellungen der Geräte stimmen. Im Netz sind gleich mehrere Fehler versteckt – finde und behebe sie alle.',
-      tip: 'Rufe die Seite auf und beobachte, wo das Paket stecken bleibt. Behebe den Fehler und versuche es noch einmal – vielleicht kommt das Paket dann ein Stück weiter. Prüfe Kabel mit dem Kabeltester und sieh dir auch die Einstellungen der Geräte an.',
+      tip: 'Rufe die Seite auf und beobachte, wo das Paket stecken bleibt. Behebe den Fehler und versuche es noch einmal – vielleicht kommt das Paket dann ein Stück weiter. Prüfe Kabel mit dem Kabeltester (Kabel antippen oder beim Gerät unter „Kabel prüfen“) und sieh dir auch die Einstellungen der Geräte an.',
       think: 'Warum ist es sinnvoll, nach jeder Reparatur noch einmal zu testen? Wie hilft dir ein Ping zum Router, den Fehler einzugrenzen?',
       goals: [
         { text: 'Öffne am PC die Seite http://www.netzwerkstatt.de.', check: c => c.webFrom('www.netzwerkstatt.de', 'pc') },

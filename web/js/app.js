@@ -685,6 +685,22 @@
     }).join('') + '</ul>';
   }
 
+  /** Kabel eines Geräts, die man in der Fehlersuche mit dem Kabeltester prüfen kann. */
+  function testableCables(d) {
+    if (readOnly() || !has('fehler')) return [];
+    return NW.allLinksOf(S.net, d.id).filter(l => l.kind === 'kabel');
+  }
+  /** Abschnitt „Kabel prüfen“: jedes Kabel des Geräts mit einem Knopf für den Kabeltester. */
+  function cableCheckHTML(d) {
+    const ls = testableCables(d);
+    if (!ls.length) return '';
+    return `<p class="muted small">Der Kabeltester zeigt, ob ein Kabel in Ordnung ist. Einem kaputten Kabel sieht man von außen nichts an.</p>
+      <ul class="conn router-conn">${ls.map(l => {
+        const o = NW.dev(S.net, l.a === d.id ? l.b : l.a);
+        return `<li><span class="kind kabel">Kabel</span> zu ${esc(o.name)} <button class="btn small replug-btn" data-act="test-link" data-link="${esc(l.id)}">🔍 Kabeltester</button></li>`;
+      }).join('')}</ul>`;
+  }
+
   /** Knöpfe, die die IP-Adresse eines Partners für den Dateitausch eintragen. */
   function fileChips(d) {
     // Nur Geräte vorschlagen, die beim Dateitausch mitmachen (Dateiablage oder Peer-to-Peer an)
@@ -799,6 +815,7 @@
     dhcp: '<path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/>',
     svc: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
     files: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
+    kabel: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/>',
   };
   /** Hervorgehobener Aktionsknopf mit Symbol. */
   function actBtn(act, icon, label, extra) {
@@ -894,6 +911,7 @@
     if (has('dienste')) items.push(['svc-use', 'svc', 'Dienste']);
     if (!T[d.type].services && has('dateien')) items.push(['files', 'files', 'Dateien']);
     if (NW.btPartners(S.net, d.id).some(o => T[o.type].btOnly)) items.push(['bt', 'music', 'Musik']);
+    if (testableCables(d).length) items.push(['kabel', 'kabel', 'Kabel']);
     return `<div class="jump" role="group" aria-label="Testen"><span class="jump-label">Testen:</span>${items.map(([k, ico, label]) =>
       `<button class="jump-btn" data-jump="${k}"><svg class="act-ico" viewBox="0 0 24 24" aria-hidden="true">${ACT_ICONS[ico]}</svg><span>${label}</span></button>`).join('')}</div>`;
   }
@@ -1128,6 +1146,7 @@ ${faultFinderHTML(link, ro)}
       h += sec('ping', 'Ping', `<label class="field">Ping senden an (${has('v6') ? 'IPv4- oder IPv6-Adresse' : 'IP-Adresse'})
           <div class="inline"><input id="ping-target" placeholder="${has('v6') ? 'z. B. 192.168.1.2 oder fe80::…' : 'z. B. 192.168.1.2'}" autocomplete="off" autocapitalize="off" spellcheck="false">${actBtn('ping', 'ping', 'Ping')}</div></label>
         ${otherHostChips(d)}${has('v6') ? v6Chips(d) : ''}`, null, 'test');
+      h += sec('kabel', 'Kabel prüfen', cableCheckHTML(d), 'fehler', 'test');
       if (has('web')) h += sec('browser', 'Browser', `<label class="field">Adresse (URL)
           <div class="inline"><input id="url-target" placeholder="http://www.beispiel.de" autocomplete="off" autocapitalize="off" spellcheck="false">${actBtn('browse', 'browse', 'Öffnen')}</div></label>
         ${urlChips()}`, 'web', 'test');
@@ -1282,6 +1301,7 @@ ${faultFinderHTML(link, ro)}
       h += sec('fault', 'Ausfall testen', `<button class="btn small ${on ? 'primary' : ''}" data-act="fault">${label}</button>`, 'ausfall');
     }
 
+    if (!t.host) h += sec('kabel', 'Kabel prüfen', cableCheckHTML(d), 'fehler');
     h += sec('conn', 'Verbindungen', connectionsHTML(d));
 
     if (!dis) h += '<button class="btn danger" data-act="del-dev">Gerät löschen</button>';
@@ -1522,6 +1542,12 @@ ${faultFinderHTML(link, ro)}
         break;
       }
       case 'cable-test': S.cableTest = S.selected; renderInspector(); break;
+      case 'test-link': {
+        // Vom Gerät aus: Kabel auswählen und gleich mit dem Kabeltester prüfen
+        if (!S.net.links.some(l => l.id === b.dataset.link)) break;
+        S.selected = S.cableTest = b.dataset.link;
+        renderCanvas(); renderInspector(); break;
+      }
       case 'fix-plug': case 'fix-swap': case 'dev-wlan': {
         if (readOnly()) break;
         const id = S.selected;
