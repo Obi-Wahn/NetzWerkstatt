@@ -872,6 +872,7 @@
         <p class="${link.loss ? 'loss-note' : 'muted small'}">${link.loss
           ? 'Hier gehen Pakete verloren – wie bei schwachem WLAN oder einem Wackelkontakt. Vergleiche: Was machen TCP und UDP mit einem verlorenen Paket?'
           : 'Schalte die Störung ein, um zu sehen, was mit verlorenen Paketen passiert.'}</p>` : ''}${brk}
+${faultFinderHTML(link, ro)}
         ${!ro && !link.locked ? '<button class="btn danger" data-act="del-link">Verbindung löschen</button>' : ''}`;
       return;
     }
@@ -885,6 +886,11 @@
     if (d.locked) h += '<p class="locked-note">🔒 Dieses Gerät gehört zur Aufgabe. Du kannst es ansehen und benutzen, aber nicht ändern.</p>';
     if (d.off) h += `<p class="fault-note">✕ ${esc(d.name)} ist ausgefallen. Es sendet, empfängt und leitet nichts weiter.</p>`;
     if (t.bus && d.broken) h += '<p class="fault-note">⚡ Kabelbruch im Bus-Kabel: Das ganze Busnetz ist gestört.</p>';
+
+    if (t.host && t.wlan && (has('fehler') || d.wlanOff)) {
+      h += sec('wlan-dev', 'WLAN', `<label class="toggle"><input type="checkbox" data-act="dev-wlan" ${d.wlanOff ? '' : 'checked'} ${ro ? 'disabled' : ''}> WLAN eingeschaltet</label>
+        <p class="${d.wlanOff ? 'fault-note' : 'muted small'}">${d.wlanOff ? `Das WLAN von ${esc(d.name)} ist ausgeschaltet. Es kann keine Funkverbindung aufbauen.` : 'Ist das WLAN aus, sendet und empfängt das Gerät keine Funkwellen – zum Beispiel im Flugmodus.'}</p>`, 'fehler');
+    }
 
     // ---- Endgeräte und Server: Adressen
     if (t.host) {
@@ -1134,6 +1140,31 @@
     updateHints();
   }
 
+  /**
+   * Fehlersuche an einem Kabel: Stecker ansehen, Kabeltester, Kabel austauschen.
+   * Im freien Bauen lassen sich hier auch Fehler einbauen (z. B. für eigene Aufgaben).
+   */
+  function faultFinderHTML(link, ro) {
+    if (link.kind !== 'kabel' || !(has('fehler') || link.unplugged || link.defekt)) return '';
+    let b = '';
+    if (link.unplugged) {
+      const end = NW.dev(S.net, link.unplugged === 'a' ? link.a : link.b);
+      b += `<p class="fault-note">🔌 Der Stecker bei ${esc(end ? end.name : '')} steckt nicht richtig im Anschluss.</p>`;
+      if (!ro) b += '<button class="btn small primary" data-act="fix-plug">Kabel richtig einstecken</button>';
+    }
+    if (S.cableTest === link.id) {
+      const r = NW.testCable(S.net, link);
+      b += `<p class="${r.ok ? 'fhint ok' : 'fault-note'}">${r.ok ? '✓ ' : ''}${esc(r.text)}</p>`;
+      if (!ro && link.defekt && !link.unplugged) b += '<button class="btn small primary" data-act="fix-swap">Kabel austauschen</button>';
+    } else if (!ro) b += '<button class="btn small" data-act="cable-test">🔍 Mit dem Kabeltester prüfen</button>';
+    if (S.task.free && !ro && !link.locked) {
+      b += `<details class="desc"><summary>Fehler einbauen (für die Fehlersuche)</summary>
+        <label class="toggle"><input type="checkbox" data-act="inject-unplug" ${link.unplugged ? 'checked' : ''}> Stecker herausziehen</label>
+        <label class="toggle"><input type="checkbox" data-act="inject-defekt" ${link.defekt ? 'checked' : ''}> Kabel kaputt (man sieht es nicht, nur der Kabeltester zeigt es)</label></details>`;
+    }
+    return `<div class="group"><h4>Fehlersuche</h4>${b}</div>`;
+  }
+
   /** Löschen mit „Rückgängig“: Vorher wird das ganze Netzwerk gemerkt. */
   function removeWithUndo(what, fn) {
     const before = NW.clone(S.net), task = S.task;
@@ -1336,6 +1367,25 @@
         renderAll(); scheduleSave();
         if (was) autoDhcp();
         break;
+      }
+      case 'cable-test': S.cableTest = S.selected; renderInspector(); break;
+      case 'fix-plug': case 'fix-swap': case 'dev-wlan': {
+        if (readOnly()) break;
+        const id = S.selected;
+        if (b.dataset.act === 'dev-wlan' && !b.checked) d.wlanOff = true;
+        else NW.fixFault(S.net, id, { 'fix-plug': 'plug', 'fix-swap': 'swap', 'dev-wlan': 'wlan' }[b.dataset.act]);
+        toast({ 'fix-plug': 'Der Stecker sitzt jetzt richtig.', 'fix-swap': 'Das kaputte Kabel ist gegen ein neues ausgetauscht.', 'dev-wlan': d && d.wlanOff ? 'WLAN ausgeschaltet.' : 'WLAN eingeschaltet.' }[b.dataset.act], 'ok');
+        renderAll(); scheduleSave();
+        if (!(d && d.wlanOff)) autoDhcp();
+        break;
+      }
+      case 'inject-unplug': case 'inject-defekt': {
+        const l = S.net.links.find(x => x.id === S.selected);
+        if (!l || l.locked || readOnly()) break;
+        if (b.dataset.act === 'inject-unplug') { if (b.checked) l.unplugged = 'b'; else delete l.unplugged; }
+        else if (b.checked) l.defekt = true; else delete l.defekt;
+        S.cableTest = null;
+        renderAll(); scheduleSave(); break;
       }
       case 'music': doMusic(d); break;
       case 'new-file': {

@@ -80,7 +80,11 @@
       return r.ok && (r.dns || []).length > 0 && dnsFilter((r.dns || []).map(id => NW.dev(net, id)).filter(Boolean));
     });
     const svcKinds = () => new Set((net.events || []).filter(e => e.ok && (e.type === 'web' || e.type === 'svc')).map(e => e.type === 'web' ? 'web' : e.action === 'mailget' ? 'mail' : e.action));
-    return { net, byType, hosts, neighbors, linked, inNet, distinctIPs, pingOk, ping6Ok, hasGua, webOk, fileOk, musicOk, kinds, hasKind, pings, topos, svcOk, svcKinds, webDnsOk };
+    // Webseite von einem bestimmten Gerät aus aufgerufen (und klappt das auch jetzt noch)?
+    const webFrom = (host, srcId) => (net.events || []).some(e => e.type === 'web' && e.ok && e.host === host && e.src === srcId && NW.browse(net, srcId, 'http://' + host).ok);
+    // Fehlersuche: Ist diese Verbindung (zwischen zwei Geräten) wieder in Ordnung?
+    const linkFixed = (a, b) => { const l = net.links.find(x => (x.a === a && x.b === b) || (x.a === b && x.b === a)); return !!l && !NW.linkDown(net, l); };
+    return { net, byType, hosts, neighbors, linked, inNet, distinctIPs, pingOk, ping6Ok, hasGua, webOk, fileOk, musicOk, kinds, hasKind, pings, topos, svcOk, svcKinds, webDnsOk, webFrom, linkFixed };
   }
 
   const isType = t => d => d.type === t;
@@ -537,6 +541,70 @@
       },
     },
     {
+      id: 'fehler-computerraum',
+      title: 'Fehlersuche im Computerraum',
+      level: 1,
+      manual: true,
+      intro: 'Im Computerraum rufen zwei Schüler: „Bei mir geht das Netz nicht!“ Alle PCs sind richtig eingestellt – der Fehler muss also bei den Kabeln liegen. Finde heraus, welche PCs betroffen sind und was kaputt ist. Behebe dann die Fehler.',
+      tip: 'Gehe Schritt für Schritt vor: Pinge von PC 1 aus nacheinander die anderen PCs an. Die Animation zeigt dir, wo das Paket hängen bleibt. Tippe dann dieses Kabel an: Steckt es richtig? Was sagt der Kabeltester?',
+      think: 'Warum sieht man einem kaputten Kabel von außen oft nichts an? Wie gehst du vor, wenn du in einem großen Netz einen Fehler suchen musst?',
+      goals: [
+        { text: 'Ein Kabel steckt nicht richtig. Finde es und stecke es richtig ein.', check: c => c.linkFixed('p3', 'sw') },
+        { text: 'Ein Kabel ist kaputt. Finde es mit dem Kabeltester und tausche es aus.', check: c => c.linkFixed('p4', 'sw') },
+        { text: 'Zeige mit einem Ping von PC 3 zu PC 4, dass jetzt wieder alles funktioniert.', check: c => c.pingOk(d => d.id === 'p3', d => d.id === 'p4') },
+      ],
+      start: () => computerraumStart(),
+      solution: () => {
+        const net = computerraumStart();
+        net.links.forEach(l => { delete l.unplugged; delete l.defekt; });
+        evPing(net, 'p3', 'p4');
+        return net;
+      },
+    },
+    {
+      id: 'fehler-heimnetz',
+      title: 'Fehlersuche im Heimnetz',
+      level: 2,
+      manual: true,
+      intro: 'Bei Familie Yilmaz kommen nur der PC und das Smartphone ins Netz. Das Tablet und der Laptop haben keine Verbindung, obwohl alle Adressen richtig eingetragen sind. Finde die Fehler und behebe sie.',
+      tip: 'Pinge vom Tablet und vom Laptop aus den Router (192.168.178.1) an. Wo kommt kein Signal an? Tippe dann die Geräte und Verbindungen an und sieh genau nach – auch in den Einstellungen der Geräte.',
+      think: 'Das WLAN-Zeichen ist zwar da, trotzdem geht nichts – woran kann das liegen? Welche Fehler könntest du zu Hause selbst beheben, wenn das Internet nicht geht?',
+      goals: [
+        { text: 'Finde heraus, warum das Tablet keine Verbindung hat, und behebe den Fehler.', check: c => c.linkFixed('tb', 'r') },
+        { text: 'Finde heraus, warum der Laptop keine Verbindung hat, und behebe den Fehler.', check: c => c.linkFixed('lp', 'r') },
+        { text: 'Teste mit einem Ping vom Tablet zum Laptop.', check: c => c.pingOk(d => d.id === 'tb', d => d.id === 'lp') },
+      ],
+      start: () => heimnetzFehlerStart(),
+      solution: () => {
+        const net = heimnetzFehlerStart();
+        NW.fixFault(net, 'tb', 'wlan');
+        net.links.forEach(l => { delete l.unplugged; });
+        evPing(net, 'tb', 'lp');
+        return net;
+      },
+    },
+    {
+      id: 'fehler-internet',
+      title: 'Fehlersuche: Das Internet geht nicht',
+      level: 3,
+      manual: true,
+      intro: 'Im Büro des Sportvereins geht das Internet nicht: Weder am PC noch am Smartphone lässt sich die Seite http://www.netzwerkstatt.de öffnen. Die Einstellungen der Geräte stimmen. Im Netz sind gleich mehrere Fehler versteckt – finde und behebe sie alle.',
+      tip: 'Rufe die Seite auf und beobachte, wo das Paket stecken bleibt. Behebe den Fehler und versuche es noch einmal – vielleicht kommt das Paket dann ein Stück weiter. Prüfe Kabel mit dem Kabeltester und sieh dir auch die Einstellungen der Geräte an.',
+      think: 'Warum ist es sinnvoll, nach jeder Reparatur noch einmal zu testen? Wie hilft dir ein Ping zum Router, den Fehler einzugrenzen?',
+      goals: [
+        { text: 'Öffne am PC die Seite http://www.netzwerkstatt.de.', check: c => c.webFrom('www.netzwerkstatt.de', 'pc') },
+        { text: 'Öffne auch am Smartphone die Seite http://www.netzwerkstatt.de.', check: c => c.webFrom('www.netzwerkstatt.de', 'sp') },
+      ],
+      start: () => internetFehlerStart(),
+      solution: () => {
+        const net = internetFehlerStart();
+        NW.fixFault(net, 'sp', 'wlan');
+        net.links.forEach(l => { delete l.unplugged; delete l.defekt; });
+        for (const src of ['pc', 'sp']) NW.logEvent(net, { type: 'web', src, host: 'www.netzwerkstatt.de', ok: true });
+        return net;
+      },
+    },
+    {
       id: 'frei',
       title: 'Freies Bauen',
       level: 0,
@@ -576,6 +644,56 @@
       add('g3', 'pc', 670, 300, Object.assign({ name: 'Ring 3', ip: '192.168.3.3' }, L));
       link('g1', 'g2', 'kabel', L); link('g2', 'g3', 'kabel', L); link('g3', 'g1', 'kabel', L);
     });
+  }
+
+  /** Computerraum: Switch mit vier PCs; bei PC 3 steckt das Kabel nicht, das Kabel von PC 4 ist kaputt. */
+  function computerraumStart() {
+    return build(({ add, link }) => {
+      const L = { locked: true };
+      add('sw', 'switch', 420, 290, Object.assign({ name: 'Switch' }, L));
+      add('p1', 'pc', 170, 130, Object.assign({ name: 'PC 1', ip: '192.168.50.11' }, L));
+      add('p2', 'pc', 670, 130, Object.assign({ name: 'PC 2', ip: '192.168.50.12' }, L));
+      add('p3', 'pc', 170, 450, Object.assign({ name: 'PC 3', ip: '192.168.50.13' }, L));
+      add('p4', 'pc', 670, 450, Object.assign({ name: 'PC 4', ip: '192.168.50.14' }, L));
+      link('p1', 'sw', 'kabel', L); link('p2', 'sw', 'kabel', L);
+      link('p3', 'sw', 'kabel', Object.assign({ unplugged: 'a' }, L));
+      link('p4', 'sw', 'kabel', Object.assign({ defekt: true }, L));
+    });
+  }
+
+  /** Heimnetz: Beim Tablet ist das WLAN aus, beim Laptop steckt das Kabel am Router nicht richtig. */
+  function heimnetzFehlerStart() {
+    return build(({ net, add, link }) => {
+      const L = { locked: true };
+      const r = add('r', 'router', 400, 290, Object.assign({ name: 'Heimrouter' }, L));
+      r.ports[1].ip = '192.168.178.1';
+      const host = (id, type, x, y, name, ip) => add(id, type, x, y, Object.assign({ name, ip, gw: '192.168.178.1' }, L));
+      host('pc', 'pc', 150, 130, 'PC Arbeitszimmer', '192.168.178.20');
+      host('lp', 'laptop', 150, 450, 'Laptop', '192.168.178.21');
+      host('tb', 'tablet', 680, 130, 'Tablet', '192.168.178.30');
+      host('sp', 'smartphone', 680, 450, 'Smartphone', '192.168.178.31');
+      link('pc', 'r', 'kabel', L);
+      link('lp', 'r', 'kabel', Object.assign({ unplugged: 'b' }, L));
+      link('r', 'tb', 'wlan', L); link('r', 'sp', 'wlan', L);
+      NW.dev(net, 'tb').wlanOff = true;
+    });
+  }
+
+  /** Vereinsbüro mit Internet: Kabel am PC steckt nicht, Kabel Switch–Router ist kaputt, WLAN am Smartphone ist aus. */
+  function internetFehlerStart() {
+    const net = internetStart();
+    const L = { locked: true };
+    const add = (id, type, x, y, extra) => NW.createDevice(net, type, x, y, Object.assign({ id }, L, extra));
+    const link = (a, b, kind, extra) => Object.assign(NW.addLink(net, a, b, kind).link, L, extra || {});
+    const cfg = ip => ({ ip, gw: '192.168.178.1', dns: '203.0.113.53' });
+    add('sw', 'switch', 220, 280, { name: 'Switch Büro' });
+    add('pc', 'pc', 80, 110, Object.assign({ name: 'PC Büro' }, cfg('192.168.178.20')));
+    add('sp', 'smartphone', 190, 470, Object.assign({ name: 'Smartphone' }, cfg('192.168.178.30')));
+    link('pc', 'sw', 'kabel', { unplugged: 'b' });
+    link('sw', 'r', 'kabel', { defekt: true });
+    link('r', 'sp', 'wlan');
+    NW.dev(net, 'sp').wlanOff = true;
+    return net;
   }
 
   function filesStart() {
@@ -773,6 +891,7 @@
     { id: 'topologien', title: 'Topologien', tasks: ['bus', 'ring', 'topologien'] },
     { id: 'netzarten', title: 'Architekturen und Netzarten', tasks: ['dateien', 'pan', 'man', 'netzarten'] },
     { id: 'dienste', title: 'Protokolle und Internetdienste', tasks: ['tcp-udp', 'dienste-sortieren', 'dienste'] },
+    { id: 'fehler', title: 'Fehler finden', tasks: ['fehler-computerraum', 'fehler-heimnetz', 'fehler-internet'] },
     { id: 'eigene', title: 'Eigene Aufgaben', tasks: [] },
     { id: 'frei', title: 'Freies Bauen', tasks: ['frei'] },
   ];
@@ -806,6 +925,7 @@
     { id: 'pan', label: 'Bluetooth', text: 'Kopfhörer und Werkzeug „Bluetooth“ (PAN)' },
     { id: 'netzarten', label: 'Netzarten', text: 'Anzeige PAN, LAN, MAN, WAN und Werkzeug „Glasfaser“' },
     { id: 'dienste', label: 'Internetdienste', text: 'E-Mail, Video, Telefonie, Spiele, TCP und UDP' },
+    { id: 'fehler', label: 'Fehlersuche', text: 'Kabeltester, Kabel einstecken und austauschen, WLAN am Gerät ein- und ausschalten' },
   ];
   const WEBNET = ['gateway', 'wlan', 'dhcp', 'web', 'internet'];
   const SHOW = {
@@ -825,6 +945,9 @@
     'tcp-udp': WEBNET.concat('dienste'),
     'dienste-sortieren': WEBNET.concat('dienste'),
     dienste: WEBNET.concat('dienste'),
+    'fehler-computerraum': ['fehler'],
+    'fehler-heimnetz': ['gateway', 'wlan', 'fehler'],
+    'fehler-internet': ['gateway', 'wlan', 'web', 'internet', 'fehler'],
   };
   // Im freien Bauen ist alles verfügbar (übersichtlich in einklappbaren Abschnitten).
   TASKS.forEach(t => { t.show = (!t.free && SHOW[t.id]) || FEATURES.map(f => f.id); });
@@ -845,6 +968,7 @@
       has('topologie', t.bus);
       has('ausfall', d.off || d.broken);
       has('dateien', t.host && d.share);
+      has('fehler', d.wlanOff);
       if (d.services) {
         has('web', ['web', 'dns'].some(k => d.services[k] && d.services[k].on));
         has('dateien', d.services.files && d.services.files.on);
@@ -857,6 +981,7 @@
       has('ausfall', l.broken);
       has('netzarten', l.stadt);
       has('dienste', l.loss);
+      has('fehler', l.unplugged || l.defekt);
     }
     return s;
   }

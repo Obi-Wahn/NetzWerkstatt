@@ -118,7 +118,16 @@
       const g = el('g', { class: 'link ' + l.kind + (opts.selected === l.id ? ' selected' : '') + (l.broken ? ' broken' : '') + (l.stadt ? ' stadt' : '') + (l.loss ? ' lossy' : ''), 'data-link': l.id }, gLinks);
       const pa = anchor(a, b), pb = anchor(b, a);
       el('line', { x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y, class: 'hit' }, g);
-      el('line', { x1: pa.x, y1: pa.y, x2: pb.x, y2: pb.y, class: 'wire' }, g);
+      // Kabel steckt nicht richtig (Fehlersuche): Am losen Ende bleibt eine Lücke, der Stecker hängt davor
+      let wa = pa, wb = pb;
+      if (l.unplugged && l.kind === 'kabel') {
+        const atA = l.unplugged === 'a', from = atA ? pa : pb, to = atA ? pb : pa;
+        const k = Math.min(0.4, 36 / Math.max(1, Math.hypot(to.x - from.x, to.y - from.y)));
+        const q = { x: from.x + (to.x - from.x) * k, y: from.y + (to.y - from.y) * k };
+        if (atA) wa = q; else wb = q;
+      }
+      el('line', { x1: wa.x, y1: wa.y, x2: wb.x, y2: wb.y, class: 'wire' }, g);
+      if (wa !== pa || wb !== pb) el('circle', { cx: (wa !== pa ? wa : wb).x, cy: (wa !== pa ? wa : wb).y, r: 5, class: 'plug-end' }, g);
       if (l.loss && !l.broken) {
         // Gestörte Verbindung: Blitz in der Mitte
         const z = el('g', { class: 'loss-badge', transform: `translate(${(pa.x + pb.x) / 2},${(pa.y + pb.y) / 2})` }, g);
