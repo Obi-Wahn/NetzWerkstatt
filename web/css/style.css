@@ -673,3 +673,14 @@ table.cmp col.k { width: 26%; }
   .det { grid-template-columns: 1fr; grid-template-rows: minmax(220px, 42vh) minmax(0, 1fr); }
   .det-side { min-height: 260px; }
 }
+
+/* Vergrößern der Arbeitsfläche */
+.det-view { position: relative; }
+.zoom-ctl { position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; align-items: center; z-index: 2; }
+.zoom-btn { font: inherit; font-size: 1.35em; font-weight: 700; line-height: 1; min-width: 44px; min-height: 44px; padding: 0 10px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--overlay-bg); color: var(--ink); cursor: pointer; touch-action: manipulation; }
+.zoom-btn:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
+.zoom-btn:disabled { opacity: .4; cursor: default; }
+.zoom-btn.zoom-fit { font-size: .9em; font-weight: 600; }
+.zoom-ctl.zoomed .zoom-fit { border-color: var(--brand); color: var(--brand); }
+.is-readonly .zoom-ctl, .zoom-ctl { pointer-events: auto; }

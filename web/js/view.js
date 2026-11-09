@@ -118,7 +118,8 @@
   function textScale(svg) {
     const r = svg.getBoundingClientRect();
     if (!r.width || !r.height) return svg._ts || 1;
-    const s = Math.min(r.width / WORLD.w, r.height / WORLD.h);
+    const k = svg._zoom ? svg._zoom.k : 1;
+    const s = Math.min(r.width / WORLD.w, r.height / WORLD.h) * k;
     const ts = Math.max(1, Math.min(MAX_TS, MIN_IP / (12.5 * s)));
     return Math.round(ts * 20) / 20;
   }
@@ -139,6 +140,127 @@
     svg._ro.observe(svg);
   }
 
+  // ---------------------------------------------------------------- Vergrößern (Zoom)
+  const ZOOM_MAX = 3;
+  /** Sichtbarer Ausschnitt: bei Zoom k ein Ausschnitt um den Mittelpunkt (cx, cy), sonst die ganze Fläche. */
+  function viewBox(svg) {
+    const z = svg._zoom;
+    if (!z || z.k <= 1) return `0 0 ${WORLD.w} ${WORLD.h}`;
+    const w = WORLD.w / z.k, h = WORLD.h / z.k;
+    return `${z.cx - w / 2} ${z.cy - h / 2} ${w} ${h}`;
+  }
+  /** Zoom setzen; (ax, ay) ist der Weltpunkt, der dabei an seiner Stelle auf dem Bildschirm bleibt. */
+  function setZoom(svg, k, ax, ay) {
+    const old = svg._zoom || { k: 1, cx: WORLD.w / 2, cy: WORLD.h / 2 };
+    k = Math.max(1, Math.min(ZOOM_MAX, k));
+    if (ax === undefined) { ax = old.cx; ay = old.cy; }
+    // Der Ankerpunkt behält seinen Abstand zur Mitte (im Verhältnis zum Zoom)
+    let cx = ax - (ax - old.cx) * old.k / k, cy = ay - (ay - old.cy) * old.k / k;
+    const hw = WORLD.w / k / 2, hh = WORLD.h / k / 2;
+    cx = Math.max(hw, Math.min(WORLD.w - hw, cx)); cy = Math.max(hh, Math.min(WORLD.h - hh, cy));
+    svg._zoom = k <= 1.001 ? null : { k, cx, cy };
+    applyZoom(svg);
+  }
+  function panBy(svg, dx, dy) {
+    const z = svg._zoom; if (!z) return;
+    const hw = WORLD.w / z.k / 2, hh = WORLD.h / z.k / 2;
+    z.cx = Math.max(hw, Math.min(WORLD.w - hw, z.cx - dx)); z.cy = Math.max(hh, Math.min(WORLD.h - hh, z.cy - dy));
+    applyZoom(svg);
+  }
+  function applyZoom(svg) {
+    // Ändert sich durch den Zoom die nötige Schriftgröße, neu zeichnen, sonst nur den Ausschnitt verschieben
+    if (svg._args && svg._args[1].fit && textScale(svg) !== svg._ts && !(svg.querySelector('g.overlay') || { childNodes: [] }).childNodes.length) render(svg, svg._args[0], svg._args[1]);
+    else svg.setAttribute('viewBox', viewBox(svg));
+    if (svg._onZoom) svg._onZoom(zoomLevel(svg));
+  }
+  const pinching = svg => !!svg._pinching;
+  const zoomLevel = svg => (svg._zoom ? svg._zoom.k : 1);
+  function resetZoom(svg) { svg._zoom = null; applyZoom(svg); }
+
+  /**
+   * Zwei Finger: vergrößern/verkleinern und verschieben. Ein Finger auf freier Fläche verschiebt,
+   * wenn vergrößert ist (bei anywhere: true überall, z. B. in der Vorführung).
+   * onZoom(k) wird bei jeder Änderung aufgerufen (für die Knöpfe).
+   */
+  function enableZoom(svg, o) {
+    o = o || {};
+    if (o.buttons) {
+      // Knöpfe oben rechts auf der Fläche: vergrößern, verkleinern, alles zeigen
+      const bar = document.createElement('div');
+      bar.className = 'zoom-ctl';
+      bar.innerHTML = '<button type="button" class="zoom-btn" data-zoom="in" aria-label="Vergrößern" title="Vergrößern">+</button>' +
+        '<button type="button" class="zoom-btn" data-zoom="out" aria-label="Verkleinern" title="Verkleinern">−</button>' +
+        '<button type="button" class="zoom-btn zoom-fit" data-zoom="fit" title="Ganze Arbeitsfläche zeigen" hidden>Alles zeigen</button>';
+      o.buttons.appendChild(bar);
+      bar.addEventListener('click', ev => {
+        const b = ev.target.closest('[data-zoom]'); if (!b) return;
+        const k = zoomLevel(svg);
+        if (b.dataset.zoom === 'in') setZoom(svg, k * 1.5);
+        else if (b.dataset.zoom === 'out') setZoom(svg, k / 1.5);
+        else resetZoom(svg);
+      });
+      const paint = k => {
+        bar.querySelector('[data-zoom="in"]').disabled = k >= ZOOM_MAX - 0.01;
+        bar.querySelector('[data-zoom="out"]').disabled = k <= 1;
+        bar.querySelector('[data-zoom="fit"]').hidden = k <= 1;
+        bar.classList.toggle('zoomed', k > 1);
+      };
+      paint(1);
+      svg._onZoom = k => { paint(k); if (o.onZoom) o.onZoom(k); };
+    } else svg._onZoom = o.onZoom;
+    const pts = new Map();
+    let pinch = null, pan = null;
+    const client = ev => ({ x: ev.clientX, y: ev.clientY });
+    const worldPerPx = () => { const m = svg.getScreenCTM(); return m ? 1 / m.a : 1; };
+    svg.addEventListener('pointerdown', ev => {
+      pts.set(ev.pointerId, client(ev));
+      if (pts.size === 2) {
+        const [a, b] = [...pts.values()];
+        pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, k: zoomLevel(svg), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
+        svg._pinching = true; pan = null;
+        try { svg.setPointerCapture(ev.pointerId); } catch (e) { /* egal */ }
+      } else if (pts.size === 1 && zoomLevel(svg) > 1 && (o.anywhere || !ev.target.closest('[data-dev], [data-link], [data-topo]'))) {
+        pan = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, moved: false };
+        svg._panMoved = false;
+        try { svg.setPointerCapture(ev.pointerId); } catch (e) { /* egal */ }
+      }
+    }, true);
+    svg.addEventListener('pointermove', ev => {
+      if (!pts.has(ev.pointerId)) return;
+      pts.set(ev.pointerId, client(ev));
+      if (pinch && pts.size >= 2) {
+        const [a, b] = [...pts.values()];
+        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+        const f = worldPerPx();
+        panBy(svg, (mid.x - pinch.mid.x) * f, (mid.y - pinch.mid.y) * f);
+        pinch.mid = mid;
+        const at = toWorld(svg, { clientX: mid.x, clientY: mid.y });
+        setZoom(svg, pinch.k * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, at.x, at.y);
+      } else if (pan && pan.id === ev.pointerId) {
+        const dx = ev.clientX - pan.x, dy = ev.clientY - pan.y;
+        if (!pan.moved && Math.hypot(dx, dy) < 6) return;
+        pan.moved = svg._panMoved = true;
+        const f = worldPerPx();
+        panBy(svg, dx * f, dy * f);
+        pan.x = ev.clientX; pan.y = ev.clientY;
+      }
+    }, true);
+    const up = ev => {
+      pts.delete(ev.pointerId);
+      if (pts.size < 2 && pinch) { pinch = null; setTimeout(() => { svg._pinching = false; }, 0); }
+      if (pan && pan.id === ev.pointerId) pan = null;
+    };
+    svg.addEventListener('pointerup', up, true);
+    svg.addEventListener('pointercancel', up, true);
+    // Am PC: Strg + Mausrad bzw. Zwei-Finger-Geste auf dem Touchpad
+    svg.addEventListener('wheel', ev => {
+      if (!ev.ctrlKey) return;
+      ev.preventDefault();
+      const at = toWorld(svg, ev);
+      setZoom(svg, zoomLevel(svg) * Math.exp(-ev.deltaY / 200), at.x, at.y);
+    }, { passive: false });
+  }
+
   function render(svg, net, opts) {
     opts = opts || {};
     // fit: Beschriftung an die Darstellungsgröße anpassen (Arbeitsfläche, Vorführung, Musterlösung)
@@ -146,7 +268,7 @@
     if (opts.fit) { svg._args = [net, opts]; watchSize(svg); }
     svg._ts = T;
     svg.style.setProperty('--ts', T);
-    svg.setAttribute('viewBox', `0 0 ${WORLD.w} ${WORLD.h}`);
+    svg.setAttribute('viewBox', viewBox(svg));
     svg.innerHTML = '';
     const defs = el('defs', {}, svg);
     const pat = el('pattern', { id: 'grid', width: 30, height: 30, patternUnits: 'userSpaceOnUse' }, defs);
@@ -360,14 +482,17 @@
   }
 
   /** Freie Stelle für ein neues Gerät suchen (spiralförmig um die Mitte). */
-  function freeSpot(net, type) {
-    const cx = WORLD.w / 2, cy = WORLD.h / 2 - 20;
+  function freeSpot(net, type, svg) {
+    // Bei vergrößerter Fläche: im sichtbaren Ausschnitt suchen, damit das neue Gerät nicht außerhalb landet
+    const z = svg && svg._zoom;
+    const cx = z ? z.cx : WORLD.w / 2, cy = z ? z.cy - 20 / z.k : WORLD.h / 2 - 20;
+    const seen = p => !z || (Math.abs(p.x - z.cx) <= WORLD.w / z.k / 2 - BOX.w / 2 && Math.abs(p.y - z.cy) <= WORLD.h / z.k / 2 - BOX.h);
     const width = d => (isBus(d) ? BUS.w : BOX.w);
     const wNew = type && NW.TYPES[type] && NW.TYPES[type].bus ? BUS.w : BOX.w;
     for (let r = 0; r < 500; r += 30) {
       for (let a = 0; a < 360; a += 30) {
         const p = clampPos(cx + r * Math.cos(a * Math.PI / 180) * 1.4, cy + r * Math.sin(a * Math.PI / 180), type);
-        if (net.devices.every(d => Math.abs(d.x - p.x) > (width(d) + wNew) / 2 + 70 || Math.abs(d.y - p.y) > BOX.h + 70)) return p;
+        if (seen(p) && net.devices.every(d => Math.abs(d.x - p.x) > (width(d) + wNew) / 2 + 70 || Math.abs(d.y - p.y) > BOX.h + 70)) return p;
       }
     }
     return { x: cx, y: cy };
@@ -448,5 +573,5 @@
     }), Promise.resolve());
   }
 
-  root.NWView = { render, toWorld, clampPos, freeSpot, animate, iconSVG, topoLabel, WORLD, BOX };
+  root.NWView = { render, pinching, panMoved: svg => !!svg._panMoved, enableZoom, setZoom, resetZoom, zoomLevel, toWorld, clampPos, freeSpot, animate, iconSVG, topoLabel, WORLD, BOX };
 })(window);
