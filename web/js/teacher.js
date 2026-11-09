@@ -12,11 +12,14 @@
     store.set('nw_teacher', m[1]);
     history.replaceState(null, '', location.pathname);
   }
+  // Rückkehr aus dem Ausprobieren: wieder dieselbe Aufgabe zeigen (…/lehrer.html?aufgabe=webseite)
+  const backTask = new URLSearchParams(location.search).get('aufgabe');
+  if (backTask) history.replaceState(null, '', location.pathname);
 
   const S = {
     token: store.get('nw_teacher'),
     data: null,
-    task: NWTasks.TASKS[0].id,
+    task: backTask || NWTasks.TASKS[0].id,
     selected: new Set(),
     timer: null,
   };
@@ -247,6 +250,16 @@
       const r = await api('POST', '/api/teacher/workshop', undefined, S.token);
       store.set('nw_token', r.token);
       location.href = '/?frei=1';
+    } catch (e) { toast(e.message, 'error'); }
+  });
+
+  // Selbst ausprobieren: die gewählte Aufgabe im Baukasten öffnen – genau wie die Schüler sie sehen.
+  // Der Baukasten-Zugang taucht nicht in der Schülerliste und nicht bei den Abgaben auf.
+  $('btn-try-task').addEventListener('click', async () => {
+    try {
+      const r = await api('POST', '/api/teacher/workshop', undefined, S.token);
+      store.set('nw_token', r.token);
+      location.href = '/?aufgabe=' + encodeURIComponent(S.task);
     } catch (e) { toast(e.message, 'error'); }
   });
 

@@ -179,7 +179,8 @@
     // Erst speichern, dann zur Lehreransicht wechseln
     ev.preventDefault();
     await flushSave();
-    location.href = 'lehrer.html';
+    // Zurück zu derselben Aufgabe in der Lehreransicht
+    location.href = S.task && !S.task.free ? 'lehrer.html?aufgabe=' + encodeURIComponent(S.task.id) : 'lehrer.html';
   });
 
   $('btn-back').addEventListener('click', async () => {
