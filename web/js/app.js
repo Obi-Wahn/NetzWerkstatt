@@ -761,7 +761,7 @@
   function sec(key, title, body, feat, cls) {
     if (!body) return '';
     let open = feat ? !S.task.free && NWTasks.showOf(S.task).includes(feat) : true;
-    if (key === 'conn') open = false;
+    if (key === 'conn' || key === 'ports') open = false;
     const k = (S.task.free ? 'frei:' : 'aufgabe:') + key;
     if (k in openSecs) open = openSecs[k];
     return `<details class="group sec${cls ? ' ' + cls : ''}" data-sec="${k}" ${open ? 'open' : ''}><summary><h4>${title}</h4></summary>${body}</details>`;
@@ -844,11 +844,12 @@
       for (const [r, port] of [[a, link.aPort], [b, link.bPort]]) {
         if (!T[r.type].router || port === undefined) continue;
         const isWan = NW.iface(port) === NW.WAN;
-        plug += `<p class="small">Steckt bei <b>${esc(r.name)}</b> ${link.kind === 'wlan' ? 'im WLAN des Heimnetzes' : isWan ? 'im Internet-Anschluss (WAN)' : 'in einem LAN-Anschluss (Heimnetz)'}.</p>`;
+        plug += `<p class="small">Steckt bei <b>${esc(r.name)}</b> ${link.kind === 'wlan' ? 'im WLAN des Heimnetzes' : isWan ? 'im Internet-Anschluss (WAN)' : `im Anschluss ${esc(NW.portName(S.net, r, link))} (Heimnetz)`}.</p>`;
         const toIsp = T[(r === a ? b : a).type].isp;
         if (toIsp) plug += '<p class="muted small">Das ist die Leitung zum Internetanbieter (z. B. DSL oder Kabel). Sie gehört immer in den Internet-Anschluss.</p>';
         if (link.kind === 'kabel' && !ro && !link.locked && !toIsp) plug += `<button class="btn small" data-act="replug" data-dev="${esc(r.id)}">Umstecken: ${isWan ? 'in einen LAN-Anschluss' : 'in den Internet-Anschluss (WAN)'}</button>`;
       }
+      for (const sw of [a, b]) if (sw.type === 'switch' && link.kind === 'kabel') plug += `<p class="small">Steckt bei <b>${esc(sw.name)}</b> im Anschluss ${esc(NW.portName(S.net, sw, link))}.</p>`;
       const brk = link.kind !== 'kabel' ? '' : (link.broken ? '<p class="fault-note">⚡ Kabelbruch: Dieses Kabel überträgt keine Daten mehr.</p>' : '')
         + (ro || !has('ausfall') ? '' : `<div class="group"><h4>Ausfall testen</h4><button class="btn small ${link.broken ? 'primary' : ''}" data-act="fault">${link.broken ? 'Kabel reparieren' : '⚡ Kabelbruch simulieren'}</button></div>`);
       const title = { kabel: link.stadt ? 'Glasfaserleitung' : 'Netzwerkkabel', wlan: 'WLAN-Verbindung', bluetooth: 'Bluetooth-Kopplung' }[link.kind];
@@ -1022,7 +1023,8 @@
           const o = NW.dev(S.net, l.a === d.id ? l.b : l.a);
           const can = l.kind === 'kabel' && !ro && !l.locked && !T[o.type].isp;
           const btn = can ? ` <button class="btn small replug-btn" data-act="replug" data-dev="${esc(d.id)}" data-link="${esc(l.id)}" title="${which === NW.WAN ? 'In einen LAN-Anschluss (Heimnetz) umstecken' : 'In den Internet-Anschluss (WAN) umstecken'}">Umstecken → ${which === NW.WAN ? 'LAN' : 'WAN'}</button>` : '';
-          return `<li><span class="kind ${l.kind}">${l.kind === 'kabel' ? 'Kabel' : 'WLAN'}</span> ${esc(o.name)}${btn}</li>`;
+          const pn = l.kind === 'kabel' ? `<span class="port-name${which === NW.WAN ? ' wan' : ''}">${esc(NW.portName(S.net, d, l))}</span> ` : '';
+          return `<li>${pn}<span class="kind ${l.kind}">${l.kind === 'kabel' ? 'Kabel' : 'WLAN'}</span> ${esc(o.name)}${btn}</li>`;
         });
       const connList = (list, empty) => list.length ? `<ul class="conn router-conn">${list.join('')}</ul>` : `<p class="small"><span class="muted">${empty}</span></p>`;
       const lanConns = conns(NW.LAN), wanConns = conns(NW.WAN);
@@ -1030,6 +1032,7 @@
       // Heimnetz (LAN)
       let b = `<p class="muted small">Drei LAN-Anschlüsse${has('wlan') ? ' und das WLAN des Routers' : ''} gehören zum selben Heimnetz – wie ein eingebauter Switch. Hier hat der Router eine feste Adresse; Endgeräte tragen sie als Gateway ein.</p>
         ${connList(lanConns, 'Noch nichts angeschlossen.')}
+        ${(fl => fl.length ? `<p class="muted small">Frei: ${fl.map(x => esc(x.name)).join(', ')}</p>` : '<p class="muted small">Alle LAN-Anschlüsse sind belegt. Für mehr Geräte schließe einen Switch an.</p>')(NW.portList(S.net, d).filter(x => !x.wan && !x.link))}
         <div class="port-fields">${field('IP-Adresse des Routers', `ports.${i}.ip`, p.ip, 'portip', { disabled: dis })}${field('Subnetzmaske', `ports.${i}.mask`, p.mask, 'mask', { disabled: dis })}</div>`;
       if (has('wlan')) b += `<label class="toggle"><input type="checkbox" data-path="wlan" ${d.wlan ? 'checked' : ''} ${dis ? 'disabled' : ''}> WLAN (eingebauter Access Point)</label>`;
       const dh = NW.dhcpOf(p);
@@ -1119,6 +1122,13 @@
 
     if (t.bus) h += '<p class="muted small">Das Bus-Kabel braucht keine IP-Adresse. Schließe alle Geräte mit einem Kabel daran an.</p>';
     else if (t.l2) h += `<p class="muted small">Ein ${esc(t.label)} braucht keine IP-Adresse – er leitet die Pakete nur weiter.</p>`;
+    if (d.type === 'switch') {
+      // Anschlüsse des Switches mit Belegung
+      const ports = NW.portList(S.net, d);
+      const free = ports.filter(p => !p.link).length;
+      h += sec('ports', 'Anschlüsse (Ports)', `<p class="muted small">${ports.length} Anschlüsse, davon ${free} frei. Alle Anschlüsse gehören zum selben Netz – es gibt keinen besonderen Internet-Anschluss wie beim Router.</p>
+        <ul class="conn router-conn">${ports.map(p => `<li><span class="port-name">${esc(p.name)}</span> ${p.other ? esc(p.other.name) : '<span class="muted">frei</span>'}</li>`).join('')}</ul>`);
+    }
     if (t.btOnly) h += '<p class="muted small">Kopfhörer brauchen keine IP-Adresse. Sie werden per Bluetooth mit einem Gerät in der Nähe gekoppelt (Werkzeug „Bluetooth“).</p>';
 
     if (!ro && has('ausfall')) {
