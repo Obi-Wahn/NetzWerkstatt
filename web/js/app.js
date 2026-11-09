@@ -777,7 +777,12 @@
     const el = insp.querySelector(`[data-sec$=":${key}"]`);
     if (!el) return;
     el.open = true;
-    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (wide.matches) {
+      // Rechte Spalte: Abschnitt direkt unter die oben stehende Aufgabe rollen
+      const side = document.querySelector('.side');
+      const top = el.getBoundingClientRect().top - $('task-card').getBoundingClientRect().bottom - 8;
+      side.scrollBy({ top, behavior: 'smooth' });
+    } else el.scrollIntoView({ behavior: 'smooth', block: 'start' });
     const inp = el.querySelector('input:not([type="checkbox"]):not([disabled])');
     if (inp) setTimeout(() => inp.focus({ preventScroll: true }), 350);
     el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
@@ -819,6 +824,13 @@
     });
   }
   wide.addEventListener('change', () => { lastSel = null; renderInspector(); });
+  // Aufgabentext ist bei gewähltem Gerät auf zwei Zeilen gekürzt – antippen zeigt ihn ganz
+  const toggleIntro = () => {
+    const full = $('task-intro').classList.toggle('full');
+    $('task-more').textContent = full ? 'Aufgabentext kürzen' : 'Ganzen Aufgabentext lesen';
+  };
+  $('task-intro').addEventListener('click', () => { if (document.querySelector('.side.has-sel')) toggleIntro(); });
+  $('task-more').addEventListener('click', toggleIntro);
 
   function renderInspector() {
     renderInspectorBody();
