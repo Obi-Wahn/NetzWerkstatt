@@ -4,6 +4,24 @@
 
 Die NetzWerkstatt ist für den Informatikunterricht der Sekundarstufe I gedacht. Sie ist bewusst einfach gehalten: Bauen und Testen passieren auf derselben Fläche, es gibt keine verschachtelten Fenster, und Fehler werden in verständlicher Sprache direkt am Paket erklärt.
 
+![Aufgabe „Eine Webseite aufrufen“: Der PC ist über den Heimrouter mit dem Internetanbieter verbunden, ein HTTP-Request ist auf dem Weg zum Webserver. Unten stehen die Pakete mit Protokoll und Port, rechts die Aufgabe mit abgehakten Zielen und die Einstellungen des PCs.](docs/bilder/webseite-aufrufen.png)
+
+*Bauen und Testen auf einer Fläche: Links die Geräteleiste, in der Mitte das Netz mit den laufenden Datenpaketen, darunter das Protokoll (hier DNS-Anfrage, DNS-Antwort und HTTP-Request mit NAT), rechts die Aufgabe und die Einstellungen des angetippten Geräts.*
+
+## So sieht es aus
+
+| Aufgaben auswählen | Vorführung am Beamer |
+| --- | --- |
+| ![Aufgabenauswahl einer Schülerin: Aufgaben nach Themen geordnet, mit Stand „abgegeben“, „angefangen“ oder „neu“](docs/bilder/aufgabenauswahl.png) | ![Vorführung „Was passiert beim Aufruf einer Webseite?“ in Schritt 4: Die HTTP-Response verlässt den Webserver, rechts steht die Erklärung mit Zurück und Weiter](docs/bilder/vorfuehrung.png) |
+| Die Schülerinnen und Schüler sehen nur die freigeschalteten Aufgaben, nach Themen geordnet und mit ihrem eigenen Stand. | Fertige Netze, in denen Schritt für Schritt erklärt wird, was passiert. Mit „Weiter“ und „Zurück“ bestimmt man das Tempo. |
+
+| Lehrkraft-Ansicht | Zugang am Beamer |
+| --- | --- |
+| ![Lehrkraft-Ansicht: links alle Aufgaben mit Häkchen zum Freischalten, rechts die Liste der Klasse mit Status, erreichten Zielen und Knöpfen zum Zeigen und Zurückgeben](docs/bilder/lehrkraft-ansicht.png) | ![Zugang am Beamer: Adresse, Raumcode und QR-Code groß, darunter die freigeschalteten Aufgaben](docs/bilder/zugang-am-beamer.png) |
+| Links werden Aufgaben freigeschaltet, rechts erscheint live, wer woran arbeitet und wie viele Ziele schon erreicht sind. | Adresse, Raumcode und QR-Code zum Anmelden, groß genug für die ganze Klasse. |
+
+*Die Bilder zeigen Beispieldaten: Namen, Raumcode und Adressen sind ausgedacht.*
+
 ## Was kann der Prototyp?
 
 - **Baukasten:** Die Leiste links ist nach Kategorien sortiert, die sich einklappen lassen: Endgeräte (PC, Laptop, Tablet, Smartphone, Kopfhörer), aktive Komponenten (Switch, Access Point, Router), Verbindungen als passive Komponenten (Netzwerkkabel, Glasfaser, WLAN, Bluetooth, Bus-Kabel), Server (leer oder als Web-, DNS-, Mail-, Video-, Telefonie- oder Spiele-Server) und Internet (Internetanbieter, Rechenzentrum). In Aufgaben erscheint nur, was gebraucht wird. Funktioniert mit Maus und Finger (Windows-PCs und iPads).
@@ -111,12 +129,6 @@ Aufbau:
 | `web/js/teacher.js` | Lehrkraft-Ansicht |
 
 Neue Aufgaben werden in `web/js/tasks.js` ergänzt. Der Test prüft automatisch, dass jede Musterlösung alle Teilziele erfüllt.
-
-## Geplant
-
-- Bus- und Ringtopologie, Peer-to-Peer im Vergleich zu Client-Server
-- PAN, LAN, MAN und WAN
-- IPv6-Adressen, NAT
 
 ## Lizenz
 
