@@ -130,12 +130,6 @@ Aufbau:
 
 Neue Aufgaben werden in `web/js/tasks.js` ergänzt. Der Test prüft automatisch, dass jede Musterlösung alle Teilziele erfüllt.
 
-## Geplant
-
-- Bus- und Ringtopologie, Peer-to-Peer im Vergleich zu Client-Server
-- PAN, LAN, MAN und WAN
-- IPv6-Adressen, NAT
-
 ## Lizenz
 
 MIT – siehe [LICENSE](LICENSE).
