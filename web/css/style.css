@@ -64,6 +64,8 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); }
+/* Tablet: Doppeltippen vergrößert nicht die ganze Seite (Zwei-Finger-Zoom bleibt möglich) */
+html { touch-action: manipulation; }
 body { font-size: 16px; line-height: 1.45; -webkit-text-size-adjust: 100%; }
 [hidden] { display: none !important; }
 h1, h2, h3, h4 { margin: 0 0 .5em; line-height: 1.2; }
@@ -80,17 +82,18 @@ p { margin: 0 0 .7em; }
   font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
   padding: 9px 16px; border-radius: 10px; cursor: pointer; min-height: 42px; touch-action: manipulation;
 }
-.btn:hover { border-color: var(--line-strong); }
+/* Hover-Effekte nur mit Maus: Auf dem iPad bliebe ein angetippter Knopf sonst hervorgehoben und sähe aktiv aus */
+@media (hover: hover) { .btn:hover { border-color: var(--line-strong); } }
 a.btn { text-decoration: none; display: inline-flex; align-items: center; }
 .btn:disabled { opacity: .55; cursor: default; }
 .btn.primary { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); font-weight: 600; }
-.btn.primary:hover { filter: brightness(1.08); }
+@media (hover: hover) { .btn.primary:hover { filter: brightness(1.08); } }
 .btn.ghost { background: transparent; border-color: transparent; }
-.btn.ghost:hover { background: var(--hover); }
+@media (hover: hover) { .btn.ghost:hover { background: var(--hover); } }
 .btn.danger { color: var(--bad); border-color: var(--bad-line); background: var(--panel); margin-top: 8px; }
 .btn.small { padding: 4px 10px; min-height: 32px; font-size: .9em; }
 .btn.danger-fill { background: var(--bad); color: var(--on-color); border-color: var(--bad); font-weight: 600; }
-.btn.danger-fill:hover { filter: brightness(1.08); }
+@media (hover: hover) { .btn.danger-fill:hover { filter: brightness(1.08); } }
 /* Aktionsknöpfe, die etwas losschicken (Ping, Öffnen, Datei senden …): immer hervorgehoben und mit Symbol */
 .btn.act { display: inline-flex; align-items: center; justify-content: center; gap: 7px; font-weight: 600; }
 .btn.act .act-ico { flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
@@ -138,7 +141,7 @@ input:disabled { background: var(--chip-bg); color: var(--muted); }
   display: flex; gap: 12px; text-align: left; font: inherit; color: inherit; background: var(--panel);
   border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; cursor: pointer; box-shadow: var(--shadow);
 }
-.task-tile:hover { border-color: var(--brand); }
+@media (hover: hover) { .task-tile:hover { border-color: var(--brand); } }
 .task-tile h4 { font-size: 1em; margin: 0 0 .25em; }
 .task-tile p { color: var(--muted); font-size: .88em; margin: 0 0 6px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .task-tile.done .tile-num { background: var(--ok-soft); color: var(--ok); }
@@ -160,7 +163,7 @@ input:disabled { background: var(--chip-bg); color: var(--muted); }
   width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 4px; text-align: left;
   background: none; border: 0; border-radius: 6px; padding: 5px 4px; min-height: 30px; cursor: pointer; touch-action: manipulation;
 }
-.palette-title:hover { color: var(--ink); background: var(--panel-2); }
+@media (hover: hover) { .palette-title:hover { color: var(--ink); background: var(--panel-2); } }
 .palette-title .chev { flex: none; width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; transition: transform .15s; }
 .pal-group.zu .chev { transform: rotate(-90deg); }
 .pal-group.zu .pal-items { display: none; }
@@ -169,7 +172,7 @@ input:disabled { background: var(--chip-bg); color: var(--muted); }
   font: inherit; font-size: .7em; line-height: 1.15; display: flex; flex-direction: column; align-items: center; gap: 2px; text-align: center; hyphens: manual; overflow-wrap: anywhere;
   background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 6px 2px; min-height: 58px; cursor: pointer; color: var(--ink); touch-action: manipulation;
 }
-.pal-btn:hover { border-color: var(--brand); background: var(--brand-soft); }
+@media (hover: hover) { .pal-btn:hover { border-color: var(--brand); background: var(--brand-soft); } }
 .pal-btn .icon { stroke: var(--ink); }
 .pal-btn .ti { width: 30px; height: 30px; padding: 3px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 /* Verbindungswerkzeuge: gestrichelter Rand, gewähltes Werkzeug farbig */
@@ -322,7 +325,7 @@ details.sec > summary h4 { margin: 0; flex: 1; font-size: .95em; }
 details.sec > summary::after { content: ""; width: 8px; height: 8px; border: solid var(--muted); border-width: 0 2px 2px 0; transform: rotate(45deg); margin: 0 6px 4px 0; transition: transform .15s; }
 details.sec[open] > summary::after { transform: rotate(-135deg); margin-bottom: -2px; }
 details.sec[open] > summary { margin-bottom: 4px; }
-details.sec > summary:hover h4 { color: var(--brand); }
+@media (hover: hover) { details.sec > summary:hover h4 { color: var(--brand); } }
 .field { display: grid; gap: 4px; font-size: .88em; font-weight: 600; color: var(--muted); margin-bottom: 9px; }
 .field input { font-weight: 400; color: var(--ink); font-family: ui-monospace, Consolas, monospace; }
 .fhint { font-weight: 500; font-size: .92em; min-height: 0; }
@@ -333,7 +336,7 @@ details.sec > summary:hover h4 { color: var(--brand); }
 .inline input { flex: 1; min-width: 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: -3px 0 10px; }
 .chip { font: inherit; font-size: .8em; padding: 4px 10px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel-2); cursor: pointer; color: var(--ink); min-height: 30px; }
-.chip:hover { border-color: var(--brand); }
+@media (hover: hover) { .chip:hover { border-color: var(--brand); } }
 .toggle { display: flex; gap: 8px; align-items: center; font-weight: 600; margin: 6px 0 8px; }
 .toggle input { width: 22px; height: 22px; min-height: 0; }
 .dns-table { display: grid; gap: 5px; margin-bottom: 8px; }
@@ -375,7 +378,7 @@ select { font: inherit; width: 100%; padding: 8px; border: 1px solid var(--line)
 
 /* Dialoge */
 .modal { position: fixed; inset: 0; background: rgba(15, 22, 35, .5); display: grid; place-items: center; padding: 16px; z-index: 50; }
-.modal-box { position: relative; background: var(--panel); border-radius: 16px; padding: 22px; width: min(520px, 100%); max-height: calc(100vh - 32px); overflow: auto; box-shadow: 0 20px 60px rgba(0, 0, 0, .25); }
+.modal-box { position: relative; background: var(--panel); border-radius: 16px; padding: 22px; width: min(520px, 100%); max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overflow: auto; box-shadow: 0 20px 60px rgba(0, 0, 0, .25); }
 .modal-box.wide { width: min(1100px, 100%); }
 .modal-box.full { width: 100%; height: 100%; max-height: none; display: flex; flex-direction: column; }
 .modal-box.full .view-wrap { flex: 1; aspect-ratio: auto; }
@@ -419,7 +422,7 @@ select { font: inherit; width: 100%; padding: 8px; border: 1px solid var(--line)
 .jump-label { font-size: .82em; font-weight: 700; color: var(--brand); margin-right: 2px; }
 .jump-btn { font: inherit; font-size: .88em; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; min-height: 36px; padding: 4px 11px; border-radius: 99px;
   border: 1px solid var(--brand); background: var(--panel); color: var(--brand); cursor: pointer; touch-action: manipulation; }
-.jump-btn:hover { background: var(--brand); color: var(--on-color); }
+@media (hover: hover) { .jump-btn:hover { background: var(--brand); color: var(--on-color); } }
 .jump-btn .act-ico { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 details.sec { scroll-margin-top: 8px; }
 details.sec.flash > summary h4 { animation: secflash 1.2s ease-out; }
@@ -497,7 +500,7 @@ table.cmp col.k { width: 26%; }
 .svc-act { font: inherit; font-size: .88em; font-weight: 600; display: flex; align-items: center; gap: 8px; text-align: left;
   min-height: 42px; padding: 6px 10px; border-radius: 10px; cursor: pointer;
   background: var(--panel); color: var(--brand); border: 2px solid var(--brand); }
-.svc-act:hover { background: var(--panel-2); }
+@media (hover: hover) { .svc-act:hover { background: var(--panel-2); } }
 .svc-act span { min-width: 0; hyphens: auto; -webkit-hyphens: auto; overflow-wrap: anywhere; }
 .svc-act:active { transform: translateY(1px); }
 .svc-act .svc-ico { flex: none; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
@@ -658,7 +661,7 @@ table.cmp col.k { width: 26%; }
 .det-side { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
 .det-tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; border-bottom: 1px solid var(--line); }
 .det-tab { font: inherit; font-size: .9em; font-weight: 600; padding: 6px 10px; min-height: 0; border: 0; border-radius: 8px; background: none; color: var(--muted); cursor: pointer; }
-.det-tab:hover { background: var(--hover-soft); }
+@media (hover: hover) { .det-tab:hover { background: var(--hover-soft); } }
 .det-tab.active { background: var(--brand); color: var(--on-color); }
 .det-pane { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px; }
 .det-pane h4 { margin: 4px 0 6px; }
@@ -689,8 +692,14 @@ table.cmp col.k { width: 26%; }
 .zoom-ctl { position: absolute; top: 8px; right: 8px; display: flex; gap: 6px; align-items: center; z-index: 2; }
 .zoom-btn { font: inherit; font-size: 1.35em; font-weight: 700; line-height: 1; min-width: 44px; min-height: 44px; padding: 0 10px; border-radius: 10px;
   border: 1px solid var(--line); background: var(--overlay-bg); color: var(--ink); cursor: pointer; touch-action: manipulation; }
-.zoom-btn:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
+@media (hover: hover) { .zoom-btn:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); } }
 .zoom-btn:disabled { opacity: .4; cursor: default; }
 .zoom-btn.zoom-fit { font-size: .9em; font-weight: 600; }
 .zoom-ctl.zoomed .zoom-fit { border-color: var(--brand); color: var(--brand); }
 .is-readonly .zoom-ctl, .zoom-ctl { pointer-events: auto; }
+
+/* iPad/iPhone (Safari und Chrome nutzen dort beide WebKit): Eingabefelder mit kleinerer Schrift als 16 px
+   vergrößern beim Antippen die ganze Seite, die danach vergrößert bleibt. Nur dort die Schrift anheben. */
+@supports (-webkit-touch-callout: none) {
+  input:not([type="checkbox"]):not([type="radio"]), select, textarea { font-size: 16px; }
+}
