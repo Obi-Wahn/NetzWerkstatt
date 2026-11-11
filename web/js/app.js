@@ -463,6 +463,7 @@
     $('btn-reset').disabled = readOnly();
     $('btn-submit').textContent = readOnly() ? 'Abgegeben ✓' : 'Abgeben';
     document.body.classList.toggle('is-readonly', readOnly());
+    updatePalUp();
   }
 
   // ---------------------------------------------------------------- Schwierigkeitsgrad
@@ -989,7 +990,17 @@
       if (Math.abs(y) > 4) { window.scrollBy({ top: y, behavior: 'smooth' }); sheetScroll = Math.max(0, Math.min(window.scrollY + y, document.documentElement.scrollHeight - window.innerHeight)); }
     });
   }
-  wide.addEventListener('change', () => { lastSel = null; renderInspector(); });
+  wide.addEventListener('change', () => { lastSel = null; renderInspector(); updatePalUp(); });
+  // Tablet hochkant: Ist die Geräteleiste nach oben weggerollt, zeigt ein Knopf oben, wo sie ist
+  const palUp = $('btn-palette-up');
+  let palSeen = true;
+  function updatePalUp() {
+    palUp.hidden = palSeen || wide.matches || $('screen-editor').hidden || readOnly();
+  }
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver(es => { palSeen = es[es.length - 1].isIntersecting; updatePalUp(); }).observe(palette);
+  }
+  palUp.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }));
   // Aufgabentext ist bei gewähltem Gerät auf zwei Zeilen gekürzt – antippen zeigt ihn ganz
   const toggleIntro = () => {
     const full = $('task-intro').classList.toggle('full');
