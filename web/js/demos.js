@@ -126,7 +126,7 @@
         { title: 'Ausgangslage', focus: ['pc', 'pc2'],
           text: 'PC 1 und PC 2 hängen im selben Heimnetz 192.168.178.x. Bei PC 1 fehlt aber das Gateway: Das Feld ist leer. Das Gateway ist die Adresse des Routers, das „Tor“ in andere Netze.' },
         { title: 'Im eigenen Netz geht es auch ohne Gateway', focus: ['pc', 'pc2'],
-          text: 'PC 1 vergleicht die Zieladresse 192.168.178.21 mit seiner eigenen Adresse und Subnetzmaske. Ergebnis: Das Ziel ist im selben Netz. Also schickt er das Paket direkt dorthin, ein Gateway braucht er dafür nicht.',
+          text: 'PC 1 vergleicht die Zieladresse 192.168.178.21 mit seiner eigenen Adresse. Die ersten drei Zahlen sind gleich, also ist das Ziel im selben Netz. Also schickt er das Paket direkt dorthin, ein Gateway braucht er dafür nicht.',
           run: net => NW.ping(net, 'pc', '192.168.178.21'), expect: true },
         { title: 'In ein fremdes Netz geht es nicht', focus: ['pc', 'web'],
           text: 'Der Webserver hat die Adresse 203.0.113.80. Sie liegt in einem anderen Netz. PC 1 weiß nicht, wohin er das Paket schicken soll, weil er kein Gateway kennt.',

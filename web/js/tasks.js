@@ -19,7 +19,7 @@
     const hosts = net.devices.filter(d => T[d.type].host);
     const neighbors = id => NW.linksOf(net, id).map(l => ({ dev: NW.dev(net, l.a === id ? l.b : l.a), kind: l.kind }));
     const linked = (a, b, kind) => net.links.some(l => ((l.a === a.id && l.b === b.id) || (l.a === b.id && l.b === a.id)) && (!kind || l.kind === kind));
-    const inNet = (d, netAddr, prefix) => { const ip = NW.parseIP(d.ip); return ip !== null && NW.parseMask(d.mask) === prefix && NW.sameNet(ip, NW.parseIP(netAddr), prefix) && !NW.ipProblem(d.ip, d.mask); };
+    const inNet = (d, netAddr, prefix) => { const ip = NW.parseIP(d.ip); return ip !== null && NW.prefixFor(ip) === prefix && NW.sameNet(ip, NW.parseIP(netAddr), prefix) && !NW.ipProblem(d.ip); };
     const distinctIPs = list => new Set(list.map(d => NW.parseIP(d.ip))).size === list.length;
     // Gab es einen erfolgreichen Ping (der auch jetzt noch klappen würde)?
     const pingOk = (srcFilter, dstFilter) => (net.events || []).some(e => {
@@ -124,7 +124,7 @@
       level: 1,
       manual: true,
       intro: 'Das kleinste Netzwerk besteht aus zwei Computern, die direkt mit einem Kabel verbunden sind. Damit sie sich gegenseitig finden, braucht jeder eine eigene IP-Adresse im selben Netz.',
-      tip: 'Ohne Router gibt es keinen DHCP-Server – hier trägst du die Adressen von Hand ein. Mit 255.255.255.0 als Subnetzmaske gehören alle Adressen, die mit 192.168.1. beginnen, zum selben Netz. Nur die letzte Zahl muss unterschiedlich sein (1 bis 254).',
+      tip: 'Ohne Router gibt es keinen DHCP-Server – hier trägst du die Adressen von Hand ein. Alle Adressen, die mit 192.168.1. beginnen, gehören zum selben Netz. Nur die letzte Zahl muss unterschiedlich sein (1 bis 254).',
       goals: [
         { text: 'Setze zwei PCs auf die Arbeitsfläche.', check: c => c.byType('pc').length >= 2 },
         { text: 'Verbinde die beiden PCs mit einem Kabel.', check: c => c.byType('pc').some(a => c.byType('pc').some(b => a !== b && c.linked(a, b, 'kabel'))) },
@@ -283,7 +283,7 @@
       level: 1,
       manual: true,
       intro: 'Früher wurden viele Netze als Bus gebaut: Ein langes Kabel führt durch den Raum, und alle Rechner werden daran angeschlossen. Baue ein Busnetz mit vier PCs und finde heraus, was bei einem Kabelbruch passiert.',
-      tip: 'Das Bus-Kabel findest du in der Geräteleiste. Verbinde jeden PC mit einem Kabel mit dem Bus-Kabel. Adressen: 192.168.20.1 bis 192.168.20.4, Subnetzmaske 255.255.255.0. Einen Kabelbruch simulierst du so: Wähle oben „Auswählen“, tippe das Bus-Kabel an und dann auf „Kabelbruch im Bus-Kabel simulieren“.',
+      tip: 'Das Bus-Kabel findest du in der Geräteleiste. Verbinde jeden PC mit einem Kabel mit dem Bus-Kabel. Adressen: 192.168.20.1 bis 192.168.20.4. Einen Kabelbruch simulierst du so: Wähle oben „Auswählen“, tippe das Bus-Kabel an und dann auf „Kabelbruch im Bus-Kabel simulieren“.',
       think: 'Beim Ping siehst du: Das Signal kommt bei allen PCs am Bus an. Was bedeutet das für den Datenschutz? Was passiert, wenn zwei PCs gleichzeitig senden? Und was, wenn nur ein einzelner PC ausfällt?',
       goals: [
         { text: 'Setze ein Bus-Kabel auf die Arbeitsfläche.', check: c => c.byType('bus').length >= 1 },
@@ -315,7 +315,7 @@
       level: 1,
       manual: true,
       intro: 'In einem Ringnetz ist jeder Rechner mit genau zwei Nachbarn verbunden – ganz ohne Switch. Die Daten werden immer in dieselbe Richtung von Station zu Station weitergereicht, bis sie beim Empfänger ankommen. Baue einen Ring aus vier PCs.',
-      tip: 'Verbinde PC 1 mit PC 2, PC 2 mit PC 3, PC 3 mit PC 4 und zum Schluss PC 4 wieder mit PC 1. Adressen: 192.168.30.1 bis 192.168.30.4, Subnetzmaske 255.255.255.0. Einen Ausfall simulierst du so: Wähle oben „Auswählen“ und tippe einen PC oder ein Kabel an. In den Einstellungen findest du „Ausfall testen“.',
+      tip: 'Verbinde PC 1 mit PC 2, PC 2 mit PC 3, PC 3 mit PC 4 und zum Schluss PC 4 wieder mit PC 1. Adressen: 192.168.30.1 bis 192.168.30.4. Einen Ausfall simulierst du so: Wähle oben „Auswählen“ und tippe einen PC oder ein Kabel an. In den Einstellungen findest du „Ausfall testen“.',
       think: 'Schau dir beim Ping genau an, welchen Weg die Antwort nimmt. Warum fällt das ganze Netz aus, wenn nur ein PC ausgeschaltet wird? Vergleiche mit dem Sternnetz.',
       goals: [
         { text: 'Verbinde die vier PCs per Kabel zu einem geschlossenen Ring.', check: c => { const pcs = c.byType('pc'); return pcs.length >= 4 && c.topos('ring').some(t => t.closed && pcs.every(p => t.members.includes(p.id))); } },
@@ -911,7 +911,7 @@
   // ---------------------------------------------------------------- Welche Funktionen sieht man?
   // Damit die Oberfläche übersichtlich bleibt, blendet jede Aufgabe nur die Werkzeuge,
   // Geräte und Einstellungen ein, die sie braucht. Grundfunktionen (IPv4-Adresse,
-  // Subnetzmaske, Kabel, Ping) sind immer da.
+  // Kabel, Ping) sind immer da. Die Subnetzmaske ist fest 255.255.255.0.
   const FEATURES = [
     { id: 'gateway', label: 'Router und Gateway', text: 'Feld „Gateway“ bei den Endgeräten' },
     { id: 'wlan', label: 'WLAN', text: 'Werkzeug „WLAN“ und Access Point' },

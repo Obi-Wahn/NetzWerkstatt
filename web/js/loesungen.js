@@ -13,19 +13,19 @@
       steps: [
         'Zwei PCs aus der Geräteleiste auf die Arbeitsfläche setzen.',
         'Mit dem Werkzeug „Kabel“ erst den einen, dann den anderen PC antippen.',
-        'PC 1 antippen: IP-Adresse 192.168.1.1, Subnetzmaske 255.255.255.0.',
-        'PC 2 antippen: IP-Adresse 192.168.1.2, Subnetzmaske 255.255.255.0.',
+        'PC 1 antippen: IP-Adresse 192.168.1.1.',
+        'PC 2 antippen: IP-Adresse 192.168.1.2.',
         'Bei PC 1 einen Ping an 192.168.1.2 senden.',
       ],
       answers: [
-        'Beide Adressen beginnen mit 192.168.1. Mit der Maske 255.255.255.0 liegen sie damit im selben Netz und finden sich direkt. Nur die letzte Zahl unterscheidet die Geräte.',
+        'Beide Adressen beginnen mit 192.168.1. Damit liegen sie im selben Netz und finden sich direkt. Nur die letzte Zahl unterscheidet die Geräte.',
       ],
     },
     stern: {
       steps: [
         'Einen Switch in die Mitte setzen.',
         'Jeden der vier PCs mit einem eigenen Kabel mit dem Switch verbinden.',
-        'Adressen von Hand eintragen: 192.168.10.1 bis 192.168.10.4, Maske 255.255.255.0.',
+        'Adressen von Hand eintragen: 192.168.10.1 bis 192.168.10.4.',
         'Von einem PC aus einen anderen anpingen, z. B. von PC 1 an 192.168.10.4.',
       ],
       answers: [
@@ -37,7 +37,7 @@
       steps: [
         'Tablet und Smartphone auf die Arbeitsfläche setzen und mit dem Werkzeug „WLAN“ mit dem Router verbinden.',
         'Einen PC mit einem Kabel an einen LAN-Anschluss des Routers anschließen.',
-        'Bei allen drei Geräten eine eigene Adresse im Netz 192.168.178.0/24 eintragen, z. B. PC 192.168.178.20, Tablet .30, Smartphone .31, Maske 255.255.255.0.',
+        'Bei allen drei Geräten eine eigene Adresse im Netz 192.168.178.x eintragen, z. B. PC 192.168.178.20, Tablet .30, Smartphone .31.',
         'Bei allen drei Geräten den Router 192.168.178.1 als Gateway eintragen.',
         'Beim Smartphone einen Ping an die Adresse des PCs senden.',
       ],
@@ -49,7 +49,7 @@
     webseite: {
       steps: [
         'Einen PC mit einem Kabel an einen LAN-Anschluss des Heimrouters anschließen.',
-        'PC antippen: IP-Adresse z. B. 192.168.178.20, Maske 255.255.255.0.',
+        'PC antippen: IP-Adresse z. B. 192.168.178.20.',
         'Gateway: 192.168.178.1 (der Router).',
         'DNS-Server: 203.0.113.53.',
         'Im Browser des PCs http://www.netzwerkstatt.de aufrufen.',
@@ -63,7 +63,7 @@
       steps: [
         'Den Router antippen und im Heimnetz (LAN) den DHCP-Server einschalten.',
         'Tablet und Smartphone mit dem Werkzeug „WLAN“ mit dem Access Point (oder dem Router) verbinden.',
-        'Bei Tablet und Smartphone die Netzwerk-Einstellung auf „Automatisch (DHCP)“ stellen. Sie bekommen Adressen aus 192.168.0.0/24 und den Router 192.168.0.1 als Gateway.',
+        'Bei Tablet und Smartphone die Netzwerk-Einstellung auf „Automatisch (DHCP)“ stellen. Sie bekommen Adressen aus 192.168.0.x und den Router 192.168.0.1 als Gateway.',
         'Beim Smartphone einen Ping an die Adresse des Tablets senden.',
       ],
       answers: [
@@ -88,7 +88,7 @@
       steps: [
         'Ein Bus-Kabel aus der Geräteleiste in die Mitte setzen.',
         'Jeden der vier PCs mit einem Kabel an das Bus-Kabel anschließen.',
-        'Adressen 192.168.20.1 bis 192.168.20.4 mit Maske 255.255.255.0 eintragen.',
+        'Adressen 192.168.20.1 bis 192.168.20.4 eintragen.',
         'Von einem PC aus einen anderen anpingen.',
         'Das Bus-Kabel antippen, „Kabelbruch im Bus-Kabel simulieren“ wählen und erneut pingen. Der Ping scheitert.',
         'Das Bus-Kabel wieder reparieren.',
@@ -102,7 +102,7 @@
     ring: {
       steps: [
         'PC 1 mit PC 2, PC 2 mit PC 3, PC 3 mit PC 4 und PC 4 mit PC 1 verbinden.',
-        'Adressen 192.168.30.1 bis 192.168.30.4 mit Maske 255.255.255.0 eintragen.',
+        'Adressen 192.168.30.1 bis 192.168.30.4 eintragen.',
         'Von einem PC aus einen anderen anpingen, z. B. von PC 1 an 192.168.30.3.',
         'Einen PC ausschalten (oder einen Kabelbruch simulieren) und erneut pingen. Der Ping scheitert.',
         'Den PC wieder einschalten bzw. das Kabel reparieren.',
