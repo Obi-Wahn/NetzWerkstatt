@@ -357,7 +357,8 @@
     const types = NWEigene.GOAL_TYPES;
     const def = types[g.type];
     const fields = Object.entries(def.fields).map(([k, f]) => {
-      const v = g[k] !== undefined ? g[k] : f.def;
+      let v = g[k] !== undefined ? g[k] : f.def;
+      if (f.net) v = String(v).replace(/\.0\/24$/, '.x'); // Netz in Schülerschreibweise: 192.168.1.x
       if (f.options) return `<label class="gf">${esc(f.label)}<select data-f="${k}">${f.options.map(o => `<option value="${esc(o)}" ${o === v ? 'selected' : ''}>${esc(NWEigene.optionLabel(k, o))}</option>`).join('')}</select></label>`;
       return `<label class="gf">${esc(f.label)}<input data-f="${k}" value="${esc(v)}" ${f.num ? `type="number" min="${f.num[0]}" max="${f.num[1]}"` : 'type="text" autocomplete="off" spellcheck="false"'}></label>`;
     }).join('');

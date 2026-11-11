@@ -121,6 +121,16 @@ test('Subnetzmaske und Sonderadressen', () => {
   assert.strictEqual(NW.ipProblem('192.168.1.5', '255.255.255.0'), null);
 });
 
+test('Subnetzmaske ist fest 255.255.255.0 (nur Notadressen 169.254.x.x haben 255.255.0.0)', () => {
+  const d = { type: 'pc', ip: '10.1.2.1', mask: '255.255.0.0' }; // alter Spielstand mit anderer Maske
+  assert.strictEqual(NW.ifaceAddr(d, 0).prefix, 24, 'gespeicherte Maske zählt nicht');
+  d.mask = 'Unsinn';
+  assert.ok(NW.ifaceAddr(d, 0), 'auch eine kaputte gespeicherte Maske stört nicht');
+  assert.strictEqual(NW.maskFor(NW.parseIP('169.254.3.4')), '255.255.0.0');
+  assert.strictEqual(NW.maskFor(NW.parseIP('192.168.1.4')), '255.255.255.0');
+  assert.ok(NW.ipProblem('10.1.2.0'), 'Netzadresse auch ohne Maske erkannt');
+});
+
 // ---------------------------------------------------------------- DHCP
 function dhcpNet() {
   const net = NW.emptyNetwork();
@@ -193,8 +203,7 @@ test('Router-LAN bekommt beim Einschalten von DHCP eine passende Adresse', () =>
   assert.strictEqual(NW.suggestPortIP(net, r, 1).ip, '192.168.1.1', 'Netz des WAN-Anschlusses wird nicht doppelt benutzt');
   r.ports[0].ip = '';
   NW.dev(net, 'a').ip = '10.1.2.1';
-  NW.dev(net, 'a').mask = '255.255.0.0';
-  assert.deepStrictEqual(NW.suggestPortIP(net, r, 1), { ip: '10.1.0.1', mask: '255.255.0.0' }, 'passt sich vorhandenen Geräten an');
+  assert.deepStrictEqual(NW.suggestPortIP(net, r, 1), { ip: '10.1.2.2', mask: '255.255.255.0' }, 'passt sich vorhandenen Geräten an');
 });
 
 test('Neuer Router: Heimnetz 192.168.0.1 mit DHCP, WLAN und Modem an; zweiter Router anderes Netz', () => {
@@ -736,6 +745,11 @@ test('Eigene Aufgaben: ungültige Dateien werden abgelehnt', () => {
   assert.throws(() => E.parseFile(file([Object.assign({}, ok, { goals: [{ type: 'code', check: 'alert(1)' }] })])), /unbekannte Art/);
   assert.throws(() => E.parseFile(file([Object.assign({}, ok, { goals: [{ type: 'geraete', device: 'rakete', min: 2 }] })])), /ungültige Einstellung/);
   assert.throws(() => E.parseFile(file([Object.assign({}, ok, { goals: [{ type: 'ip-netz', device: 'pc', net: '300.1.1.0/24', gw: '' }] })])), /Netz bitte/);
+  // Netz darf als 192.168.5.x angegeben werden; die Maske ist immer 255.255.255.0
+  for (const n of ['192.168.5.x', '192.168.5.0', '192.168.5.0/24', '192.168.5.7/16']) {
+    const t = E.parseFile(file([Object.assign({}, ok, { goals: [{ type: 'ip-netz', device: 'pc', net: n, gw: '' }] })])).tasks[0];
+    assert.strictEqual(t.goals[0].net, '192.168.5.0/24', n);
+  }
   assert.throws(() => E.parseFile(file([Object.assign({}, ok, { start: { devices: [{ id: 'a', type: 'ufo' }], links: [] } })])), /unbekanntes Gerät/);
   assert.throws(() => E.parseFile(file([Object.assign({}, ok, { start: { devices: [{ id: 'a', type: 'pc' }], links: [{ id: 'l', a: 'a', b: 'x', kind: 'kabel' }] } })])), /gibt/);
   assert.throws(() => E.parseFile(JSON.stringify({ format: E.FORMAT, version: 99, tasks: [ok] })), /neueren/);

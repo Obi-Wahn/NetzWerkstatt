@@ -52,7 +52,7 @@
     if (t.bus && d.broken) list.push(['Zustand', '<span class="bad">Kabelbruch</span>']);
     if (t.host) {
       if (d.dhcp) list.push(['Adresse', 'automatisch (DHCP)']);
-      list.push(['IP-Adresse', show(d.ip)], ['Subnetzmaske', show(d.mask)]);
+      list.push(['IP-Adresse', show(d.ip)]);
       if (feats.has('gateway') || val(d.gw)) list.push(['Gateway', show(d.gw)]);
       if (feats.has('web') || val(d.dns)) list.push(['DNS-Server', show(d.dns)]);
       if (feats.has('v6')) {
@@ -66,7 +66,7 @@
       }
     } else if (t.router) {
       const lan = d.ports[1] || {}, wan = d.ports[0] || {};
-      list.push(['Heimnetz (LAN)', `${show(lan.ip)} / ${show(lan.mask)}`]);
+      list.push(['Heimnetz (LAN)', show(lan.ip)]);
       if (lan.dhcp) list.push(['DHCP-Server', lan.dhcp.on ? 'an' + (val(lan.dhcp.from) ? ` (${esc(lan.dhcp.from)} bis ${esc(lan.dhcp.to)})` : '') : 'aus']);
       list.push(['WLAN', d.wlan ? 'an' : 'aus']);
       if (feats.has('internet') || val(wan.ip)) {
@@ -75,7 +75,7 @@
         if (feats.has('web')) list.push(['DNS-Weiterleitung', d.dnsRelay ? 'an' : 'aus']);
       }
     } else if (t.isp) {
-      list.push(['Öffentliches Netz', `${show(d.ip)} / ${show(d.mask)}`]);
+      list.push(['Öffentliches Netz', show(d.ip)]);
       if (val(d.dns)) list.push(['DNS-Server', show(d.dns)]);
     } else if (!t.btOnly) {
       list.push(['', '<span class="muted">braucht keine IP-Adresse</span>']);

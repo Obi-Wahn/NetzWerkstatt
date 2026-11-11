@@ -71,7 +71,7 @@
     },
     'ip-netz': {
       label: 'IP-Adressen vergeben',
-      fields: { device: { label: 'Geräte', options: HOST_SEL, def: 'endgeraet' }, net: { label: 'Netz (z. B. 192.168.1.0/24)', net: true, def: '192.168.1.0/24' }, gw: { label: 'Gateway (leer = egal)', ip: true, def: '' } },
+      fields: { device: { label: 'Geräte', options: HOST_SEL, def: 'endgeraet' }, net: { label: 'Netz (z. B. 192.168.1.x)', net: true, def: '192.168.1.0/24' }, gw: { label: 'Gateway (leer = egal)', ip: true, def: '' } },
       text: g => `Gib jedem ${label(g.device)} eine eigene IP-Adresse im Netz ${netName(g.net)}${g.gw ? ` und trage ${g.gw} als Gateway ein` : ''}.`,
       check: g => c => {
         const [addr, prefix] = g.net.split('/');
@@ -244,9 +244,10 @@
         if (!Number.isInteger(n) || n < f.num[0] || n > f.num[1]) throw new Error(`${where}: „${f.label}“ muss zwischen ${f.num[0]} und ${f.num[1]} liegen.`);
         out[k] = n;
       } else if (f.net) {
-        const m = str(v, 40).match(/^(\d+\.\d+\.\d+\.\d+)\/(\d+)$/);
-        if (!m || NW.parseIP(m[1]) === null || +m[2] < 8 || +m[2] > 30) throw new Error(`${where}: Netz bitte so angeben: 192.168.1.0/24.`);
-        out[k] = NW.netStr(NW.parseIP(m[1]), +m[2]);
+        // Die Subnetzmaske ist im Spiel fest (/24). Erlaubt: 192.168.1.x, 192.168.1.0 oder 192.168.1.0/24
+        const s = str(v, 40).replace(/\.x$/i, '.0').replace(/\/\d+$/, '');
+        if (!/^\d+\.\d+\.\d+\.\d+$/.test(s) || NW.parseIP(s) === null) throw new Error(`${where}: Netz bitte so angeben: 192.168.1.x.`);
+        out[k] = NW.netStr(NW.parseIP(s), 24);
       } else if (f.ip) {
         const s = str(v, 40);
         if (s && NW.parseIP(s) === null) throw new Error(`${where}: „${s}“ ist keine IPv4-Adresse.`);

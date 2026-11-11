@@ -686,7 +686,7 @@
   function netHelpHTML(d, withGw) {
     return `<details class="desc"><summary>Was bedeuten Netz, Subnetzmaske und Gateway?</summary>
       <p><b>Netz:</b> Geräte im selben Netz haben gleiche Anfangszahlen in der IP-Adresse, z. B. 192.168.1.x. Das <b>x</b> steht für die Zahl, die bei jedem Gerät anders ist (meist 1 bis 254). Geräte im selben Netz erreichen sich direkt über Kabel, Switch oder WLAN.</p>
-      <p><b>Subnetzmaske:</b> Sie sagt, welcher Teil der Adresse das Netz ist. Bei 255.255.255.0 sind die ersten drei Zahlen das Netz, die letzte Zahl ist das Gerät. Manchmal schreibt man dafür kurz „/24“.</p>
+      <p><b>Subnetzmaske:</b> In echten Netzen legt sie fest, welche Zahlen das Netz sind, meist 255.255.255.0 (die ersten drei). Hier in der NetzWerkstatt ist sie fest eingestellt, du musst sie nicht eintragen.</p>
       ${withGw ? `<p><b>Gateway:</b> das „Tor nach draußen“. Liegt das Ziel in einem anderen Netz, z. B. im Internet, schickt ${esc(d.name)} das Paket an das Gateway. Das ist der Router, genauer: seine Adresse in diesem Netz. Der Router leitet das Paket dann weiter. Für Geräte im eigenen Netz braucht man kein Gateway.</p>` : ''}
     </details>`;
   }
@@ -1103,7 +1103,6 @@ ${faultFinderHTML(link, ro)}
       const fdis = dis || auto;
       b += field('IP-Adresse', 'ip', d.ip, 'ip', { disabled: fdis, placeholder: auto ? 'kommt per DHCP' : 'z. B. 192.168.1.10' });
       if (sg.ip) b += chip('suggest-ip', `Vorschlag: ${sg.ip} übernehmen`);
-      b += field('Subnetzmaske', 'mask', d.mask, 'mask', { disabled: fdis, placeholder: '255.255.255.0' });
       if (has('gateway') || (d.gw || '').trim()) {
         b += field('Gateway (Router)', 'gw', d.gw, 'gw', { disabled: fdis, placeholder: auto ? 'kommt per DHCP' : 'nur nötig für andere Netze' });
         if (sg.gw) b += chip('suggest-gw', `Router ${sg.gw} als Gateway übernehmen`);
@@ -1232,7 +1231,7 @@ ${faultFinderHTML(link, ro)}
       let b = `<p class="muted small">Drei LAN-Anschlüsse${has('wlan') ? ' und das WLAN des Routers' : ''} gehören zum selben Heimnetz – wie ein eingebauter Switch. Hier hat der Router eine feste Adresse; Endgeräte tragen sie als Gateway ein.</p>
         ${connList(lanConns, 'Noch nichts angeschlossen.')}
         ${(fl => fl.length ? `<p class="muted small">Frei: ${fl.map(x => esc(x.name)).join(', ')}</p>` : '<p class="muted small">Alle LAN-Anschlüsse sind belegt. Für mehr Geräte schließe einen Switch an.</p>')(NW.portList(S.net, d).filter(x => !x.wan && !x.link))}
-        <div class="port-fields">${field('IP-Adresse des Routers', `ports.${i}.ip`, p.ip, 'portip', { disabled: dis })}${field('Subnetzmaske', `ports.${i}.mask`, p.mask, 'mask', { disabled: dis })}</div>`;
+        <div class="port-fields">${field('IP-Adresse des Routers', `ports.${i}.ip`, p.ip, 'portip', { disabled: dis })}</div>`;
       if (has('wlan')) b += `<label class="toggle"><input type="checkbox" data-path="wlan" ${d.wlan ? 'checked' : ''} ${dis ? 'disabled' : ''}> WLAN (eingebauter Access Point)</label>`;
       const dh = NW.dhcpOf(p);
       if (has('dhcp')) b += `<label class="toggle"><input type="checkbox" data-path="ports.${i}.dhcp.on" ${dh.on ? 'checked' : ''} ${dis ? 'disabled' : ''}> DHCP-Server (verteilt IP-Adressen)</label>`;
@@ -1240,7 +1239,7 @@ ${faultFinderHTML(link, ro)}
         const rg = NW.dhcpRange(d, i);
         if (!rg) b += `<p class="fhint warn">Der Router braucht im Heimnetz selbst eine feste IP-Adresse, damit er Adressen verteilen kann.</p>${dis ? '' : `<div class="chips"><button class="chip suggest" data-act="port-auto" data-i="${i}">💡 Adresse für den Router eintragen</button></div>`}`;
         else {
-          b += `<p class="dhcp-info">Der Router selbst hat die feste Adresse <b>${esc(p.ip.trim())}</b>. Geräte auf „Automatisch (DHCP)" bekommen von ihm eine freie Adresse von ${esc(NW.ipStr(rg.from))} bis ${esc(NW.ipStr(rg.to))}, die Subnetzmaske und ${esc(p.ip.trim())} als Gateway.</p>`;
+          b += `<p class="dhcp-info">Der Router selbst hat die feste Adresse <b>${esc(p.ip.trim())}</b>. Geräte auf „Automatisch (DHCP)" bekommen von ihm eine freie Adresse von ${esc(NW.ipStr(rg.from))} bis ${esc(NW.ipStr(rg.to))} und ${esc(p.ip.trim())} als Gateway.</p>`;
           b += `<details class="desc"><summary>DHCP genauer einstellen</summary>
             <div class="port-fields">${field('Adressen von', `ports.${i}.dhcp.from`, dh.from, 'range', { disabled: dis, placeholder: NW.ipStr(rg.from) })}${field('bis', `ports.${i}.dhcp.to`, dh.to, 'range', { disabled: dis, placeholder: NW.ipStr(rg.to) })}</div>
             ${has('web') ? '' : field('DNS-Server für die Geräte', `ports.${i}.dhcp.dns`, dh.dns, 'dns', { disabled: dis, placeholder: 'leer = kein DNS-Server' })}</details>`;
@@ -1268,7 +1267,7 @@ ${faultFinderHTML(link, ro)}
           ? 'Das Modem verbindet den Router über die Telefon- oder Kabelleitung mit dem Internetanbieter. Dort bekommt der Router seine externe (öffentliche) Adresse.'
           : 'Ohne eingebautes Modem wird hier ein externes Modem oder ein anderer Router per Kabel angeschlossen.'}</p>
         ${connList(wanConns, 'Nichts angeschlossen.')}
-        <div class="port-fields">${field('Externe IP-Adresse', `ports.${NW.WAN}.ip`, w.ip, 'portip', { disabled: dis, placeholder: d.modem ? 'vom Internetanbieter' : 'z. B. 192.168.100.2' })}${field('Subnetzmaske', `ports.${NW.WAN}.mask`, w.mask, 'mask', { disabled: dis })}</div>
+        <div class="port-fields">${field('Externe IP-Adresse', `ports.${NW.WAN}.ip`, w.ip, 'portip', { disabled: dis, placeholder: d.modem ? 'vom Internetanbieter' : 'z. B. 192.168.100.2' })}</div>
         ${field('Gateway ins Internet', `ports.${NW.WAN}.gw`, w.gw || '', 'gw', { disabled: dis, placeholder: 'vom Internetanbieter' })}`;
         const isp = NW.ispOf(S.net, d);
         if (isp && !dis) b += actBtn('dhcp', 'dhcp', `Adresse von ${isp.name} anfordern`, { cls: 'wide' });
@@ -1284,7 +1283,7 @@ ${faultFinderHTML(link, ro)}
       let b = `<p class="muted small">${t.rz
         ? 'Das Rechenzentrum hat ein eigenes öffentliches Netz. Server, die hier angeschlossen werden, bekommen automatisch per DHCP eine Adresse daraus. Verbinde das Rechenzentrum per Kabel mit einem Internetanbieter, damit seine Server im Internet erreichbar sind.'
         : 'Der Internetanbieter verteilt öffentliche (externe) IP-Adressen an alle Router und Server, die an seine Leitung angeschlossen werden – automatisch per DHCP.'}</p>
-        <div class="port-fields">${field(t.rz ? 'IP-Adresse des Rechenzentrums' : 'IP-Adresse des Anbieters', 'ip', d.ip, 'ip', { disabled: dis })}${field('Subnetzmaske', 'mask', d.mask, 'mask', { disabled: dis })}</div>`;
+        <div class="port-fields">${field(t.rz ? 'IP-Adresse des Rechenzentrums' : 'IP-Adresse des Anbieters', 'ip', d.ip, 'ip', { disabled: dis })}</div>`;
       if (a) { const rg = NW.dhcpDefaultRange(a.ip, a.prefix); b += `<p class="small">Angeschlossene Geräte bekommen eine Adresse von ${esc(NW.ipStr(rg.from))} bis ${esc(NW.ipStr(rg.to))} und ${esc(d.ip.trim())} als Gateway.</p>`; }
       if (has('web') || (d.dns || '').trim()) {
         b += field(t.rz ? 'DNS-Server für die Server' : 'DNS-Server für die Kunden', 'dns', d.dns || '', 'dns', { disabled: dis, placeholder: 'leer = kein DNS-Server' });
@@ -1399,7 +1398,7 @@ ${faultFinderHTML(link, ro)}
         const i = Number(path.split('.')[1]);
         const a = NW.ifaceAddr(d, i);
         if (a && !NW.sameNet(x, a.ip, a.prefix)) return ['bad', 'Die Adresse muss im Netz dieses Anschlusses liegen. Sonst gilt der Standardbereich.'];
-        if (a && NW.ipProblem(v, d.ports[i].mask)) return ['bad', NW.ipProblem(v, d.ports[i].mask)];
+        if (a && NW.ipProblem(v)) return ['bad', NW.ipProblem(v)];
         return ['', ''];
       }
       case 'ip':
@@ -1407,17 +1406,13 @@ ${faultFinderHTML(link, ro)}
         if (!v) return check === 'ip' ? ['warn', 'Noch keine IP-Adresse.'] : ['', ''];
         if (NW.parseIP(v) === null) return ['bad', 'Keine gültige IPv4-Adresse: vier Zahlen von 0 bis 255, getrennt durch Punkte.'];
         {
-          const mask = check === 'ip' ? d.mask : '255.255.255.0';
-          const pr = NW.ipProblem(v, mask);
+          const pr = NW.ipProblem(v);
           if (pr) return ['bad', pr];
           if (NW.isApipa(NW.parseIP(v))) return ['warn', 'Notfall-Adresse (APIPA): Es wurde kein DHCP-Server gefunden. Sie funktioniert nur direkt im selben Netz.'];
           const ah = check === 'ip' && !d.locked && !d.dhcp ? NW.addrHint(S.net, d.id) : '';
           if (ah) return ['warn', ah];
           return ['ok', NW.isPrivate(NW.parseIP(v)) ? 'lokale (private) Adresse' : 'öffentliche (externe) Adresse'];
         }
-      case 'mask':
-        if (!v) return ['bad', 'Bitte eine Subnetzmaske eintragen, meist 255.255.255.0.'];
-        return NW.parseMask(v) === null ? ['bad', 'Keine gültige Subnetzmaske. Üblich ist 255.255.255.0.'] : ['', ''];
       case 'gw': {
         if (!v) return ['', ''];
         const g = NW.parseIP(v);
@@ -1461,6 +1456,9 @@ ${faultFinderHTML(link, ro)}
     if (!d || d.locked) return;
     const val = inp.type === 'checkbox' ? inp.checked : inp.value;
     setPath(d, inp.dataset.path, val);
+    // Die Subnetzmaske ist fest (kein Eingabefeld) und folgt der IP-Adresse
+    const mp = inp.dataset.path.match(/^(ports\.\d+\.)?ip$/);
+    if (mp && typeof val === 'string') { const n = NW.parseIP(val.trim()); setPath(d, (mp[1] || '') + 'mask', n === null ? NW.MASK : NW.maskFor(n)); }
     // DHCP am Router einschalten: Hat der Anschluss noch keine Adresse, bekommt er automatisch eine
     const dm = inp.dataset.path.match(/^ports\.(\d+)\.dhcp\.on$/);
     if (dm && val && !NW.ifaceAddr(d, Number(dm[1]))) setPortAuto(d, Number(dm[1]));

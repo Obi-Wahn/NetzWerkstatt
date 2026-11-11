@@ -93,10 +93,19 @@
     return { 8: 'die erste Zahl', 16: 'die ersten zwei Zahlen', 24: 'die ersten drei Zahlen' }[prefix] || `die ersten ${prefix} Bit`;
   }
 
+  /**
+   * Die Subnetzmaske ist im Spiel fest: immer 255.255.255.0 (/24). Schüler tragen sie nicht ein.
+   * Einzige Ausnahme sind Notadressen 169.254.x.x (APIPA), die wie in echt 255.255.0.0 haben.
+   */
+  const MASK = '255.255.255.0';
+  function prefixFor(ip) { return (ip >>> 16) === 0xa9fe ? 16 : 24; }
+  function maskFor(ip) { return ipStr(maskOf(prefixFor(ip))); }
+
   /** Prüft eine IP auf typische Fehler und liefert einen Hinweis (oder null). */
-  function ipProblem(ipS, maskS) {
-    const ip = parseIP(ipS), pre = parseMask(maskS);
-    if (ip === null || pre === null) return null;
+  function ipProblem(ipS) {
+    const ip = parseIP(ipS);
+    if (ip === null) return null;
+    const pre = prefixFor(ip);
     const m = maskOf(pre);
     if (((ip & ~m) >>> 0) === 0) return 'Diese Adresse ist die Netzadresse und kann keinem Gerät gegeben werden.';
     if (((ip & ~m) >>> 0) === ((~m) >>> 0)) return 'Diese Adresse ist die Broadcast-Adresse und kann keinem Gerät gegeben werden.';
@@ -393,12 +402,12 @@
     if (TYPES[d.type].router) {
       const p = d.ports[iface(port)];
       if (!p) return null;
-      const ip = parseIP(p.ip), pre = parseMask(p.mask);
-      return ip === null || pre === null ? null : { ip, prefix: pre };
+      const ip = parseIP(p.ip);
+      return ip === null ? null : { ip, prefix: prefixFor(ip) };
     }
     if (TYPES[d.type].host || TYPES[d.type].isp) {
-      const ip = parseIP(d.ip), pre = parseMask(d.mask);
-      return ip === null || pre === null ? null : { ip, prefix: pre };
+      const ip = parseIP(d.ip);
+      return ip === null ? null : { ip, prefix: prefixFor(ip) };
     }
     return null;
   }
@@ -728,10 +737,7 @@
     const startPort = fromRouter ? (IFACES.find(i => { const a = ifaceAddr(src, i); return a && sameNet(a.ip, dstIP, a.prefix); }) ?? WAN) : 0;
     const sa = ifaceAddr(src, startPort);
     if (fromRouter && !sa) return fail([srcId], `${src.name} hat am Internet-Anschluss (WAN) noch keine Adresse.`, 'Fordere beim Router eine Adresse vom Internetanbieter an.');
-    if (!sa) {
-      if (parseIP(src.ip) === null) return fail([srcId], `${src.name} hat noch keine gültige IP-Adresse.`, src.dhcp ? 'Tippe das Gerät an und fordere per DHCP eine Adresse an.' : 'Tippe das Gerät an und trage eine IP-Adresse ein, z. B. 192.168.1.10.');
-      return fail([srcId], `Die Subnetzmaske von ${src.name} ist ungültig.`, 'Üblich ist 255.255.255.0.');
-    }
+    if (!sa) return fail([srcId], `${src.name} hat noch keine gültige IP-Adresse.`, src.dhcp ? 'Tippe das Gerät an und fordere per DHCP eine Adresse an.' : 'Tippe das Gerät an und trage eine IP-Adresse ein, z. B. 192.168.1.10.');
     let seenSrc = sa.ip;
     const done = (path, target) => ({ ok: true, path, target, nat, seenSrc });
     if (sa.ip === dstIP) return done([srcId], src);
@@ -771,7 +777,7 @@
       if (isHost) {
         const near = eps.find(e => e.dev !== cd && (() => { const a = ifaceAddr(e.dev, e.port); return a && a.ip === dstIP; })());
         if (near) return fail(path.concat(near.path.slice(1)), `${cd.name} und ${near.dev.name} sind direkt verbunden, aber ihre IP-Adressen gehören zu verschiedenen Netzen.`,
-          `Bei der Subnetzmaske ${ipStr(maskOf(ca.prefix))} müssen ${netRule(ca.prefix)} gleich sein. ${cd.name} ist im Netz ${netName(ca.ip, ca.prefix)}, ${near.dev.name} hat ${ipStr(dstIP)}. Ändere eine der beiden Adressen, sodass beide im selben Netz liegen.`);
+          `Im selben Netz müssen ${netRule(ca.prefix)} gleich sein. ${cd.name} ist im Netz ${netName(ca.ip, ca.prefix)}, ${near.dev.name} hat ${ipStr(dstIP)}. Ändere eine der beiden Adressen, sodass beide im selben Netz liegen.`);
       }
       // Router im eigenen Netz (für konkrete Tipps zum Gateway)
       const gwE = eps.find(e => (TYPES[e.dev.type].router || TYPES[e.dev.type].isp) && ifaceAddr(e.dev, e.port));
@@ -1374,8 +1380,8 @@
     const cfg = dhcpOf(r.ports[port]);
     const def = dhcpDefaultRange(a.ip, a.prefix);
     let from = parseIP(cfg.from || ''), to = parseIP(cfg.to || '');
-    if (from === null || !sameNet(from, a.ip, a.prefix) || ipProblem(ipStr(from), r.ports[port].mask)) from = def.from;
-    if (to === null || !sameNet(to, a.ip, a.prefix) || ipProblem(ipStr(to), r.ports[port].mask)) to = def.to;
+    if (from === null || !sameNet(from, a.ip, a.prefix) || ipProblem(ipStr(from))) from = def.from;
+    if (to === null || !sameNet(to, a.ip, a.prefix) || ipProblem(ipStr(to))) to = def.to;
     if (to < from) return { from: def.from, to: def.to };
     return { from, to };
   }
@@ -1389,7 +1395,7 @@
    */
   function suggestPortIP(net, r, port) {
     const eps = l2Endpoints(net, r.id, port);
-    const known = eps.map(e => ifaceAddr(e.dev, e.port)).filter(a => a && !ipProblem(ipStr(a.ip), ipStr(maskOf(a.prefix))));
+    const known = eps.map(e => ifaceAddr(e.dev, e.port)).filter(a => a && !ipProblem(ipStr(a.ip)));
     if (known.length) {
       const ref = known[0];
       const used = new Set(known.map(a => a.ip));
@@ -1460,7 +1466,7 @@
     const lease = { ip: ipStr(ip), mask: ipStr(maskOf(ra.prefix)), gw: ipStr(ra.ip), dns: dnsIP === null ? '' : ipStr(dnsIP) };
     steps.push({ kind: 'response', label: 'DHCP-Offer', proto: P_RESP, text: `${r.name}: „Du kannst die Adresse ${lease.ip} haben."`, path: back, ok: true });
     steps.push({ kind: 'request', label: 'DHCP-Request', proto: P_REQ + ' · an alle', text: `${h.name} an alle: „Ich nehme die Adresse ${lease.ip} von ${r.name}!"`, paths: bcPaths, path: srv.path, ok: true });
-    steps.push({ kind: 'response', label: 'DHCP-Ack', proto: P_RESP, text: `${r.name}: „Bestätigt! IP ${lease.ip}, Maske ${lease.mask}, Gateway ${lease.gw}` + (lease.dns ? `, DNS ${lease.dns}` : '') + '"', path: back, ok: true });
+    steps.push({ kind: 'response', label: 'DHCP-Ack', proto: P_RESP, text: `${r.name}: „Bestätigt! IP ${lease.ip}, Gateway ${lease.gw}` + (lease.dns ? `, DNS ${lease.dns}` : '') + '"', path: back, ok: true });
     return res(true, { lease, server: r.id, isp: ispSrv });
   }
 
@@ -1544,12 +1550,12 @@
     const eps = linksOf(net, hostId).length ? l2Endpoints(net, hostId, 0) : [];
     const own = ifaceAddr(h, 0);
     // Bezugsnetz: zuerst ein Router-Anschluss, sonst ein anderes Endgerät
-    const withAddr = eps.map(e => ({ e, a: ifaceAddr(e.dev, e.port) })).filter(x => x.a && !ipProblem(ipStr(x.a.ip), ipStr(maskOf(x.a.prefix))));
+    const withAddr = eps.map(e => ({ e, a: ifaceAddr(e.dev, e.port) })).filter(x => x.a && !ipProblem(ipStr(x.a.ip)));
     const isGw = x => TYPES[x.e.dev.type].router || TYPES[x.e.dev.type].isp;
     const ref = withAddr.find(isGw) || withAddr[0];
     if (ref) {
       const used = new Set(withAddr.map(x => x.a.ip));
-      const ownOk = own && sameNet(own.ip, ref.a.ip, ref.a.prefix) && own.prefix === ref.a.prefix && !used.has(own.ip) && !ipProblem(h.ip, h.mask);
+      const ownOk = own && sameNet(own.ip, ref.a.ip, ref.a.prefix) && own.prefix === ref.a.prefix && !used.has(own.ip) && !ipProblem(h.ip);
       if (!ownOk) {
         const base = (ref.a.ip & maskOf(ref.a.prefix)) >>> 0;
         const size = 2 ** (32 - ref.a.prefix);
@@ -2018,7 +2024,7 @@
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
 
   const NW = {
-    TYPES, DESCRIPTIONS, parseIP, ipStr, parseMask, sameNet, netStr, netName, netRule, addrHint, ipProblem, isPrivate,
+    TYPES, DESCRIPTIONS, parseIP, ipStr, parseMask, MASK, prefixFor, maskFor, sameNet, netStr, netName, netRule, addrHint, ipProblem, isPrivate,
     emptyNetwork, createDevice, dev, linksOf, portOf, canLink, addLink, removeDevice, removeLink,
     allLinksOf, filesOf, fileStore, fileReady, newFile, sendFile, getFiles, btPartners, playMusic, NET_KINDS, netKinds,
     ifaceAddr, l2Endpoints, route, roundTrip, ping, browse, parseURL, logEvent, topology, topologies, TOPOLOGY_INFO, ringOf, activeFaults, setFault, linkDown, testCable, fixFault, clone, newId,
