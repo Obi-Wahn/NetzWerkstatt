@@ -213,6 +213,10 @@
     const client = ev => ({ x: ev.clientX, y: ev.clientY });
     const worldPerPx = () => { const m = svg.getScreenCTM(); return m ? 1 / m.a : 1; };
     svg.addEventListener('pointerdown', ev => {
+      // Ein „erster“ Finger heißt: Kein anderer Finger liegt mehr auf. Hängen gebliebene Finger vergessen,
+      // deren Loslassen nicht ankam (z. B. Safari auf dem iPad, wenn das berührte Gerät gerade neu gezeichnet
+      // wurde). Sonst hielte die Fläche jedes weitere Antippen für zwei Finger und reagierte nicht mehr.
+      if (ev.isPrimary) { pts.clear(); pinch = null; pan = null; svg._pinching = false; }
       pts.set(ev.pointerId, client(ev));
       if (pts.size === 2) {
         const [a, b] = [...pts.values()];
@@ -246,12 +250,16 @@
       }
     }, true);
     const up = ev => {
+      if (!svg.isConnected) { window.removeEventListener('pointerup', up, true); window.removeEventListener('pointercancel', up, true); return; }
       pts.delete(ev.pointerId);
       if (pts.size < 2 && pinch) { pinch = null; setTimeout(() => { svg._pinching = false; }, 0); }
       if (pan && pan.id === ev.pointerId) pan = null;
     };
     svg.addEventListener('pointerup', up, true);
     svg.addEventListener('pointercancel', up, true);
+    // Loslassen außerhalb der Fläche zählt auch
+    window.addEventListener('pointerup', up, true);
+    window.addEventListener('pointercancel', up, true);
     // Am PC: Strg + Mausrad bzw. Zwei-Finger-Geste auf dem Touchpad
     svg.addEventListener('wheel', ev => {
       if (!ev.ctrlKey) return;
