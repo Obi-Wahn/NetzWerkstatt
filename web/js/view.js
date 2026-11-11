@@ -210,14 +210,20 @@
     } else svg._onZoom = o.onZoom;
     const pts = new Map();
     let pinch = null, pan = null;
-    const client = ev => ({ x: ev.clientX, y: ev.clientY });
+    const REST_MS = 400;
     const worldPerPx = () => { const m = svg.getScreenCTM(); return m ? 1 / m.a : 1; };
     svg.addEventListener('pointerdown', ev => {
       // Ein „erster“ Finger heißt: Kein anderer Finger liegt mehr auf. Hängen gebliebene Finger vergessen,
       // deren Loslassen nicht ankam (z. B. Safari auf dem iPad, wenn das berührte Gerät gerade neu gezeichnet
       // wurde). Sonst hielte die Fläche jedes weitere Antippen für zwei Finger und reagierte nicht mehr.
       if (ev.isPrimary) { pts.clear(); pinch = null; pan = null; svg._pinching = false; }
-      pts.set(ev.pointerId, client(ev));
+      // Ein Finger, der schon länger still aufliegt (z. B. der Daumen, der das iPad hält), ist kein Zoom-Finger:
+      // Ihn vergessen, damit das Antippen mit dem anderen Finger wie ein normales Antippen zählt.
+      if (pts.size === 1 && !pinch) {
+        const [[id, p]] = [...pts];
+        if (ev.timeStamp - p.t > REST_MS && !p.moved) { pts.delete(id); if (pan && pan.id === id) pan = null; }
+      }
+      pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY, sx: ev.clientX, sy: ev.clientY, t: ev.timeStamp, moved: false });
       if (pts.size === 2) {
         const [a, b] = [...pts.values()];
         pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, k: zoomLevel(svg), mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } };
@@ -230,8 +236,10 @@
       }
     }, true);
     svg.addEventListener('pointermove', ev => {
-      if (!pts.has(ev.pointerId)) return;
-      pts.set(ev.pointerId, client(ev));
+      const old = pts.get(ev.pointerId);
+      if (!old) return;
+      old.x = ev.clientX; old.y = ev.clientY;
+      if (Math.hypot(old.x - old.sx, old.y - old.sy) > 8) old.moved = true;
       if (pinch && pts.size >= 2) {
         const [a, b] = [...pts.values()];
         const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };

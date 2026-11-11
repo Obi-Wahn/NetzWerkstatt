@@ -15,7 +15,7 @@
 .task-row .task-item { flex: 1; min-width: 0; }
 .task-row.locked .task-item:not(.active) .ttl { color: var(--muted); }
 .task-item.static { cursor: default; }
-.task-item.static:hover { background: none; }
+@media (hover: hover) { .task-item.static:hover { background: none; } }
 .unlock { flex: none; display: grid; place-items: center; width: 34px; height: 34px; cursor: pointer; }
 .unlock input { width: 20px; height: 20px; min-height: 0; margin: 0; cursor: pointer; accent-color: var(--ok); }
 .task-group h3 { display: flex; align-items: center; gap: 2px; }
@@ -28,7 +28,7 @@
 .lock-state.off { background: var(--chip-bg); color: var(--muted); }
 .task-head .spacer { flex: 1; }
 .task-item { display: flex; align-items: center; gap: 8px; width: 100%; font: inherit; font-size: .93em; text-align: left; padding: 6px 8px; border: 0; border-radius: 8px; background: none; color: var(--ink); cursor: pointer; min-height: 0; }
-.task-item:hover { background: var(--hover-soft); }
+@media (hover: hover) { .task-item:hover { background: var(--hover-soft); } }
 .task-item .num { flex: none; width: 22px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
 .task-item .ttl { flex: 1; min-width: 0; }
 .task-item .cnt { flex: none; min-width: 24px; padding: 1px 7px; border-radius: 99px; background: var(--chip-bg); color: var(--muted); font-size: .8em; font-weight: 600; text-align: center; }
@@ -61,10 +61,12 @@ table.students { width: 100%; border-collapse: collapse; }
 .students .actions { white-space: normal; }
 .students .actions .btn { margin: 2px 0 2px 4px; }
 .students .actions .keep { display: inline-block; white-space: nowrap; }
-@media (max-width: 1000px) {
+/* bis iPad quer (1080 px): engere Spalten, damit „Zeigen“, „Code zurücksetzen“ und ✕ nicht rechts abgeschnitten sind */
+@media (max-width: 1100px) {
   .students th, .students td { padding: 8px 8px; }
   .bar { width: 56px; }
 }
+@media (min-width: 901px) and (max-width: 1100px) { .dash { grid-template-columns: 280px minmax(0, 1fr); } }
 .progress { display: flex; align-items: center; gap: 8px; }
 .bar { width: 110px; height: 9px; border-radius: 99px; background: var(--chip-bg); overflow: hidden; }
 .bar i { display: block; height: 100%; background: var(--ok); }

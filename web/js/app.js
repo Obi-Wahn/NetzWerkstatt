@@ -534,14 +534,27 @@
   NWView.enableZoom(canvas, { buttons: document.querySelector('.canvas-wrap') });
   // Antippen der freien Fläche bei Zoom: erst beim Loslassen auswerten, denn es könnte ein Verschieben werden
   let bgTap = null;
-  canvas.addEventListener('pointerup', () => {
+  // Löschen erst beim Loslassen: Beginnt auf einem Gerät ein Zwei-Finger-Zoom, wird nichts gelöscht
+  let delTap = null;
+  // Erstes Gerät beim Verbinden: Wird daraus gleich ein Zwei-Finger-Zoom, gilt es nicht als gewählt
+  let pendingTap = null;
+  canvas.addEventListener('pointerup', ev => {
     const t = bgTap; bgTap = null;
-    if (!t || NWView.panMoved(canvas) || NWView.pinching(canvas)) return;
+    const del = delTap; delTap = null;
+    if (NWView.pinching(canvas)) return;
+    if (del && del.pid === ev.pointerId) { del.run(); return; }
+    if (!t || NWView.panMoved(canvas)) return;
     if (t === 'pending') { S.pending = null; showHint(S.tool); renderCanvas(); }
     else { S.selected = null; renderCanvas(); renderInspector(); }
   });
   canvas.addEventListener('pointerdown', ev => {
-    if (NWView.pinching(canvas)) { cancelDrag(); bgTap = null; return; }
+    if (NWView.pinching(canvas)) {
+      cancelDrag(); bgTap = null; delTap = null;
+      if (pendingTap && S.pending === pendingTap.id && ev.timeStamp - pendingTap.t < 400) { S.pending = null; showHint(S.tool); renderCanvas(); }
+      pendingTap = null;
+      return;
+    }
+    bgTap = null; delTap = null;
     if (S.busy) return;
     if (ev.target.closest('[data-topo]')) { showTopoInfo(); return; }
     const devEl = ev.target.closest('[data-dev]');
@@ -574,6 +587,7 @@
       const id = devEl.dataset.dev;
       if (!S.pending) {
         S.pending = id;
+        pendingTap = { id, t: ev.timeStamp };
         showHint('live', pendingText(NW.dev(S.net, id).name));
       } else if (S.pending === id) {
         // Zweimal dasselbe Gerät: Schüler will es einstellen, nicht verbinden
@@ -596,15 +610,17 @@
       return;
     }
     if (S.tool === 'delete') {
+      let run = null;
       if (devEl) {
         const d = NW.dev(S.net, devEl.dataset.dev);
-        if (d.locked) { toast(`${d.name} gehört zur Aufgabe und kann nicht gelöscht werden.`, 'error'); return; }
-        removeWithUndo(d.name, () => NW.removeDevice(S.net, d.id));
+        run = d.locked ? () => toast(`${d.name} gehört zur Aufgabe und kann nicht gelöscht werden.`, 'error')
+          : () => removeWithUndo(d.name, () => NW.removeDevice(S.net, d.id));
       } else if (linkEl) {
         const l = S.net.links.find(x => x.id === linkEl.dataset.link);
-        if (l.locked) { toast('Diese Verbindung gehört zur Aufgabe und kann nicht gelöscht werden.', 'error'); return; }
-        removeWithUndo('Verbindung', () => NW.removeLink(S.net, l.id));
+        run = l.locked ? () => toast('Diese Verbindung gehört zur Aufgabe und kann nicht gelöscht werden.', 'error')
+          : () => removeWithUndo('Verbindung', () => NW.removeLink(S.net, l.id));
       }
+      if (run) { delTap = { pid: ev.pointerId, run }; try { canvas.setPointerCapture(ev.pointerId); } catch (e) { /* egal */ } }
     }
   });
   canvas.addEventListener('pointermove', ev => {
@@ -953,8 +969,15 @@
   // so, dass die Arbeitsfläche darüber frei bleibt.
   const wide = window.matchMedia('(min-width: 861px)');
   let lastSel = null;
+  // Tablet hochkant: so weit hat die Seite für die Einstellungsleiste gerollt (null = nicht gerollt)
+  let sheetScroll = null;
   function positionInspector() {
     const sel = S.selected;
+    if (!sel && lastSel && sheetScroll !== null && !wide.matches) {
+      // Leiste geschlossen: zurückrollen, damit Geräteleiste und Werkzeuge wieder zu sehen sind
+      if (Math.abs(window.scrollY - sheetScroll) < 40) window.scrollTo({ top: 0, behavior: 'smooth' });
+      sheetScroll = null;
+    }
     if (!sel || sel === lastSel) { lastSel = sel; return; }
     lastSel = sel;
     if (wide.matches) { document.querySelector('.side').scrollTop = 0; return; }
@@ -963,7 +986,7 @@
       const wrap = document.querySelector('.canvas-wrap').getBoundingClientRect();
       const free = window.innerHeight - insp.offsetHeight;
       const y = wrap.height <= free ? wrap.bottom - free : wrap.top;
-      if (Math.abs(y) > 4) window.scrollBy({ top: y, behavior: 'smooth' });
+      if (Math.abs(y) > 4) { window.scrollBy({ top: y, behavior: 'smooth' }); sheetScroll = Math.max(0, Math.min(window.scrollY + y, document.documentElement.scrollHeight - window.innerHeight)); }
     });
   }
   wide.addEventListener('change', () => { lastSel = null; renderInspector(); });
