@@ -455,6 +455,11 @@ details.sec.flash > summary h4 { animation: secflash 1.2s ease-out; }
   .side { border-left: 0; overflow: visible; }
 }
 
+/* Tablet hochkant: Hinweis-Knopf, wenn die Geräteleiste oben aus dem Bild gerollt ist */
+.pal-up { position: fixed; top: max(8px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); z-index: 25;
+  font: inherit; font-weight: 700; font-size: .92em; min-height: 40px; padding: 6px 16px; border-radius: 99px; border: 1px solid var(--brand);
+  background: var(--brand); color: var(--on-color); box-shadow: 0 4px 14px rgba(20, 35, 60, .3); cursor: pointer; touch-action: manipulation; }
+
 /* Umschalter „Von Hand" / „Automatisch (DHCP)" */
 .seg { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; margin-bottom: 10px; }
 .seg button { flex: 1; font: inherit; font-size: .88em; font-weight: 600; padding: 7px 6px; min-height: 38px; border: 0; background: var(--panel-2); color: var(--muted); cursor: pointer; }
