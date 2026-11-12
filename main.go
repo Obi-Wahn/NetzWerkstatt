@@ -86,8 +86,10 @@ type Store struct {
 	Classes         []*Class                   `json:"classes"`
 	ActiveClass     string                     `json:"activeClass"` // ID der aktiven Klasse ("" = keine Klassen angelegt)
 
-	mu   sync.Mutex
-	path string
+	mu    sync.Mutex
+	wmu   sync.Mutex // nur ein Schreibvorgang zur Zeit
+	dirty bool       // Änderungen, die noch nicht in der Datei stehen
+	path  string
 }
 
 func randomToken(n int) string {
@@ -107,11 +109,18 @@ func randomDigits(n int) string {
 	return s
 }
 
+var pwWords = []string{"router", "switch", "paket", "kabel", "server", "client", "bitrate", "subnetz", "gateway", "domain",
+	"browser", "funknetz", "glasfaser", "adresse", "protokoll", "firewall", "netzwerk", "antenne", "signal", "daten"}
+
+// randomWord erzeugt das Lehrer-Passwort: ein Wort und vier Ziffern (200 000 Möglichkeiten).
 func randomWord() string {
-	words := []string{"router", "switch", "paket", "kabel", "server", "client", "bitrate", "subnetz", "gateway", "domain"}
-	i, _ := rand.Int(rand.Reader, big.NewInt(int64(len(words))))
-	return words[i.Int64()] + randomDigits(2)
+	i, _ := rand.Int(rand.Reader, big.NewInt(int64(len(pwWords))))
+	return pwWords[i.Int64()] + randomDigits(4)
 }
+
+// oldPassword erkennt automatisch erzeugte Passwörter älterer Versionen (Wort + 2 Ziffern,
+// nur 1000 Möglichkeiten). Sie werden beim Start durch ein neues ersetzt.
+var oldPassword = regexp.MustCompile(`^(router|switch|paket|kabel|server|client|bitrate|subnetz|gateway|domain)[0-9]{2}$`)
 
 func loadStore(path string) *Store {
 	s := &Store{path: path}
@@ -127,7 +136,7 @@ func loadStore(path string) *Store {
 	if s.RoomCode == "" {
 		s.RoomCode = randomDigits(4)
 	}
-	if s.TeacherPassword == "" {
+	if s.TeacherPassword == "" || oldPassword.MatchString(s.TeacherPassword) {
 		s.TeacherPassword = randomWord()
 	}
 	if s.Works == nil {
@@ -158,24 +167,70 @@ func loadStore(path string) *Store {
 			s.ActiveClass = s.Classes[0].ID
 		}
 	}
-	s.saveLocked()
+	s.writeFile(s.snapshotLocked())
 	return s
 }
 
-// saveLocked schreibt die Daten atomar. Aufrufer muss s.mu halten (oder beim Start).
+// saveLocked merkt vor, dass sich die Daten geändert haben. Aufrufer muss s.mu halten.
+// Geschrieben wird gebündelt im Hintergrund (autoSave), damit viele gleichzeitige
+// Speicherungen den Server nicht ausbremsen: Bei jeder Änderung die ganze Datei neu zu
+// schreiben, dauert bei mehreren Klassen und vielen Arbeiten zu lange.
 func (s *Store) saveLocked() {
-	b, err := json.MarshalIndent(s, "", " ")
+	s.dirty = true
+}
+
+// snapshotLocked erzeugt den Inhalt der Datendatei. Aufrufer muss s.mu halten.
+func (s *Store) snapshotLocked() []byte {
+	b, err := json.Marshal(s)
 	if err != nil {
 		log.Println("Speichern fehlgeschlagen:", err)
+		return nil
+	}
+	s.dirty = false
+	return b
+}
+
+// writeFile schreibt die Daten atomar (erst in eine Hilfsdatei, dann umbenennen).
+func (s *Store) writeFile(b []byte) {
+	if b == nil {
 		return
 	}
+	s.wmu.Lock()
+	defer s.wmu.Unlock()
 	tmp := s.path + ".tmp"
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		log.Println("Speichern fehlgeschlagen:", err)
+		s.markDirty()
 		return
 	}
 	if err := os.Rename(tmp, s.path); err != nil {
 		log.Println("Speichern fehlgeschlagen:", err)
+		s.markDirty()
+	}
+}
+
+func (s *Store) markDirty() {
+	s.mu.Lock()
+	s.dirty = true
+	s.mu.Unlock()
+}
+
+// flush schreibt vorgemerkte Änderungen sofort in die Datei.
+func (s *Store) flush() {
+	s.mu.Lock()
+	if !s.dirty {
+		s.mu.Unlock()
+		return
+	}
+	b := s.snapshotLocked()
+	s.mu.Unlock()
+	s.writeFile(b) // außerhalb der Sperre: Schüler können währenddessen weiterarbeiten
+}
+
+// autoSave schreibt vorgemerkte Änderungen regelmäßig in die Datei.
+func (s *Store) autoSave(every time.Duration) {
+	for range time.Tick(every) {
+		s.flush()
 	}
 }
 
@@ -344,6 +399,11 @@ type Server struct {
 	tmu           sync.Mutex
 	// Fehlversuche beim Schüler-Code (Schüler-ID -> Anzahl, Sperre bis)
 	codeFails map[string]*codeFail
+	// Fehlversuche beim Lehrer-Passwort (Gerät/IP -> Anzahl, Sperre bis)
+	pwFails map[string]*codeFail
+	// Anmeldeversuche der Lehrkraft nacheinander prüfen: Viele gleichzeitige Anfragen
+	// bringen so keinen Vorteil beim Durchprobieren.
+	pwMu sync.Mutex
 }
 
 type codeFail struct {
@@ -390,6 +450,43 @@ func (srv *Server) clearCodeFails(id string) {
 	srv.tmu.Lock()
 	defer srv.tmu.Unlock()
 	delete(srv.codeFails, id)
+}
+
+// clientIP: Adresse des anfragenden Geräts (ohne Port).
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
+// pwLocked sagt, wie lange ein Gerät nach zu vielen falschen Lehrer-Passwörtern noch warten muss.
+func (srv *Server) pwLocked(who string) time.Duration {
+	srv.tmu.Lock()
+	defer srv.tmu.Unlock()
+	if f := srv.pwFails[who]; f != nil {
+		return time.Until(f.until)
+	}
+	return 0
+}
+
+func (srv *Server) addPwFail(who string) {
+	srv.tmu.Lock()
+	defer srv.tmu.Unlock()
+	if srv.pwFails == nil {
+		srv.pwFails = map[string]*codeFail{}
+	}
+	f := srv.pwFails[who]
+	if f == nil {
+		f = &codeFail{}
+		srv.pwFails[who] = f
+	}
+	f.n++
+	if f.n >= maxCodeFails {
+		f.n = 0
+		f.until = time.Now().Add(codeLockTime)
+	}
 }
 
 func normName(n string) string {
@@ -551,10 +648,21 @@ func (srv *Server) routes() http.Handler {
 			fail(w, 400, "Ungültige Aufgabe.")
 			return
 		}
+		wk, exists := s.Works[st.ID][task]
+		// Nur freigeschaltete Aufgaben (oder schon begonnene, falls die Lehrkraft sie
+		// inzwischen gesperrt hat). So füllt niemand die Datei mit erfundenen Aufgaben.
+		if !st.Teacher && !exists && !s.Unlocked[task] {
+			fail(w, 403, "Diese Aufgabe ist nicht freigeschaltet.")
+			return
+		}
+		// Abgegebene Arbeiten bleiben unverändert, bis die Abgabe zurückgenommen wird.
+		if wk.Submitted && len(req.Network) > 0 && (req.Submitted == nil || *req.Submitted) {
+			fail(w, 409, "Du hast diese Aufgabe schon abgegeben. Nimm die Abgabe zurück, um etwas zu ändern.")
+			return
+		}
 		if s.Works[st.ID] == nil {
 			s.Works[st.ID] = map[string]Work{}
 		}
-		wk := s.Works[st.ID][task]
 		if len(req.Network) > 0 {
 			wk.Network = req.Network
 		}
@@ -575,14 +683,25 @@ func (srv *Server) routes() http.Handler {
 			fail(w, 400, "Ungültige Anfrage.")
 			return
 		}
+		who := clientIP(r)
+		srv.pwMu.Lock()
+		defer srv.pwMu.Unlock()
+		if wait := srv.pwLocked(who); wait > 0 {
+			fail(w, 429, fmt.Sprintf("Zu viele falsche Versuche. Warte %d Sekunden.", int(wait.Seconds())+1))
+			return
+		}
 		s.mu.Lock()
-		ok := strings.TrimSpace(req.Password) == s.TeacherPassword
+		ok := subtle.ConstantTimeCompare([]byte(strings.TrimSpace(req.Password)), []byte(s.TeacherPassword)) == 1
 		s.mu.Unlock()
 		if !ok {
+			srv.addPwFail(who)
 			time.Sleep(700 * time.Millisecond)
 			fail(w, 403, "Falsches Passwort. Es steht im Fenster des NetzWerkstatt-Servers.")
 			return
 		}
+		srv.tmu.Lock()
+		delete(srv.pwFails, who)
+		srv.tmu.Unlock()
 		tok := randomToken(16)
 		srv.tmu.Lock()
 		srv.teacherTokens[tok] = time.Now()
@@ -604,6 +723,12 @@ func (srv *Server) routes() http.Handler {
 			HasCode bool            `json:"hasCode"`
 			Class   string          `json:"class"`
 		}
+		// Mit ?task= (und ?class=) schickt der Server die Netze nur für diese Aufgabe und
+		// Klasse mit, sonst nur den Stand. Alle Netze aller Klassen alle paar Sekunden zu
+		// schicken, wäre nach einiger Zeit viel zu viel. Einzelne Netze: /api/teacher/work.
+		q := r.URL.Query()
+		task := q.Get("task")
+		cls, oneClass := q.Get("class"), q.Has("class")
 		rows := []row{}
 		var own map[string]Work
 		for _, st := range s.Students {
@@ -611,7 +736,18 @@ func (srv *Server) routes() http.Handler {
 				own = s.Works[st.ID]
 				continue
 			}
-			rows = append(rows, row{ID: st.ID, Name: st.Name, Works: s.Works[st.ID], HasCode: st.CodeHash != "", Class: st.Class})
+			works := s.Works[st.ID]
+			if task != "" {
+				slim := make(map[string]Work, len(works))
+				for tid, wk := range works {
+					if tid != task || (oneClass && st.Class != cls) {
+						wk.Network = nil
+					}
+					slim[tid] = wk
+				}
+				works = slim
+			}
+			rows = append(rows, row{ID: st.ID, Name: st.Name, Works: works, HasCode: st.CodeHash != "", Class: st.Class})
 		}
 		sort.Slice(rows, func(i, j int) bool { return strings.ToLower(rows[i].Name) < strings.ToLower(rows[j].Name) })
 		addrs := []string{}
@@ -621,6 +757,22 @@ func (srv *Server) routes() http.Handler {
 		writeJSON(w, 200, map[string]any{"students": rows, "released": s.Released, "roomCode": s.RoomCode, "addresses": addrs,
 			"unlocked": s.Unlocked, "customTasks": s.CustomTasks, "ownWorks": own,
 			"classes": s.Classes, "activeClass": s.ActiveClass})
+	})
+
+	// Ein einzelnes Netz einer Schülerin oder eines Schülers (z. B. als Vorlage für eine eigene Aufgabe)
+	mux.HandleFunc("GET /api/teacher/work", func(w http.ResponseWriter, r *http.Request) {
+		if !srv.isTeacher(r) {
+			fail(w, 401, "Bitte als Lehrkraft anmelden.")
+			return
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		wk, ok := s.Works[r.URL.Query().Get("student")][r.URL.Query().Get("task")]
+		if !ok {
+			fail(w, 404, "Diese Arbeit gibt es nicht mehr.")
+			return
+		}
+		writeJSON(w, 200, wk)
 	})
 
 	// ------------------------------------------------ Klassen

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"regexp"
 	"testing"
 	"time"
 )
@@ -141,6 +142,7 @@ func TestKlassenBleibenNachNeustart(t *testing.T) {
 	st.Classes = []*Class{{ID: "a1", Name: "10a"}}
 	st.ActiveClass = "weg"
 	st.saveLocked()
+	st.flush()
 	st2 := loadStore(path)
 	if st2.ActiveClass != "a1" {
 		t.Fatalf("Ungültige aktive Klasse sollte auf die erste Klasse fallen, ist %q", st2.ActiveClass)
@@ -230,5 +232,90 @@ func TestMusterloesungenGesammeltFreigeben(t *testing.T) {
 	}
 	if code, _ := call(t, h, "POST", "/api/teacher/release", teacher, map[string]any{"released": true}); code != 400 {
 		t.Fatalf("Leere Anfrage sollte abgelehnt werden: %d", code)
+	}
+}
+
+func TestArbeitSpeichernRegeln(t *testing.T) {
+	srv, h, teacher := testServer(t)
+	_, r := login(t, h, srv.store.RoomCode, "Ben", "1234")
+	stu := r["token"].(string)
+	net := map[string]any{"network": map[string]any{"devices": []any{}, "links": []any{}}}
+
+	// erfundene oder gesperrte Aufgaben werden nicht gespeichert
+	if code, _ := call(t, h, "PUT", "/api/work/gibt-es-nicht", stu, net); code != 403 {
+		t.Fatalf("Unbekannte Aufgabe sollte abgelehnt werden: %d", code)
+	}
+	if code, _ := call(t, h, "PUT", "/api/work/zwei-pcs", stu, net); code != 200 {
+		t.Fatalf("Freigeschaltete Aufgabe sollte gespeichert werden: %d", code)
+	}
+	// schon begonnen, dann gesperrt: weiter speicherbar, damit nichts verloren geht
+	call(t, h, "POST", "/api/teacher/unlock", teacher, map[string]any{"tasks": []string{"zwei-pcs"}, "unlocked": false})
+	if code, _ := call(t, h, "PUT", "/api/work/zwei-pcs", stu, net); code != 200 {
+		t.Fatalf("Begonnene Aufgabe sollte weiter speicherbar sein: %d", code)
+	}
+	// abgegeben: Netz bleibt unverändert, bis die Abgabe zurückgenommen ist
+	call(t, h, "PUT", "/api/work/zwei-pcs", stu, map[string]any{"submitted": true})
+	if code, _ := call(t, h, "PUT", "/api/work/zwei-pcs", stu, net); code != 409 {
+		t.Fatalf("Abgegebene Arbeit sollte nicht änderbar sein: %d", code)
+	}
+	if code, _ := call(t, h, "PUT", "/api/work/zwei-pcs", stu, map[string]any{"submitted": false}); code != 200 {
+		t.Fatalf("Abgabe zurücknehmen sollte gehen: %d", code)
+	}
+	if code, _ := call(t, h, "PUT", "/api/work/zwei-pcs", stu, net); code != 200 {
+		t.Fatalf("Nach dem Zurücknehmen sollte Speichern gehen: %d", code)
+	}
+}
+
+func TestUebersichtNurNetzeDerAufgabe(t *testing.T) {
+	srv, h, teacher := testServer(t)
+	_, r := login(t, h, srv.store.RoomCode, "Ida", "1234")
+	stu := r["token"].(string)
+	net := map[string]any{"network": map[string]any{"devices": []any{}, "links": []any{}}}
+	call(t, h, "PUT", "/api/work/zwei-pcs", stu, net)
+	call(t, h, "PUT", "/api/work/stern", stu, net)
+	_, ov := call(t, h, "GET", "/api/teacher/overview?task=stern", teacher, nil)
+	works := ov["students"].([]any)[0].(map[string]any)["works"].(map[string]any)
+	if works["stern"].(map[string]any)["network"] == nil || works["zwei-pcs"].(map[string]any)["network"] != nil {
+		t.Fatalf("Nur das Netz der gewählten Aufgabe sollte mitkommen: %v", works)
+	}
+	id := ov["students"].([]any)[0].(map[string]any)["id"].(string)
+	if code, wk := call(t, h, "GET", "/api/teacher/work?student="+id+"&task=zwei-pcs", teacher, nil); code != 200 || wk["network"] == nil {
+		t.Fatalf("Einzelnes Netz sollte abrufbar sein: %d %v", code, wk)
+	}
+	if code, _ := call(t, h, "GET", "/api/teacher/work?student="+id+"&task=zwei-pcs", stu, nil); code != 401 {
+		t.Fatalf("Schüler dürfen keine fremden Netze abrufen: %d", code)
+	}
+}
+
+func TestLehrerPasswort(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "daten.json")
+	st := loadStore(path)
+	if !regexp.MustCompile(`^[a-z]+[0-9]{4}$`).MatchString(st.TeacherPassword) {
+		t.Fatalf("Neues Passwort sollte Wort + 4 Ziffern sein: %q", st.TeacherPassword)
+	}
+	// altes, kurzes Passwort wird ersetzt, ein selbst gewähltes bleibt
+	st.TeacherPassword = "router42"
+	st.saveLocked()
+	st.flush()
+	if p := loadStore(path).TeacherPassword; p == "router42" {
+		t.Fatal("Altes kurzes Passwort sollte ersetzt werden")
+	}
+	st.TeacherPassword = "geheim"
+	st.saveLocked()
+	st.flush()
+	if p := loadStore(path).TeacherPassword; p != "geheim" {
+		t.Fatalf("Eigenes Passwort sollte bleiben: %q", p)
+	}
+
+	// nach 5 falschen Versuchen ist dieses Gerät eine Weile gesperrt
+	srv, h, _ := testServer(t)
+	srv.store.TeacherPassword = "richtig1234"
+	for i := 0; i < maxCodeFails; i++ {
+		if code, _ := call(t, h, "POST", "/api/teacher/login", "", map[string]string{"password": "falsch"}); code != 403 {
+			t.Fatalf("Falsches Passwort: %d", code)
+		}
+	}
+	if code, _ := call(t, h, "POST", "/api/teacher/login", "", map[string]string{"password": "richtig1234"}); code != 429 {
+		t.Fatalf("Nach 5 Fehlversuchen sollte gesperrt sein: %d", code)
 	}
 }

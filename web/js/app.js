@@ -225,15 +225,16 @@
   // ---------------------------------------------------------------- Speichern
   function scheduleSave() {
     if (S.task && S.task.free && !S.token) return;
+    if (readOnly()) return; // abgegeben: Tests nach der Abgabe ändern die Abgabe nicht
     $('save-state').textContent = 'Speichert …';
     $('save-state').className = 'save-state';
     clearTimeout(S.saveTimer);
     S.saveTimer = setTimeout(save, 700);
   }
-  async function save() {
+  async function save(leaving) {
     S.saveTimer = null;
     try {
-      await api('PUT', '/api/work/' + encodeURIComponent(S.task.id), { network: S.net }, S.token);
+      await api('PUT', '/api/work/' + encodeURIComponent(S.task.id), { network: S.net }, S.token, leaving ? { keepalive: true } : undefined);
       S.onServer = true; S.savedAt = Date.now();
       $('save-state').textContent = 'Gespeichert ✓';
       $('save-state').className = 'save-state ok';
@@ -246,7 +247,12 @@
   async function flushSave() {
     if (S.saveTimer) { clearTimeout(S.saveTimer); await save(); }
   }
-  window.addEventListener('beforeunload', () => { if (S.saveTimer) save(); });
+  // Beim Verlassen sofort speichern: Tab schließen, App wechseln oder iPad sperren.
+  // Das iPad meldet nur „pagehide“ und „visibilitychange“, nicht „beforeunload“.
+  function saveOnLeave() { if (S.saveTimer) { clearTimeout(S.saveTimer); save(true); } }
+  window.addEventListener('pagehide', saveOnLeave);
+  window.addEventListener('beforeunload', saveOnLeave);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) saveOnLeave(); });
 
   // ---------------------------------------------------------------- Abgeben
   $('btn-submit').addEventListener('click', async () => {
@@ -495,13 +501,31 @@
   function renderGoals() {
     const res = NWTasks.evaluate(S.task, S.net);
     const next = level() === 'leicht' ? res.findIndex(x => !x) : -1;
-    $('goals').innerHTML = S.task.goals.map((g, i) => {
+    const done = res.filter(Boolean).length;
+    // Kompakt (Gerät gewählt): erreichte Ziele als eine Zeile zusammengefasst, offene ausgeschrieben
+    const sum = done && done < res.length ? `<li class="sum">✓ ${done} von ${res.length} Zielen erreicht</li>` : '';
+    $('goals').innerHTML = sum + S.task.goals.map((g, i) => {
       const h = i === next ? NWStufen.help(S.task, i) : '';
       return `<li class="${res[i] ? 'done' : ''}${i === next ? ' next' : ''}">${esc(g.text)}${h ? `<span class="goal-help">👉 ${esc(h)}</span>` : ''}</li>`;
     }).join('');
     $('all-done').hidden = !(S.task.goals.length && res.every(Boolean)) || readOnly();
     renderQuiz();
+    updateCardMore();
   }
+
+  // Ist die Aufgabe kompakt und passt nicht ganz hinein, zeigt ein Hinweis unten, dass es weitergeht
+  function updateCardMore() {
+    const card = $('task-card'), more = $('card-more');
+    more.hidden = true;
+    if (!document.querySelector('.side.has-sel') || getComputedStyle(card).overflowY !== 'auto') return;
+    more.hidden = card.scrollTop + card.clientHeight >= card.scrollHeight - 4;
+  }
+  $('task-card').addEventListener('scroll', updateCardMore, { passive: true });
+  window.addEventListener('resize', updateCardMore);
+  $('card-more').addEventListener('click', () => {
+    const card = $('task-card');
+    card.scrollTo({ top: card.scrollHeight, behavior: 'smooth' });
+  });
 
   // ---------------------------------------------------------------- Zuordnungsaufgabe (z. B. TCP oder UDP?)
   function renderQuiz() {
@@ -1022,6 +1046,7 @@
 
   function renderInspectorBody() {
     document.querySelector('.side').classList.toggle('has-sel', !!S.selected);
+    updateCardMore();
     insp.hidden = !S.selected && wide.matches;
     insp.classList.toggle('sheet', !!S.selected && !wide.matches);
     document.body.classList.toggle('has-sheet', !!S.selected && !wide.matches);
@@ -1837,6 +1862,13 @@ ${faultFinderHTML(link, ro)}
       toast('Deine Lehrkraft hat deine Arbeit zu dieser Aufgabe gelöscht. Du fängst neu an.', 'error');
       openTask(S.task.id);
       return;
+    }
+    // Hat die Lehrkraft die Abgabe zurückgegeben, gleich weiterarbeiten lassen
+    const w = S.task && !S.task.free && S.me && S.me.works && S.me.works[S.task.id];
+    if (w && S.submitted && !w.submitted && (S.savedAt || 0) < asked) {
+      S.submitted = false;
+      renderAll();
+      toast('Deine Lehrkraft hat dir die Abgabe zurückgegeben. Du kannst weiterarbeiten.', 'ok');
     }
     updateSolutionButton();
   }, 15000);
