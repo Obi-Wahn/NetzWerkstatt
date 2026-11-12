@@ -1044,6 +1044,53 @@ func (srv *Server) routes() http.Handler {
 		writeJSON(w, 200, map[string]any{"ok": true, "deleted": n})
 	})
 
+	// Mehrere Schüler auf einmal: entweder nur alle ihre Arbeiten löschen (Anmeldung bleibt)
+	// oder die Anmeldungen samt Arbeiten. Der Baukasten-Zugang der Lehrkraft bleibt immer.
+	mux.HandleFunc("POST /api/teacher/delete-students", func(w http.ResponseWriter, r *http.Request) {
+		if !srv.isTeacher(r) {
+			fail(w, 401, "Bitte als Lehrkraft anmelden.")
+			return
+		}
+		var req struct {
+			Students  []string `json:"students"`
+			WorksOnly bool     `json:"worksOnly"`
+		}
+		if err := readBody(r, &req); err != nil || len(req.Students) == 0 || len(req.Students) > 5000 {
+			fail(w, 400, "Ungültige Anfrage.")
+			return
+		}
+		ids := map[string]bool{}
+		for _, id := range req.Students {
+			ids[id] = true
+		}
+		s.mu.Lock()
+		n, works := 0, 0
+		kept := []*Student{}
+		for _, st := range s.Students {
+			if st.Teacher || !ids[st.ID] {
+				kept = append(kept, st)
+				continue
+			}
+			n++
+			works += len(s.Works[st.ID])
+			delete(s.Works, st.ID)
+			if req.WorksOnly {
+				kept = append(kept, st)
+			}
+		}
+		s.Students = kept
+		if n > 0 {
+			s.saveLocked()
+		}
+		s.mu.Unlock()
+		if !req.WorksOnly {
+			for id := range ids {
+				srv.clearCodeFails(id)
+			}
+		}
+		writeJSON(w, 200, map[string]any{"ok": true, "students": n, "works": works})
+	})
+
 	mux.HandleFunc("POST /api/teacher/delete-student", func(w http.ResponseWriter, r *http.Request) {
 		if !srv.isTeacher(r) {
 			fail(w, 401, "Bitte als Lehrkraft anmelden.")

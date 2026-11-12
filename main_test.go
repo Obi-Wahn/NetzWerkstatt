@@ -146,3 +146,52 @@ func TestKlassenBleibenNachNeustart(t *testing.T) {
 		t.Fatalf("Ungültige aktive Klasse sollte auf die erste Klasse fallen, ist %q", st2.ActiveClass)
 	}
 }
+
+func TestSchuelerGesammeltLoeschen(t *testing.T) {
+	srv, h, teacher := testServer(t)
+	room := srv.store.RoomCode
+	ids := []string{}
+	for _, n := range []string{"Anna", "Ben", "Cem"} {
+		code, r := login(t, h, room, n, "1234")
+		if code != 200 {
+			t.Fatalf("Anmeldung %s: %d %v", n, code, r)
+		}
+		tok := r["token"].(string)
+		for _, task := range []string{"zwei-pcs", "stern"} {
+			if c, _ := call(t, h, "PUT", "/api/work/"+task, tok, map[string]any{"network": map[string]any{"devices": []any{}}}); c != 200 {
+				t.Fatalf("Arbeit speichern: %d", c)
+			}
+		}
+		ids = append(ids, srv.store.Students[len(srv.store.Students)-1].ID)
+	}
+	// Lehrkraft-Baukasten darf nicht mitgelöscht werden
+	call(t, h, "POST", "/api/teacher/workshop", teacher, nil)
+
+	if c, _ := call(t, h, "POST", "/api/teacher/delete-students", "", map[string]any{"students": ids}); c != 401 {
+		t.Fatalf("ohne Anmeldung: %d", c)
+	}
+
+	// Nur Arbeiten: Anmeldungen bleiben, alle Aufgaben sind leer
+	c, r := call(t, h, "POST", "/api/teacher/delete-students", teacher, map[string]any{"students": ids[:2], "worksOnly": true})
+	if c != 200 || r["works"].(float64) != 4 || r["students"].(float64) != 2 {
+		t.Fatalf("Arbeiten löschen: %d %v", c, r)
+	}
+	if len(srv.store.Students) != 4 || len(srv.store.Works[ids[0]]) != 0 || len(srv.store.Works[ids[2]]) != 2 {
+		t.Fatalf("falscher Stand nach Arbeiten löschen")
+	}
+
+	// Anmeldungen löschen (auch der Lehrkraft-Zugang in der Liste wird übergangen)
+	all := append([]string{}, ids...)
+	for _, st := range srv.store.Students {
+		if st.Teacher {
+			all = append(all, st.ID)
+		}
+	}
+	c, r = call(t, h, "POST", "/api/teacher/delete-students", teacher, map[string]any{"students": all})
+	if c != 200 || r["students"].(float64) != 3 {
+		t.Fatalf("Anmeldungen löschen: %d %v", c, r)
+	}
+	if len(srv.store.Students) != 1 || !srv.store.Students[0].Teacher || len(srv.store.Works[ids[2]]) != 0 {
+		t.Fatalf("nur der Lehrkraft-Zugang sollte bleiben")
+	}
+}

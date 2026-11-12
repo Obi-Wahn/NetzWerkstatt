@@ -92,6 +92,7 @@
     const d = S.data;
     if (!classes().length) {
       return `<span class="muted">Alle Schülerinnen und Schüler stehen in einer gemeinsamen Liste.</span><div class="spacer"></div>`
+        + `<button class="btn small" data-cls="students" title="Anmeldungen und Arbeiten mehrerer Schüler auf einmal löschen">Schüler verwalten</button>`
         + `<button class="btn small" data-cls="manage" title="Klassen anlegen: Wer sich anmeldet, landet in der aktiven Klasse">＋ Klassen anlegen</button>`;
     }
     const n = id => d.allStudents.filter(s => (s.class || '') === id).length;
@@ -102,6 +103,7 @@
       ? `<span class="lock-state on" title="Wer sich jetzt anmeldet, landet in dieser Klasse">aktiv – neue Anmeldungen landen hier</span>`
       : `<span class="lock-state off">nicht aktiv</span>${S.view ? `<button class="btn small primary" data-cls="activate" title="Neue Anmeldungen landen dann in dieser Klasse">Diese Klasse aktiv schalten</button>` : ''}`;
     return `<label class="class-pick">Klasse <select id="sel-class" aria-label="Angezeigte Klasse">${opts.join('')}</select></label>${state}<div class="spacer"></div>`
+      + `<button class="btn small" data-cls="students" title="Anmeldungen und Arbeiten mehrerer Schüler dieser Klasse auf einmal löschen">Schüler verwalten</button>`
       + `<button class="btn small" data-cls="manage">Klassen verwalten</button>`;
   }
   function renderClassBar() {
@@ -177,6 +179,71 @@
     });
   }
 
+  // Dialog „Schüler verwalten“: Für ausgewählte Schüler (oder die ganze angezeigte Klasse)
+  // alle Arbeiten über alle Aufgaben löschen oder die Anmeldungen samt Arbeiten löschen.
+  function openStudents(keep) {
+    const d = S.data;
+    const list = d.students;
+    const sel = new Set((keep || []).filter(id => list.some(s => s.id === id)));
+    const where = classes().length ? `der Klasse ${className(S.view)}` : '';
+    const worksOf = s => Object.values(s.works || {}).filter(w => w && w.network);
+    const last = s => Math.max(0, ...worksOf(s).map(w => w.updated || 0));
+    const body = openModal(`<h2 class="modal-title">Schüler verwalten${classes().length ? ': ' + esc(className(S.view)) : ''}</h2>
+      <p class="muted small">Wähle Schülerinnen und Schüler aus${where ? ' ' + where : ''}. Du kannst alle ihre Arbeiten zu allen Aufgaben löschen, dann bleibt die Anmeldung bestehen. Oder du löschst die Anmeldungen, dann sind auch alle Arbeiten weg.${classes().length ? ' Eine andere Klasse wählst du oben in der Lehreransicht.' : ''}</p>
+      ${list.length ? `<div class="stu-tools">
+        <label class="toggle"><input type="checkbox" id="stu-all"> Alle auswählen (${list.length})</label>
+        <div class="spacer"></div>
+        <button class="btn danger" id="stu-del-works" disabled>Arbeiten löschen</button>
+        <button class="btn danger-fill" id="stu-del" disabled>Anmeldungen löschen</button>
+      </div>
+      <div class="table-wrap stu-wrap"><table class="students stu-table"><thead><tr><th class="sel"></th><th>Name</th><th>Arbeiten</th><th>Zuletzt</th></tr></thead><tbody>${list.map(s => {
+        const ws = worksOf(s), sub = ws.filter(w => w.submitted).length, t = last(s);
+        return `<tr><td class="sel"><input type="checkbox" data-stu="${esc(s.id)}" aria-label="${esc(s.name)} auswählen"></td><td class="name">${esc(s.name)}</td>
+          <td>${ws.length ? `${ws.length} ${ws.length === 1 ? 'Aufgabe' : 'Aufgaben'}${sub ? `, ${sub} abgegeben` : ''}` : '<span class="muted">keine</span>'}</td>
+          <td class="muted">${t ? new Date(t * 1000).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}</td></tr>`;
+      }).join('')}</tbody></table></div>` : `<p class="muted">Hier hat sich noch niemand angemeldet.</p>`}`, { wide: true });
+    if (!list.length) return;
+    const upd = () => {
+      for (const c of body.querySelectorAll('[data-stu]')) c.checked = sel.has(c.dataset.stu);
+      const all = body.querySelector('#stu-all');
+      all.checked = sel.size === list.length; all.indeterminate = sel.size > 0 && sel.size < list.length;
+      const nw = list.filter(s => sel.has(s.id)).reduce((a, s) => a + worksOf(s).length, 0);
+      const bw = body.querySelector('#stu-del-works'), bd = body.querySelector('#stu-del');
+      bw.disabled = !nw; bd.disabled = !sel.size;
+      bw.textContent = nw ? `Arbeiten löschen (${nw})` : 'Arbeiten löschen';
+      bd.textContent = sel.size ? `Anmeldungen löschen (${sel.size})` : 'Anmeldungen löschen';
+    };
+    body.addEventListener('change', ev => {
+      if (ev.target.id === 'stu-all') { sel.clear(); if (ev.target.checked) for (const s of list) sel.add(s.id); }
+      const c = ev.target.closest('[data-stu]');
+      if (c) { if (c.checked) sel.add(c.dataset.stu); else sel.delete(c.dataset.stu); }
+      upd();
+    });
+    const run = async worksOnly => {
+      const chosen = list.filter(s => sel.has(s.id));
+      const n = chosen.length, nw = chosen.reduce((a, s) => a + worksOf(s).length, 0);
+      const all = n === list.length && list.length > 1;
+      const who = all ? (classes().length ? `allen ${n} Schülerinnen und Schülern der Klasse ${className(S.view)}` : `allen ${n} Schülerinnen und Schülern`)
+        : n === 1 ? chosen[0].name : `${n} Schülerinnen und Schülern`;
+      const names = n > 1 ? '\n' + chosen.slice(0, 12).map(s => '• ' + s.name).join('\n') + (n > 12 ? `\n… und ${n - 12} weitere` : '') + '\n' : ' ';
+      const msg = worksOnly
+        ? `Wirklich alle Arbeiten von ${who} löschen (${nw} ${nw === 1 ? 'Arbeit' : 'Arbeiten'} in allen Aufgaben)?${names}Die Anmeldungen bleiben bestehen, die Schüler fangen jede Aufgabe neu an. Das kann nicht rückgängig gemacht werden.`
+        : `Wirklich die ${n === 1 ? 'Anmeldung' : 'Anmeldungen'} von ${who} löschen?${names}Dabei werden auch alle Arbeiten gelöscht${nw ? ` (${nw})` : ''}. Wer sich danach mit demselben Namen anmeldet, beginnt ganz neu. Das kann nicht rückgängig gemacht werden.`;
+      const ok = await confirmBox(msg, worksOnly ? 'Arbeiten löschen' : (n === 1 ? 'Anmeldung löschen' : `${n} Anmeldungen löschen`), true);
+      if (!ok) { openStudents([...sel]); return; }
+      try {
+        const r = await api('POST', '/api/teacher/delete-students', { students: chosen.map(s => s.id), worksOnly }, S.token);
+        for (const s of chosen) S.selected.delete(s.id);
+        toast(worksOnly ? `${r.works} ${r.works === 1 ? 'Arbeit' : 'Arbeiten'} gelöscht.` : `${r.students} ${r.students === 1 ? 'Anmeldung' : 'Anmeldungen'} gelöscht.`, 'ok');
+        await load();
+        openStudents(worksOnly ? [...sel] : []);
+      } catch (e) { toast(e.message, 'error'); openStudents([...sel]); }
+    };
+    body.querySelector('#stu-del-works').addEventListener('click', () => run(true));
+    body.querySelector('#stu-del').addEventListener('click', () => run(false));
+    upd();
+  }
+
   // Schüler in eine andere Klasse verschieben
   function openMove(s) {
     const others = classes().filter(c => c.id !== (s.class || ''));
@@ -199,6 +266,7 @@
     const b = ev.target.closest('[data-cls]');
     if (!b) return;
     if (b.dataset.cls === 'manage') openClasses();
+    if (b.dataset.cls === 'students') openStudents();
     if (b.dataset.cls === 'activate') activate(S.view);
   });
 
@@ -274,7 +342,7 @@
           ${has ? `<button class="btn small ghost" data-delwork="${s.id}" title="Nur die Arbeit zu dieser Aufgabe löschen – die Anmeldung und andere Aufgaben bleiben">Arbeit löschen</button>` : ''}
           <span class="keep">${s.hasCode ? `<button class="btn small ghost" data-code="${s.id}" title="Vergessenen Code zurücksetzen">Code zurücksetzen</button>` : '<span class="badge" title="Beim nächsten Anmelden gilt der neu eingegebene Code">Code frei</span>'}
           ${canMove(s) ? `<button class="btn small ghost" data-move="${s.id}" title="In eine andere Klasse verschieben">⇄ Klasse</button>` : ''}
-          <button class="btn small ghost" data-del="${s.id}" title="Schüler/in mit allen Arbeiten löschen">✕</button></span></td></tr>`;
+          <button class="btn small ghost" data-del="${s.id}" title="Anmeldung mit allen Arbeiten löschen" aria-label="Anmeldung löschen">✕</button></span></td></tr>`;
     }).join('');
     // nicht mehr vorhandene Auswahl entfernen
     for (const id of [...S.selected]) {
