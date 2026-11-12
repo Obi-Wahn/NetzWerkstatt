@@ -292,6 +292,7 @@
         const n = count(t.id);
         return `<div class="task-row ${isUnlocked(t.id) ? '' : 'locked'}">${sw}<button class="task-item ${t.id === S.task ? 'active' : ''}" data-task="${t.id}" ${t.id === S.task ? 'aria-current="true"' : ''}>`
           + `<span class="num">${t.num}</span><span class="ttl">${esc(t.title)}</span>`
+          + (t.solution && d.released[t.id] ? '<span class="sol-mark" title="Musterlösung für Schüler freigegeben" aria-label="Musterlösung freigegeben">Lösung</span>' : '')
           + `<span class="cnt ${n ? 'has' : ''}" title="${n} abgegeben">${n}</span></button></div>`;
       }).join('');
       const extra = g.id === 'eigene'
@@ -404,13 +405,56 @@
   });
   $('chk-unlock').addEventListener('change', ev => setUnlocked([S.task], ev.target.checked));
 
+  // Musterlösungen freigeben oder sperren: eine, ein ganzes Thema oder alle
+  async function setReleased(ids, on) {
+    await api('POST', '/api/teacher/release', { tasks: ids, released: on }, S.token);
+    const n = ids.length;
+    toast(on ? (n === 1 ? 'Musterlösung ist für die Schüler freigegeben.' : `${n} Musterlösungen freigegeben.`)
+      : (n === 1 ? 'Musterlösung ist wieder gesperrt.' : `${n} Musterlösungen gesperrt.`), 'ok');
+    await load();
+  }
+
   $('chk-release').addEventListener('change', async ev => {
-    try {
-      await api('POST', '/api/teacher/release', { task: S.task, released: ev.target.checked }, S.token);
-      toast(ev.target.checked ? 'Musterlösung ist für die Schüler freigegeben.' : 'Musterlösung ist wieder gesperrt.', 'ok');
-      await load();
-    } catch (e) { toast(e.message, 'error'); }
+    try { await setReleased([S.task], ev.target.checked); }
+    catch (e) { toast(e.message, 'error'); render(); }
   });
+
+  // Dialog „Musterlösungen freigeben“: nach Themen geordnet, mit Häkchen je Aufgabe und je Thema
+  function openSolutions() {
+    const rel = id => !!S.data.released[id];
+    const groups = NWTasks.GROUPS.map(g => ({ g, items: NWTasks.all().filter(t => t.group === g.id && t.solution) })).filter(x => x.items.length);
+    const all = groups.flatMap(x => x.items);
+    const on = all.filter(t => rel(t.id)).length;
+    const body = openModal(`<h2 class="modal-title">Musterlösungen freigeben</h2>
+      <p class="muted small">Freigegebene Musterlösungen können die Schüler in der Aufgabe über den Knopf „Musterlösung“ ansehen. Mit dem Häkchen vor einem Thema gibst du alle Musterlösungen dieses Themas auf einmal frei oder sperrst sie wieder. Ist eine Aufgabe noch gesperrt (Hinweis „gesperrt“), sehen die Schüler sie und ihre Musterlösung erst, wenn du die Aufgabe freischaltest.</p>
+      <div class="stu-tools">
+        <span class="muted small">${on} von ${all.length} freigegeben</span>
+        <div class="spacer"></div>
+        <button class="btn small" data-relall="1" ${on === all.length ? 'disabled' : ''}>Alle freigeben</button>
+        <button class="btn small ghost" data-relall="0" ${on ? '' : 'disabled'}>Alle sperren</button>
+      </div>
+      <div class="sol-groups">${groups.map(({ g, items }) => {
+        const k = items.filter(t => rel(t.id)).length;
+        return `<div class="sol-group"><label class="sol-head"><input type="checkbox" data-relgroup="${esc(g.id)}" ${k === items.length ? 'checked' : ''} ${k && k < items.length ? 'data-mixed="1"' : ''}><span>${esc(g.title)}</span><span class="muted small">${k} von ${items.length}</span></label>`
+          + `<ul>${items.map(t => `<li><label class="sol-row"><input type="checkbox" data-rel="${esc(t.id)}" ${rel(t.id) ? 'checked' : ''}><span class="num">${esc(t.num)}</span><span class="ttl">${esc(t.title)}</span>${isUnlocked(t.id) ? '' : '<span class="lock-state off" title="Die Aufgabe selbst ist für Schüler noch gesperrt – sie sehen sie erst, wenn du sie freischaltest">gesperrt</span>'}</label></li>`).join('')}</ul></div>`;
+      }).join('')}</div>`, { wide: true });
+    for (const c of body.querySelectorAll('[data-mixed]')) c.indeterminate = true;
+    const run = async (ids, val) => {
+      try { await setReleased(ids, val); } catch (e) { toast(e.message, 'error'); }
+      if (!$('modal').hidden) openSolutions();
+    };
+    body.addEventListener('change', ev => {
+      const one = ev.target.closest('[data-rel]');
+      if (one) { run([one.dataset.rel], one.checked); return; }
+      const grp = ev.target.closest('[data-relgroup]');
+      if (grp) run(groups.find(x => x.g.id === grp.dataset.relgroup).items.map(t => t.id), grp.checked);
+    });
+    body.addEventListener('click', ev => {
+      const b = ev.target.closest('[data-relall]');
+      if (b) run(all.map(t => t.id), b.dataset.relall === '1');
+    });
+  }
+  $('btn-solutions').addEventListener('click', openSolutions);
 
   $('btn-show-solution').addEventListener('click', () => {
     const t = taskObj();

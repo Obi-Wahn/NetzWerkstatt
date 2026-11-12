@@ -133,3 +133,16 @@ table.students { width: 100%; border-collapse: collapse; }
 .stu-tools .spacer { flex: 1; }
 .stu-tools .btn.danger { margin-top: 0; }
 .stu-wrap { max-height: 55vh; overflow: auto; }
+/* Musterlösungen freigeben: Markierung in der Aufgabenliste und Dialog nach Themen */
+.task-item .sol-mark { flex: none; padding: 1px 7px; border-radius: 99px; background: var(--warn-soft); color: var(--warn); font-size: .72em; font-weight: 700; }
+.task-item.active .sol-mark { background: rgba(255,255,255,.22); color: var(--on-color); }
+.sol-groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px 24px; }
+.sol-group ul { list-style: none; margin: 0; padding: 0 0 0 30px; }
+.sol-head, .sol-row { display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 0; min-height: 40px; }
+.sol-head { font-weight: 700; border-bottom: 1px solid var(--line-soft); }
+.sol-head .muted { margin-left: auto; font-weight: 500; }
+.sol-row { font-weight: 500; }
+.sol-head input, .sol-row input { flex: none; width: 22px; height: 22px; min-height: 0; margin: 0; accent-color: var(--ok); cursor: pointer; }
+.sol-row .num { flex: none; min-width: 1.8em; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+.sol-row .ttl { flex: 1; min-width: 0; }
+.sol-row .lock-state { white-space: nowrap; font-size: .72em; }

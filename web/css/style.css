@@ -594,6 +594,7 @@ table.cmp col.k { width: 26%; }
   --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 4px 14px rgba(0, 0, 0, .3);
 }
 :root[data-theme="dark"] .task-item.active .cnt { background: rgba(0, 0, 0, .2); }
+:root[data-theme="dark"] .task-item.active .sol-mark { background: rgba(0, 0, 0, .2); }
 :root[data-theme="dark"] .modal { background: rgba(0, 0, 0, .65); }
 /* Der QR-Code braucht immer einen hellen Rand, damit Tablets ihn lesen können */
 :root[data-theme="dark"] .access-qr svg { background: #fff; padding: 10px; border-radius: 12px; }

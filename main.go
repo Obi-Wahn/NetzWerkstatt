@@ -947,16 +947,35 @@ func (srv *Server) routes() http.Handler {
 			fail(w, 401, "Bitte als Lehrkraft anmelden.")
 			return
 		}
+		// einzeln (task) oder mehrere auf einmal, z. B. ein ganzes Thema (tasks)
 		var req struct {
-			Task     string `json:"task"`
-			Released bool   `json:"released"`
+			Task     string   `json:"task"`
+			Tasks    []string `json:"tasks"`
+			Released bool     `json:"released"`
 		}
-		if err := readBody(r, &req); err != nil || req.Task == "" {
+		if err := readBody(r, &req); err != nil {
+			fail(w, 400, "Ungültige Anfrage.")
+			return
+		}
+		ids := req.Tasks
+		if req.Task != "" {
+			ids = append(ids, req.Task)
+		}
+		if len(ids) == 0 || len(ids) > 200 {
 			fail(w, 400, "Ungültige Anfrage.")
 			return
 		}
 		s.mu.Lock()
-		s.Released[req.Task] = req.Released
+		for _, id := range ids {
+			if id == "" || len(id) > 40 {
+				continue
+			}
+			if req.Released {
+				s.Released[id] = true
+			} else {
+				delete(s.Released, id)
+			}
+		}
 		s.saveLocked()
 		s.mu.Unlock()
 		writeJSON(w, 200, map[string]bool{"ok": true})
