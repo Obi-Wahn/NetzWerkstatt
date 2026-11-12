@@ -152,14 +152,18 @@
       ${rows ? `<ul class="class-list">${rows}</ul>` : ''}
       <form id="class-new" class="row class-new" autocomplete="off">
         <input id="class-new-name" maxlength="20" placeholder="z. B. 10a" aria-label="Name der neuen Klasse" spellcheck="false" required>
+        ${classes().length ? `<label class="class-from">Freischaltungen <select id="class-new-from" aria-label="Freischaltungen der neuen Klasse">
+          <option value="">wie ab Werk</option>${classes().map(c => `<option value="${esc(c.id)}">wie ${esc(c.name)}</option>`).join('')}</select></label>` : ''}
         <button type="submit" class="btn primary">＋ Klasse anlegen</button>
       </form>
+      <p class="muted small">Jede Klasse hat ihre eigenen Freischaltungen für Aufgaben, Musterlösungen und Vorführungen. ${classes().length ? 'Eine neue Klasse beginnt wie ab Werk oder übernimmt die Freischaltungen einer anderen Klasse.' : 'Die erste Klasse übernimmt die Freischaltungen, die du bisher eingestellt hast.'}</p>
       <p class="error" id="class-error" role="alert">${esc(msg || '')}</p>`);
     const err = body.querySelector('#class-error');
     body.querySelector('#class-new').addEventListener('submit', async ev => {
       ev.preventDefault();
       try {
-        const r = await api('POST', '/api/teacher/class-add', { name: body.querySelector('#class-new-name').value }, S.token);
+        const from = body.querySelector('#class-new-from');
+        const r = await api('POST', '/api/teacher/class-add', { name: body.querySelector('#class-new-name').value, from: from ? from.value : '' }, S.token);
         if (r.active) { S.view = r.id; store.set('nw_view_class', r.id); }
         await load();
         openClasses();
@@ -284,6 +288,9 @@
   // ---------------------------------------------------------------- Darstellung
   function taskObj() { return NWTasks.byId(S.task); }
   const isUnlocked = id => !!(S.data && S.data.unlocked && S.data.unlocked[id]);
+  // Freischaltungen gelten je Klasse: für die angezeigte (bei „Ohne Klasse“ für die aktive)
+  const fClass = () => (S.data && S.data.freigabenClass) || undefined;
+  const fFor = () => fClass() ? ' für die ' + className(fClass()) : '';
 
   function render() {
     const d = S.data;
@@ -291,7 +298,8 @@
     renderClassBar();
     // Aufgabenliste, nach Themen gruppiert, mit Schaltern zum Freischalten
     const count = id => d.students.filter(s => s.works && s.works[id] && s.works[id].submitted).length;
-    $('task-tabs').innerHTML = NWTasks.GROUPS.map(g => {
+    const fHint = fClass() ? `<p class="muted small nav-hint f-hint">Häkchen = für die <b>${esc(className(fClass()))}</b> freigeschaltet. Jede Klasse hat ihre eigenen Freischaltungen.</p>` : '';
+    $('task-tabs').innerHTML = fHint + NWTasks.GROUPS.map(g => {
       const items = NWTasks.all().filter(t => t.group === g.id);
       const on = items.filter(t => isUnlocked(t.id)).length;
       const head = items.length
@@ -317,9 +325,12 @@
     $('task-heading').textContent = `${cur.num}. ${cur.title}`;
     const nCur = count(S.task);
     $('task-count').textContent = `${nCur} von ${d.students.length} abgegeben`;
-    $('task-lock').textContent = isUnlocked(S.task) ? 'für Schüler freigeschaltet' : 'für Schüler gesperrt';
+    $('task-lock').textContent = (isUnlocked(S.task) ? 'freigeschaltet' : 'gesperrt') + (fClass() ? fFor() : ' für Schüler');
     $('task-lock').className = 'lock-state ' + (isUnlocked(S.task) ? 'on' : 'off');
     $('chk-unlock').checked = isUnlocked(S.task);
+    const fw = fClass() ? 'die ' + className(fClass()) : 'Schüler';
+    $('lbl-unlock').textContent = `Für ${fw} freischalten`;
+    $('lbl-release').textContent = `Musterlösung für ${fw} freigeben`;
     $('chk-release').checked = !!d.released[S.task];
     $('btn-show-solution').hidden = !cur.solution;
     $('chk-release').closest('label').hidden = !cur.solution;
@@ -388,9 +399,9 @@
   // ---------------------------------------------------------------- Freischalten
   async function setUnlocked(ids, on) {
     try {
-      await api('POST', '/api/teacher/unlock', { tasks: ids, unlocked: on }, S.token);
-      const n = ids.length;
-      toast(on ? (n === 1 ? 'Freigeschaltet – die Schüler sehen die Aufgabe jetzt.' : `${n} Aufgaben freigeschaltet.`) : (n === 1 ? 'Gesperrt – die Schüler sehen die Aufgabe nicht mehr.' : `${n} Aufgaben gesperrt.`), 'ok');
+      await api('POST', '/api/teacher/unlock', { tasks: ids, unlocked: on, class: fClass() }, S.token);
+      const n = ids.length, f = fFor();
+      toast(on ? (n === 1 ? `Freigeschaltet${f} – die Schüler sehen die Aufgabe jetzt.` : `${n} Aufgaben${f} freigeschaltet.`) : (n === 1 ? `Gesperrt${f} – die Schüler sehen die Aufgabe nicht mehr.` : `${n} Aufgaben${f} gesperrt.`), 'ok');
       await load();
     } catch (e) { toast(e.message, 'error'); render(); }
   }
@@ -418,10 +429,10 @@
 
   // Musterlösungen freigeben oder sperren: eine, ein ganzes Thema oder alle
   async function setReleased(ids, on) {
-    await api('POST', '/api/teacher/release', { tasks: ids, released: on }, S.token);
-    const n = ids.length;
-    toast(on ? (n === 1 ? 'Musterlösung ist für die Schüler freigegeben.' : `${n} Musterlösungen freigegeben.`)
-      : (n === 1 ? 'Musterlösung ist wieder gesperrt.' : `${n} Musterlösungen gesperrt.`), 'ok');
+    await api('POST', '/api/teacher/release', { tasks: ids, released: on, class: fClass() }, S.token);
+    const n = ids.length, f = fFor();
+    toast(on ? (n === 1 ? `Musterlösung ist${f || ' für die Schüler'} freigegeben.` : `${n} Musterlösungen${f} freigegeben.`)
+      : (n === 1 ? `Musterlösung ist${f} wieder gesperrt.` : `${n} Musterlösungen${f} gesperrt.`), 'ok');
     await load();
   }
 
@@ -436,8 +447,8 @@
     const groups = NWTasks.GROUPS.map(g => ({ g, items: NWTasks.all().filter(t => t.group === g.id && t.solution) })).filter(x => x.items.length);
     const all = groups.flatMap(x => x.items);
     const on = all.filter(t => rel(t.id)).length;
-    const body = openModal(`<h2 class="modal-title">Musterlösungen freigeben</h2>
-      <p class="muted small">Freigegebene Musterlösungen können die Schüler in der Aufgabe über den Knopf „Musterlösung“ ansehen. Mit dem Häkchen vor einem Thema gibst du alle Musterlösungen dieses Themas auf einmal frei oder sperrst sie wieder. Ist eine Aufgabe noch gesperrt (Hinweis „gesperrt“), sehen die Schüler sie und ihre Musterlösung erst, wenn du die Aufgabe freischaltest.</p>
+    const body = openModal(`<h2 class="modal-title">Musterlösungen freigeben${fClass() ? ': ' + esc(className(fClass())) : ''}</h2>
+      <p class="muted small">${fClass() ? `Die Häkchen gelten nur für die <b>${esc(className(fClass()))}</b>. Eine andere Klasse wählst du oben in der Lehreransicht. ` : ''}Freigegebene Musterlösungen können die Schüler in der Aufgabe über den Knopf „Musterlösung“ ansehen. Mit dem Häkchen vor einem Thema gibst du alle Musterlösungen dieses Themas auf einmal frei oder sperrst sie wieder. Ist eine Aufgabe noch gesperrt (Hinweis „gesperrt“), sehen die Schüler sie und ihre Musterlösung erst, wenn du die Aufgabe freischaltest.</p>
       <div class="stu-tools">
         <span class="muted small">${on} von ${all.length} freigegeben</span>
         <div class="spacer"></div>

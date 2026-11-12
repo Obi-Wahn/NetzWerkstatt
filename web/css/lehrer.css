@@ -126,7 +126,11 @@ table.students { width: 100%; border-collapse: collapse; }
 .class-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
 .class-row input { flex: 1 1 80px; width: auto; min-width: 0; font-weight: 600; }
 .class-row .cnt, .class-row .btn { white-space: nowrap; }
-.class-new input { flex: 1 1 160px; width: auto; }
+.class-new { flex-wrap: wrap; }
+.class-new input { flex: 1 1 160px; width: auto; min-width: 0; }
+.class-from { display: flex; align-items: center; gap: 6px; margin: 0; white-space: nowrap; }
+.class-from select { width: auto; }
+.nav-hint.f-hint { margin: 0 8px 8px; }
 .access .big-class { font-size: clamp(32px, min(6vw, 9vh), 72px); font-weight: 800; }
 /* Schüler verwalten: Auswahl und Löschen über alle Aufgaben */
 .stu-tools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 12px 0; }

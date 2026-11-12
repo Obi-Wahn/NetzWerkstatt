@@ -49,10 +49,43 @@ type Student struct {
 	Class string `json:"class,omitempty"`
 }
 
+// Freigaben: Was die Schüler sehen dürfen. Jede Klasse hat ihre eigenen Freigaben;
+// die Freigaben im Store selbst gelten, solange keine Klassen angelegt sind.
+type Freigaben struct {
+	Released map[string]bool `json:"released"` // taskID -> Musterlösung freigegeben
+	Unlocked map[string]bool `json:"unlocked"` // taskID -> für Schüler freigeschaltet
+	Demos    map[string]bool `json:"demos"`    // demoID -> Vorführung für Schüler freigegeben
+}
+
+func copyMap(m map[string]bool) map[string]bool {
+	out := make(map[string]bool, len(m))
+	for k, v := range m {
+		if v {
+			out[k] = true
+		}
+	}
+	return out
+}
+
+// clone liefert eine unabhängige Kopie (nur eingeschaltete Einträge).
+func (f *Freigaben) clone() Freigaben {
+	return Freigaben{Released: copyMap(f.Released), Unlocked: copyMap(f.Unlocked), Demos: copyMap(f.Demos)}
+}
+
+// factoryFreigaben: so ist alles ab Werk eingestellt.
+func factoryFreigaben() Freigaben {
+	f := Freigaben{Released: map[string]bool{}, Unlocked: map[string]bool{}, Demos: map[string]bool{}}
+	for _, id := range defaultUnlocked {
+		f.Unlocked[id] = true
+	}
+	return f
+}
+
 // Class ist eine Klasse der Lehrkraft. Neue Schüler landen in der aktiven Klasse.
 type Class struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	Freigaben
 }
 
 const maxClasses = 60
@@ -78,11 +111,9 @@ type Store struct {
 	RoomCode        string                     `json:"roomCode"`
 	TeacherPassword string                     `json:"teacherPassword"`
 	Students        []*Student                 `json:"students"`
-	Works           map[string]map[string]Work `json:"works"`    // studentID -> taskID -> Arbeit
-	Released        map[string]bool            `json:"released"` // taskID -> Musterlösung freigegeben
-	Unlocked        map[string]bool            `json:"unlocked"` // taskID -> für Schüler freigeschaltet
+	Works           map[string]map[string]Work `json:"works"` // studentID -> taskID -> Arbeit
+	Freigaben                                  // gelten, solange keine Klassen angelegt sind
 	CustomTasks     []json.RawMessage          `json:"customTasks"`
-	Demos           map[string]bool            `json:"demos"` // demoID -> Vorführung für Schüler freigegeben
 	Classes         []*Class                   `json:"classes"`
 	ActiveClass     string                     `json:"activeClass"` // ID der aktiven Klasse ("" = keine Klassen angelegt)
 
@@ -160,6 +191,19 @@ func loadStore(path string) *Store {
 	}
 	if s.Classes == nil {
 		s.Classes = []*Class{}
+	}
+	// Klassen aus älteren Versionen hatten keine eigenen Freigaben: Sie übernehmen die
+	// bisherigen (gemeinsamen) Freigaben, damit sich für die Schüler nichts ändert.
+	for _, c := range s.Classes {
+		if c.Released == nil {
+			c.Released = copyMap(s.Released)
+		}
+		if c.Unlocked == nil {
+			c.Unlocked = copyMap(s.Unlocked)
+		}
+		if c.Demos == nil {
+			c.Demos = copyMap(s.Demos)
+		}
 	}
 	if s.classByID(s.ActiveClass) == nil {
 		s.ActiveClass = ""
@@ -270,14 +314,14 @@ func customTaskID(raw json.RawMessage) (string, error) {
 
 // customForStudents liefert eigene Aufgaben ohne Musterlösung, außer sie ist freigegeben.
 // Aufrufer muss s.mu halten.
-func (s *Store) customForStudents(all bool) []json.RawMessage {
+func (s *Store) customForStudents(f *Freigaben, all bool) []json.RawMessage {
 	out := []json.RawMessage{}
 	for _, raw := range s.CustomTasks {
 		id, err := customTaskID(raw)
-		if err != nil || (!all && !s.Unlocked[id]) {
+		if err != nil || (!all && !f.Unlocked[id]) {
 			continue
 		}
-		if !s.Released[id] {
+		if !all && !f.Released[id] {
 			var m map[string]json.RawMessage
 			if json.Unmarshal(raw, &m) != nil {
 				continue
@@ -291,15 +335,46 @@ func (s *Store) customForStudents(all bool) []json.RawMessage {
 	return out
 }
 
-// openDemos: freigegebene Vorführungen (nur IDs mit true). Aufruf mit gehaltener Sperre.
-func (s *Store) openDemos() map[string]bool {
-	open := map[string]bool{}
-	for id, on := range s.Demos {
-		if on {
-			open[id] = true
-		}
+// freigaben liefert die Freigaben einer Klasse. Ohne (gültige) Klasse gelten die
+// gemeinsamen Freigaben, die nur ohne angelegte Klassen benutzt werden. Aufrufer muss s.mu halten.
+func (s *Store) freigaben(classID string) *Freigaben {
+	if c := s.classByID(classID); c != nil {
+		return &c.Freigaben
 	}
-	return open
+	return &s.Freigaben
+}
+
+// targetFreigaben: Welche Freigaben ändert die Lehrkraft? Die der genannten Klasse;
+// ohne Angabe die der aktiven Klasse (ohne Klassen: die gemeinsamen). Gibt es die
+// genannte Klasse nicht mehr, antwortet sie mit einem Fehler. Aufrufer muss s.mu halten.
+func (s *Store) targetFreigaben(w http.ResponseWriter, class *string) (*Freigaben, bool) {
+	if class == nil || (*class == "" && len(s.Classes) == 0) {
+		return s.freigaben(s.ActiveClass), true
+	}
+	c := s.classByID(*class)
+	if c == nil {
+		fail(w, 404, "Diese Klasse gibt es nicht mehr. Lade die Seite neu.")
+		return nil, false
+	}
+	return &c.Freigaben, true
+}
+
+// allFreigaben: die gemeinsamen und die aller Klassen. Aufrufer muss s.mu halten.
+func (s *Store) allFreigaben() []*Freigaben {
+	out := []*Freigaben{&s.Freigaben}
+	for _, c := range s.Classes {
+		out = append(out, &c.Freigaben)
+	}
+	return out
+}
+
+// classList: Klassen ohne ihre Freigaben (für Listen in der Oberfläche).
+func (s *Store) classList() []map[string]string {
+	out := []map[string]string{}
+	for _, c := range s.Classes {
+		out = append(out, map[string]string{"id": c.ID, "name": c.Name})
+	}
+	return out
 }
 
 func (s *Store) classByID(id string) *Class {
@@ -582,23 +657,30 @@ func (srv *Server) routes() http.Handler {
 		for tid, wk := range s.Works[st.ID] {
 			status[tid] = map[string]any{"submitted": wk.Submitted, "updated": wk.Updated}
 		}
-		unlocked := map[string]bool{}
-		for id, on := range s.Unlocked {
-			if on {
-				unlocked[id] = true
-			}
+		f := s.freigaben(st.Class)
+		released := copyMap(f.Released)
+		if st.Teacher {
+			// Die Lehrkraft sieht im Baukasten jede Musterlösung (Knopf in der Aufgabe),
+			// unabhängig von den Freigaben einer Klasse.
+			released = map[string]bool{}
 		}
-		writeJSON(w, 200, map[string]any{"name": st.Name, "className": s.className(st.Class), "works": status, "released": s.Released,
-			"unlocked": unlocked, "preview": st.Teacher, "customTasks": s.customForStudents(st.Teacher),
-			"demos": s.openDemos(), "allDemos": st.Teacher})
+		writeJSON(w, 200, map[string]any{"name": st.Name, "className": s.className(st.Class), "works": status, "released": released,
+			"unlocked": copyMap(f.Unlocked), "preview": st.Teacher, "customTasks": s.customForStudents(f, st.Teacher),
+			"demos": copyMap(f.Demos), "allDemos": st.Teacher})
 	})
 
-	// Vorführungen: Die Lehrkraft sieht alle, Schüler nur die freigegebenen
+	// Vorführungen: Die Lehrkraft sieht alle, Schüler nur die für ihre Klasse freigegebenen.
+	// Die Lehrkraft bekommt die Freigaben der Klasse ?class= (sonst der aktiven Klasse).
 	mux.HandleFunc("GET /api/demos", func(w http.ResponseWriter, r *http.Request) {
 		if srv.isTeacher(r) {
 			s.mu.Lock()
 			defer s.mu.Unlock()
-			writeJSON(w, 200, map[string]any{"teacher": true, "open": s.openDemos()})
+			cls := r.URL.Query().Get("class")
+			if s.classByID(cls) == nil {
+				cls = s.ActiveClass
+			}
+			writeJSON(w, 200, map[string]any{"teacher": true, "open": copyMap(s.freigaben(cls).Demos),
+				"class": cls, "classes": s.classList(), "activeClass": s.ActiveClass})
 			return
 		}
 		s.mu.Lock()
@@ -608,7 +690,7 @@ func (srv *Server) routes() http.Handler {
 			fail(w, 401, "Bitte melde dich an.")
 			return
 		}
-		writeJSON(w, 200, map[string]any{"teacher": false, "all": st.Teacher, "open": s.openDemos()})
+		writeJSON(w, 200, map[string]any{"teacher": false, "all": st.Teacher, "open": copyMap(s.freigaben(st.Class).Demos)})
 	})
 
 	mux.HandleFunc("GET /api/work/{task}", func(w http.ResponseWriter, r *http.Request) {
@@ -651,7 +733,7 @@ func (srv *Server) routes() http.Handler {
 		wk, exists := s.Works[st.ID][task]
 		// Nur freigeschaltete Aufgaben (oder schon begonnene, falls die Lehrkraft sie
 		// inzwischen gesperrt hat). So füllt niemand die Datei mit erfundenen Aufgaben.
-		if !st.Teacher && !exists && !s.Unlocked[task] {
+		if !st.Teacher && !exists && !s.freigaben(st.Class).Unlocked[task] {
 			fail(w, 403, "Diese Aufgabe ist nicht freigeschaltet.")
 			return
 		}
@@ -754,9 +836,15 @@ func (srv *Server) routes() http.Handler {
 		for _, ip := range localIPs() {
 			addrs = append(addrs, fmt.Sprintf("http://%s:%d", ip, srv.port))
 		}
-		writeJSON(w, 200, map[string]any{"students": rows, "released": s.Released, "roomCode": s.RoomCode, "addresses": addrs,
-			"unlocked": s.Unlocked, "customTasks": s.CustomTasks, "ownWorks": own,
-			"classes": s.Classes, "activeClass": s.ActiveClass})
+		// Freigaben der angezeigten Klasse (ohne gültige Klasse: der aktiven)
+		fcls := cls
+		if s.classByID(fcls) == nil {
+			fcls = s.ActiveClass
+		}
+		f := s.freigaben(fcls)
+		writeJSON(w, 200, map[string]any{"students": rows, "released": copyMap(f.Released), "roomCode": s.RoomCode, "addresses": addrs,
+			"unlocked": copyMap(f.Unlocked), "demos": copyMap(f.Demos), "freigabenClass": fcls, "customTasks": s.CustomTasks, "ownWorks": own,
+			"classes": s.classList(), "activeClass": s.ActiveClass})
 	})
 
 	// Ein einzelnes Netz einer Schülerin oder eines Schülers (z. B. als Vorlage für eine eigene Aufgabe)
@@ -784,7 +872,8 @@ func (srv *Server) routes() http.Handler {
 			fail(w, 401, "Bitte als Lehrkraft anmelden.")
 			return
 		}
-		var req struct{ Name string }
+		// From: Klasse, deren Freigaben übernommen werden ("" = wie ab Werk)
+		var req struct{ Name, From string }
 		if err := readBody(r, &req); err != nil {
 			fail(w, 400, "Ungültige Anfrage.")
 			return
@@ -805,6 +894,15 @@ func (srv *Server) routes() http.Handler {
 			return
 		}
 		c := &Class{ID: randomToken(4), Name: name}
+		switch from := s.classByID(req.From); {
+		case len(s.Classes) == 0:
+			// Die erste Klasse übernimmt, was bisher für alle galt.
+			c.Freigaben = s.Freigaben.clone()
+		case from != nil:
+			c.Freigaben = from.clone()
+		default:
+			c.Freigaben = factoryFreigaben()
+		}
 		s.Classes = append(s.Classes, c)
 		if s.ActiveClass == "" {
 			s.ActiveClass = c.ID
@@ -963,19 +1061,28 @@ func (srv *Server) routes() http.Handler {
 		var req struct {
 			Tasks    []string `json:"tasks"`
 			Unlocked bool     `json:"unlocked"`
+			Class    *string  `json:"class"`
 		}
 		if err := readBody(r, &req); err != nil || len(req.Tasks) == 0 || len(req.Tasks) > 200 {
 			fail(w, 400, "Ungültige Anfrage.")
 			return
 		}
 		s.mu.Lock()
+		defer s.mu.Unlock()
+		f, ok := s.targetFreigaben(w, req.Class)
+		if !ok {
+			return
+		}
 		for _, id := range req.Tasks {
 			if id != "" && len(id) <= 40 {
-				s.Unlocked[id] = req.Unlocked
+				if req.Unlocked {
+					f.Unlocked[id] = true
+				} else {
+					delete(f.Unlocked, id)
+				}
 			}
 		}
 		s.saveLocked()
-		s.mu.Unlock()
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	})
 
@@ -988,23 +1095,28 @@ func (srv *Server) routes() http.Handler {
 		var req struct {
 			Demos []string `json:"demos"`
 			Open  bool     `json:"open"`
+			Class *string  `json:"class"`
 		}
 		if err := readBody(r, &req); err != nil || len(req.Demos) == 0 || len(req.Demos) > 100 {
 			fail(w, 400, "Ungültige Anfrage.")
 			return
 		}
 		s.mu.Lock()
+		defer s.mu.Unlock()
+		f, ok := s.targetFreigaben(w, req.Class)
+		if !ok {
+			return
+		}
 		for _, id := range req.Demos {
 			if id != "" && len(id) <= 40 {
 				if req.Open {
-					s.Demos[id] = true
+					f.Demos[id] = true
 				} else {
-					delete(s.Demos, id)
+					delete(f.Demos, id)
 				}
 			}
 		}
 		s.saveLocked()
-		s.mu.Unlock()
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	})
 
@@ -1063,8 +1175,10 @@ func (srv *Server) routes() http.Handler {
 			}
 		}
 		s.CustomTasks = kept
-		delete(s.Unlocked, req.ID)
-		delete(s.Released, req.ID)
+		for _, f := range s.allFreigaben() {
+			delete(f.Unlocked, req.ID)
+			delete(f.Released, req.ID)
+		}
 		for _, works := range s.Works {
 			delete(works, req.ID)
 		}
@@ -1104,6 +1218,7 @@ func (srv *Server) routes() http.Handler {
 			Task     string   `json:"task"`
 			Tasks    []string `json:"tasks"`
 			Released bool     `json:"released"`
+			Class    *string  `json:"class"`
 		}
 		if err := readBody(r, &req); err != nil {
 			fail(w, 400, "Ungültige Anfrage.")
@@ -1118,18 +1233,22 @@ func (srv *Server) routes() http.Handler {
 			return
 		}
 		s.mu.Lock()
+		defer s.mu.Unlock()
+		f, ok := s.targetFreigaben(w, req.Class)
+		if !ok {
+			return
+		}
 		for _, id := range ids {
 			if id == "" || len(id) > 40 {
 				continue
 			}
 			if req.Released {
-				s.Released[id] = true
+				f.Released[id] = true
 			} else {
-				delete(s.Released, id)
+				delete(f.Released, id)
 			}
 		}
 		s.saveLocked()
-		s.mu.Unlock()
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	})
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"regexp"
 	"testing"
@@ -317,5 +318,95 @@ func TestLehrerPasswort(t *testing.T) {
 	}
 	if code, _ := call(t, h, "POST", "/api/teacher/login", "", map[string]string{"password": "richtig1234"}); code != 429 {
 		t.Fatalf("Nach 5 Fehlversuchen sollte gesperrt sein: %d", code)
+	}
+}
+
+func TestFreigabenProKlasse(t *testing.T) {
+	srv, h, teacher := testServer(t)
+	room := srv.store.RoomCode
+
+	// Ohne Klassen: gemeinsame Freigaben; die erste Klasse übernimmt sie.
+	call(t, h, "POST", "/api/teacher/unlock", teacher, map[string]any{"tasks": []string{"ipv6"}, "unlocked": true})
+	call(t, h, "POST", "/api/teacher/demos", teacher, map[string]any{"demos": []string{"dhcp"}, "open": true})
+	_, r := call(t, h, "POST", "/api/teacher/class-add", teacher, map[string]string{"name": "10a"})
+	idA := r["id"].(string)
+	a := srv.store.classByID(idA)
+	if !a.Unlocked["ipv6"] || !a.Unlocked["zwei-pcs"] || !a.Demos["dhcp"] {
+		t.Fatalf("Erste Klasse sollte die bisherigen Freigaben übernehmen: %v %v", a.Unlocked, a.Demos)
+	}
+
+	// Weitere Klasse: ab Werk oder wie eine andere Klasse.
+	_, r = call(t, h, "POST", "/api/teacher/class-add", teacher, map[string]string{"name": "10b"})
+	idB := r["id"].(string)
+	b := srv.store.classByID(idB)
+	if b.Unlocked["ipv6"] || !b.Unlocked["zwei-pcs"] || len(b.Demos) != 0 {
+		t.Fatalf("Neue Klasse sollte wie ab Werk beginnen: %v %v", b.Unlocked, b.Demos)
+	}
+	_, r = call(t, h, "POST", "/api/teacher/class-add", teacher, map[string]string{"name": "10c", "from": idA})
+	if c := srv.store.classByID(r["id"].(string)); !c.Unlocked["ipv6"] || !c.Demos["dhcp"] {
+		t.Fatalf("10c sollte die Freigaben der 10a übernehmen: %v", c.Unlocked)
+	}
+
+	// Freigaben gelten nur für die genannte Klasse.
+	call(t, h, "POST", "/api/teacher/unlock", teacher, map[string]any{"tasks": []string{"dns"}, "unlocked": true, "class": idB})
+	call(t, h, "POST", "/api/teacher/release", teacher, map[string]any{"tasks": []string{"stern"}, "released": true, "class": idB})
+	call(t, h, "POST", "/api/teacher/demos", teacher, map[string]any{"demos": []string{"webseite"}, "open": true, "class": idB})
+	if a.Unlocked["dns"] || a.Released["stern"] || a.Demos["webseite"] {
+		t.Fatalf("Freigaben der 10b dürfen die 10a nicht ändern")
+	}
+	if code, _ := call(t, h, "POST", "/api/teacher/unlock", teacher, map[string]any{"tasks": []string{"dns"}, "unlocked": true, "class": "weg"}); code != 404 {
+		t.Fatalf("Unbekannte Klasse sollte 404 geben: %d", code)
+	}
+
+	// Lehreransicht bekommt die Freigaben der angezeigten Klasse.
+	_, ov := call(t, h, "GET", "/api/teacher/overview?class="+idB, teacher, nil)
+	if ov["freigabenClass"] != idB || ov["unlocked"].(map[string]any)["dns"] != true || ov["released"].(map[string]any)["stern"] != true {
+		t.Fatalf("Übersicht 10b: %v", ov)
+	}
+
+	// Schüler sehen die Freigaben ihrer Klasse.
+	_, r = login(t, h, room, "Ali", "1234")
+	tokA := r["token"].(string)
+	_, me := call(t, h, "GET", "/api/me", tokA, nil)
+	if me["unlocked"].(map[string]any)["dns"] != nil || me["unlocked"].(map[string]any)["ipv6"] != true {
+		t.Fatalf("10a sieht falsche Aufgaben: %v", me["unlocked"])
+	}
+	if code, _ := call(t, h, "PUT", "/api/work/dns", tokA, map[string]any{"network": map[string]any{}}); code != 403 {
+		t.Fatalf("In der 10a ist DNS gesperrt: %d", code)
+	}
+	call(t, h, "POST", "/api/teacher/class-activate", teacher, map[string]string{"id": idB})
+	_, r = login(t, h, room, "Bea", "1234")
+	tokB := r["token"].(string)
+	_, me = call(t, h, "GET", "/api/me", tokB, nil)
+	if me["unlocked"].(map[string]any)["dns"] != true || me["released"].(map[string]any)["stern"] != true || me["demos"].(map[string]any)["webseite"] != true {
+		t.Fatalf("10b sieht ihre Freigaben nicht: %v", me)
+	}
+	if code, _ := call(t, h, "PUT", "/api/work/dns", tokB, map[string]any{"network": map[string]any{}}); code != 200 {
+		t.Fatalf("In der 10b ist DNS frei: %d", code)
+	}
+	_, d := call(t, h, "GET", "/api/demos?class="+idA, teacher, nil)
+	if d["class"] != idA || d["open"].(map[string]any)["webseite"] != nil {
+		t.Fatalf("Vorführungen der 10a für die Lehrkraft: %v", d)
+	}
+}
+
+func TestFreigabenAusAlterDatei(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "daten.json")
+	old := `{"roomCode":"1234","teacherPassword":"x","released":{"stern":true},"unlocked":{"zwei-pcs":true,"dns":true,"heimnetz":false},
+		"demos":{"dhcp":true},"classes":[{"id":"a1","name":"10a"},{"id":"b2","name":"10b"}],"activeClass":"a1"}`
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := loadStore(path)
+	for _, id := range []string{"a1", "b2"} {
+		c := s.classByID(id)
+		if !c.Unlocked["dns"] || c.Unlocked["heimnetz"] || !c.Released["stern"] || !c.Demos["dhcp"] {
+			t.Fatalf("Klasse %s hat die alten Freigaben nicht übernommen: %+v", id, c.Freigaben)
+		}
+	}
+	// Die Klassen haben jetzt eigene Kopien.
+	s.classByID("a1").Unlocked["ipv6"] = true
+	if s.classByID("b2").Unlocked["ipv6"] || s.Unlocked["ipv6"] {
+		t.Fatalf("Freigaben der Klassen müssen unabhängig sein")
 	}
 }

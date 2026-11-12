@@ -642,6 +642,8 @@ table.cmp col.k { width: 26%; }
 /* ---------------------------------------------------------------- Vorführungen */
 .demo-intro-teacher p { margin: 0 0 8px; }
 .demo-admin { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 14px; }
+.demo-class { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 600; }
+.demo-class select { width: auto; min-width: 120px; }
 .demo-msg { padding: 12px 14px; border-radius: var(--radius); background: var(--panel); border: 1px solid var(--line); }
 .demo-item { display: flex; flex-direction: column; gap: 6px; }
 .demo-item .task-tile { flex: 1; }
