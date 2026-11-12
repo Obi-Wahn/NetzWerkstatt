@@ -179,6 +179,13 @@ input:disabled { background: var(--chip-bg); color: var(--muted); }
 .pal-tool { border-style: dashed; }
 .pal-tool.active { background: var(--brand); color: var(--on-color); border-color: var(--brand); border-style: solid; }
 .is-readonly .pal-btn { opacity: .4; pointer-events: none; }
+/* Geräte lassen sich aus der Leiste ziehen: seitlich ziehen rollt nicht, langes Drücken öffnet kein Menü */
+.pal-btn[data-type] { touch-action: pan-y; -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+.pal-ghost { position: fixed; left: 0; top: 0; z-index: 60; pointer-events: none; margin: -32px 0 0 -32px; width: 64px; height: 64px;
+  display: flex; align-items: center; justify-content: center; border-radius: 14px; border: 2px solid var(--brand);
+  background: var(--panel); color: var(--ink); box-shadow: 0 6px 18px rgba(20, 35, 60, .3); opacity: .92; }
+.pal-ghost .icon { stroke: var(--ink); }
+.canvas.drop-ok { outline: 3px dashed var(--brand); outline-offset: -3px; }
 .icon, .glyph { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .icon .fill, .glyph .fill { fill: var(--brand-soft); stroke: none; }
 
