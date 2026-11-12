@@ -131,7 +131,7 @@
       for (const t of items) {
         const w = S.me && S.me.works[t.id];
         const status = w ? (w.submitted ? '<span class="badge ok">abgegeben ✓</span>' : '<span class="badge">angefangen</span>') : '<span class="badge new">neu</span>';
-        const sol = S.me && S.me.released[t.id] ? '<span class="badge sol">Musterlösung da</span>' : '';
+        const sol = S.me && S.me.released[t.id] ? '<span class="badge sol">Musterlösung</span>' : '';
         const b = document.createElement('button');
         b.className = 'task-tile' + (t.free ? ' free' : '') + (t.custom ? ' custom' : '') + (w && w.submitted ? ' done' : '');
         b.innerHTML = `<div class="tile-num">${t.free ? '∞' : t.num}</div><div class="tile-body"><h4>${esc(t.title)}</h4><p>${esc(t.intro)}</p><div class="tile-meta">${NWStufen.stars(t) ? `<span class="stars" title="Anspruch: ${t.level} von 3">${NWStufen.stars(t)}</span>` : ''}${t.free ? '' : status}${sol}${t.goals.length ? `<span class="muted small">${t.goals.length} Ziele</span>` : ''}</div></div>`;
