@@ -810,7 +810,7 @@
     return build(({ net, add, link }) => {
       serviceBase(add, link, false);
       add('pc', 'pc', 110, 180, { name: 'PC 1' });
-      add('sp', 'smartphone', 110, 420, { name: 'Smartphone 1' });
+      add('sp', 'smartphone', 110, 340, { name: 'Smartphone 1' });
       link('pc', 'r');
       link('r', 'sp', 'wlan');
       lease(net, 'pc', 'sp');
