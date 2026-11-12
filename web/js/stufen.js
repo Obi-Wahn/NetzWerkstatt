@@ -9,10 +9,11 @@
 (function (root) {
   'use strict';
 
+  // Die Stufen regeln nur, wie viel Hilfe es gibt – die Aufgabe selbst bleibt gleich.
   const LEVELS = [
-    { id: 'leicht', label: 'Leicht', text: 'Tipp offen, Vorschläge an und ein Hinweis zum nächsten Schritt.' },
-    { id: 'mittel', label: 'Mittel', text: 'Tipp auf Knopfdruck, Vorschläge an.' },
-    { id: 'schwer', label: 'Schwer', text: 'Kein Tipp und keine 💡-Vorschläge: Du überlegst alles selbst.' },
+    { id: 'leicht', label: 'Viel Hilfe', short: 'viel', text: 'Der Tipp ist offen, beim nächsten Ziel steht, wo du tippen musst, und es gibt 💡-Vorschläge.' },
+    { id: 'mittel', label: 'Etwas Hilfe', short: 'etwas', text: 'Den Tipp kannst du bei Bedarf aufklappen. Es gibt 💡-Vorschläge.' },
+    { id: 'schwer', label: 'Wenig Hilfe', short: 'wenig', text: 'Kein Tipp und keine 💡-Vorschläge: Du überlegst alles selbst.' },
   ];
   const DEFAULT = 'mittel';
 
@@ -135,6 +136,8 @@
   /** Stufe eines Netzwerks (ohne Angabe: mittel). */
   const of = net => (net && valid(net.level) ? net.level : DEFAULT);
   const label = id => (LEVELS.find(l => l.id === id) || LEVELS[1]).label;
+  /** Kurzform für die Lehreransicht, z. B. „Hilfe: viel“. */
+  const badge = id => 'Hilfe: ' + (LEVELS.find(l => l.id === id) || LEVELS[1]).short;
   /** Hinweis für die Stufe „Leicht“ zum Ziel mit Index i (oder ''). */
   const help = (task, i) => (task && !task.custom && HELP[task.id] && HELP[task.id][i]) || '';
   /** Sterne für den Anspruch einer Aufgabe (Feld level 1–3 in tasks.js). */
@@ -143,6 +146,6 @@
     return n > 0 ? '★'.repeat(Math.min(3, n)) + '☆'.repeat(Math.max(0, 3 - n)) : '';
   };
 
-  root.NWStufen = { LEVELS, DEFAULT, HELP, valid, of, label, help, stars };
+  root.NWStufen = { LEVELS, DEFAULT, HELP, valid, of, label, badge, help, stars };
   if (typeof module !== 'undefined') module.exports = root.NWStufen;
 })(typeof window !== 'undefined' ? window : globalThis);
