@@ -417,6 +417,16 @@ select { font: inherit; width: 100%; padding: 8px; border: 1px solid var(--line)
 .side.has-sel .goals li { padding-top: 4px; padding-bottom: 4px; font-size: .86em; }
 .side.has-sel .goals li::before { top: 5px; }
 .side.has-sel .goals li.done::after { top: 8px; }
+/* Kompakt: erreichte Ziele nur als Zusammenfassung, darunter die offenen */
+/* Kompakt (Gerät gewählt): Erklärung zur Hilfe ausblenden, damit mehr Ziele Platz haben */
+.side.has-sel .level-text { display: none; }
+.goals li.sum { display: none; }
+.side.has-sel .goals li.sum { display: block; background: var(--ok-soft); color: var(--ok); font-weight: 600; padding-left: 10px; }
+.side.has-sel .goals li.sum::before, .side.has-sel .goals li.sum::after { display: none; }
+.side.has-sel .goals li.sum ~ li.done { display: none; }
+.card-more { position: sticky; bottom: -10px; display: block; width: calc(100% + 24px); margin: 4px -12px -10px; padding: 8px 12px; border: 0; border-top: 1px solid var(--line);
+  background: var(--panel); color: var(--brand); font: inherit; font-size: .84em; font-weight: 700; text-align: left; cursor: pointer; border-radius: 0 0 var(--radius) var(--radius); }
+.card-more[hidden] { display: none; }
 /* Leiste „Testen“: führt direkt zu Ping, Browser, Diensten und Dateien */
 .jump { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 2px; padding: 8px; border-radius: 10px; background: var(--brand-soft); }
 .jump-label { font-size: .82em; font-weight: 700; color: var(--brand); margin-right: 2px; }

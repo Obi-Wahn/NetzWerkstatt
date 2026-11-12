@@ -8,12 +8,13 @@
     del(k) { try { localStorage.removeItem(k); } catch (e) { /* egal */ } },
   };
 
-  async function api(method, url, body, token) {
+  /** extra: weitere Fetch-Optionen, z. B. { keepalive: true } beim Verlassen der Seite. */
+  async function api(method, url, body, token, extra) {
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers.Authorization = 'Bearer ' + token;
     let res;
     try {
-      res = await fetch(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+      res = await fetch(url, Object.assign({ method, headers, body: body === undefined ? undefined : JSON.stringify(body) }, extra));
     } catch (e) {
       const err = new Error('Keine Verbindung zum NetzWerkstatt-Server.');
       err.offline = true;

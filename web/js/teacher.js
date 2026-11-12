@@ -54,15 +54,25 @@
   }
 
   async function load() {
+    // Netze kommen nur für die angezeigte Aufgabe und Klasse mit, alles andere nur als Stand
+    const task = S.task, view = S.view;
+    const q = '?task=' + encodeURIComponent(task) + (view === null ? '' : '&class=' + encodeURIComponent(view));
+    let data;
     try {
-      S.data = await api('GET', '/api/teacher/overview', undefined, S.token);
+      data = await api('GET', '/api/teacher/overview' + q, undefined, S.token);
+      $('conn-lost').hidden = true;
     } catch (e) {
+      $('conn-lost').hidden = !e.offline;
       if (e.status === 401) { store.del('nw_teacher'); S.token = null; clearInterval(S.timer); show('login'); }
       throw e;
     }
+    // Inzwischen andere Aufgabe oder Klasse gewählt: Diese Antwort passt nicht mehr
+    if (S.task !== task || S.view !== view) return load();
+    S.data = data;
     NWEigene.install(S.data.customTasks || []);
     applyView();
-    if (!graded().some(t => t.id === S.task)) S.task = NWTasks.TASKS[0].id;
+    if (!graded().some(t => t.id === S.task)) { S.task = NWTasks.TASKS[0].id; return load(); }
+    if (S.view !== view) return load(); // erste Antwort hat die Klasse festgelegt
     render();
     refreshAccessTasks();
   }
@@ -86,6 +96,7 @@
     S.view = id; store.set('nw_view_class', id); S.selected.clear();
     S.data.students = S.data.allStudents;
     applyView(); render();
+    load().catch(() => {}); // Netze der neuen Klasse holen
   }
 
   function classBarHTML() {
@@ -186,7 +197,7 @@
     const list = d.students;
     const sel = new Set((keep || []).filter(id => list.some(s => s.id === id)));
     const where = classes().length ? `der Klasse ${className(S.view)}` : '';
-    const worksOf = s => Object.values(s.works || {}).filter(w => w && w.network);
+    const worksOf = s => Object.values(s.works || {}).filter(Boolean);
     const last = s => Math.max(0, ...worksOf(s).map(w => w.updated || 0));
     const body = openModal(`<h2 class="modal-title">Schüler verwalten${classes().length ? ': ' + esc(className(S.view)) : ''}</h2>
       <p class="muted small">Wähle Schülerinnen und Schüler aus${where ? ' ' + where : ''}. Du kannst alle ihre Arbeiten zu allen Aufgaben löschen, dann bleibt die Anmeldung bestehen. Oder du löschst die Anmeldungen, dann sind auch alle Arbeiten weg.${classes().length ? ' Eine andere Klasse wählst du oben in der Lehreransicht.' : ''}</p>
@@ -387,7 +398,7 @@
   // ---------------------------------------------------------------- Ereignisse
   $('task-tabs').addEventListener('click', ev => {
     const b = ev.target.closest('[data-task]');
-    if (b) { S.task = b.dataset.task; S.selected.clear(); render(); return; }
+    if (b) { S.task = b.dataset.task; S.selected.clear(); load().catch(() => render()); return; }
     const a = ev.target.closest('[data-act]');
     if (!a) return;
     if (a.dataset.act === 'new') openEditor(null);
@@ -643,7 +654,9 @@
     if (own.length) groups.push({ label: 'Mein Baukasten', items: own.map(([tid, w]) => ({ key: 'own:' + tid, label: title(tid), net: () => w.network })) });
     const stu = [];
     const who = s => classes().length ? `${s.name} (${className(s.class)})` : s.name;
-    for (const s of S.data.allStudents) for (const [tid, w] of Object.entries(s.works || {})) if (w && w.network) stu.push({ key: `stu:${s.id}:${tid}`, label: `${who(s)}: ${title(tid)}`, net: () => w.network });
+    // Die Netze der Schüler holt erst die Auswahl vom Server (die Übersicht enthält sie nicht alle)
+    const fetchNet = (sid, tid) => async () => (await api('GET', `/api/teacher/work?student=${encodeURIComponent(sid)}&task=${encodeURIComponent(tid)}`, undefined, S.token)).network;
+    for (const s of S.data.allStudents) for (const tid of Object.keys(s.works || {})) if (s.works[tid]) stu.push({ key: `stu:${s.id}:${tid}`, label: `${who(s)}: ${title(tid)}`, net: fetchNet(s.id, tid) });
     if (stu.length) groups.push({ label: 'Arbeiten der Schüler', items: stu });
     const built = [];
     for (const t of NWTasks.TASKS) {
@@ -736,14 +749,17 @@
     const addGoal = g => { goalsBox.insertAdjacentHTML('beforeend', goalRowHTML(g)); };
     t.goals.forEach(addGoal);
 
-    function pick(sel, which) {
+    async function pick(sel, which) {
       const v = sel.value;
       if (v === 'keep') nets[which] = which === 'start' ? (t.start || NW.emptyNetwork()) : t.solution;
       else if (v === 'empty') nets[which] = NW.emptyNetwork();
       else if (v === 'none') nets[which] = null;
       else {
         const src = flat.find(i => i.key === v);
-        nets[which] = src ? NW.clone(src.net()) : null;
+        let net = null;
+        try { net = src ? await src.net() : null; } catch (e) { toast(e.message, 'error'); }
+        if (sel.value !== v) return; // inzwischen etwas anderes gewählt
+        nets[which] = net ? NW.clone(net) : null;
       }
       draw();
     }

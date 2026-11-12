@@ -11,9 +11,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -172,6 +174,16 @@ func main() {
 		store.TeacherPassword = *pw
 	}
 	store.saveLocked()
+	store.flush()
+	// Änderungen werden gebündelt jede Sekunde gespeichert und beim Beenden sofort.
+	go store.autoSave(time.Second)
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM) // Strg+C oder Fenster schließen
+	go func() {
+		<-stop
+		store.flush()
+		os.Exit(0)
+	}()
 	check(true, "Daten geladen ("+fmt.Sprint(len(store.Students))+" angemeldete Schülerinnen und Schüler)")
 
 	// 4. Port
@@ -251,6 +263,7 @@ func main() {
 	}
 
 	if err := <-errc; err != nil {
+		store.flush()
 		fatal("Der Server wurde unerwartet beendet: " + err.Error())
 	}
 }
