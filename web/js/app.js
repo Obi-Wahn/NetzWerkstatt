@@ -43,10 +43,42 @@
   const taskParam = new URLSearchParams(location.search).get('aufgabe');
   if (taskParam) history.replaceState(null, '', location.pathname);
 
+  // Geteilte iPads: Wer das Gerät länger nicht benutzt hat, wird beim nächsten Öffnen gefragt,
+  // ob noch dieselbe Person davor sitzt. Sonst arbeitet der Nächste im fremden Konto weiter.
+  const AWAY = 20 * 60 * 1000;
+  let lastMark = 0;
+  function markActive() {
+    const now = Date.now();
+    if (now - lastMark < 30000) return;
+    lastMark = now; store.set('nw_last', String(now));
+  }
+  document.addEventListener('pointerdown', markActive, { passive: true });
+  document.addEventListener('keydown', markActive);
+  function stillMe(name) {
+    return new Promise(resolve => {
+      const body = openModal(`<h2 class="modal-title">Bist du ${esc(name)}?</h2>
+        <p>Auf diesem Gerät ist <b>${esc(name)}</b> angemeldet. Wenn du jemand anderes bist, melde dich bitte mit deinem eigenen Namen an.</p>
+        <div class="row end"><button class="btn ghost" data-r="0">Nein, ich bin jemand anderes</button><button class="btn primary" data-r="1">Ja, ich bin ${esc(name)}</button></div>`);
+      document.getElementById('modal-close').hidden = true;
+      body.querySelectorAll('button[data-r]').forEach(b => b.addEventListener('click', () => {
+        document.getElementById('modal-close').hidden = false;
+        closeModal(); resolve(b.dataset.r === '1');
+      }));
+    });
+  }
+
   async function start() {
     if (!S.token) { show('login'); if (roomParam) setTimeout(() => $('login-name').focus(), 50); return; }
     try {
-      setMe(await api('GET', '/api/me', undefined, S.token));
+      const me = await api('GET', '/api/me', undefined, S.token);
+      const last = Number(store.get('nw_last')) || 0;
+      if (!me.preview && Date.now() - last > AWAY && (show('login'), !(await stillMe(me.name)))) {
+        store.del('nw_token'); S.token = null;
+        show('login');
+        return;
+      }
+      markActive();
+      setMe(me);
       const free = NWTasks.all().find(t => t.free);
       const wanted = taskParam && NWTasks.byId(taskParam);
       if (freeParam && free && visible(free)) openTask(free.id);
@@ -66,6 +98,7 @@
       const r = await api('POST', '/api/login', { name: $('login-name').value, room: $('login-room').value, code: $('login-code').value });
       S.token = r.token;
       store.set('nw_token', r.token);
+      lastMark = 0; markActive();
       setMe(await api('GET', '/api/me', undefined, S.token));
       $('login-code').value = '';
       if (r.newCode) toast(`Dein Code ist gespeichert, ${r.name}. Merke ihn dir gut!`, 'ok');
