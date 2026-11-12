@@ -127,3 +127,9 @@ table.students { width: 100%; border-collapse: collapse; }
 .class-row .cnt, .class-row .btn { white-space: nowrap; }
 .class-new input { flex: 1 1 160px; width: auto; }
 .access .big-class { font-size: clamp(32px, min(6vw, 9vh), 72px); font-weight: 800; }
+/* Schüler verwalten: Auswahl und Löschen über alle Aufgaben */
+.stu-tools { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
+.stu-tools .toggle { margin: 0; font-weight: 600; }
+.stu-tools .spacer { flex: 1; }
+.stu-tools .btn.danger { margin-top: 0; }
+.stu-wrap { max-height: 55vh; overflow: auto; }
