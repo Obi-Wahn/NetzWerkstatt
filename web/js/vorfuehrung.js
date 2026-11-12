@@ -10,10 +10,12 @@
   async function loadAccess() {
     const tries = [store.get('nw_teacher'), store.get('nw_token')].filter(Boolean);
     let lastErr = null;
+    // Die Lehrkraft gibt für eine Klasse frei: zuerst die in der Lehreransicht gewählte
+    const cls = store.get('nw_view_class');
     for (const tok of tries) {
       try {
-        const r = await api('GET', '/api/demos', undefined, tok);
-        return { teacher: !!r.teacher, all: !!r.all, open: r.open || {}, token: tok };
+        const r = await api('GET', '/api/demos' + (cls ? '?class=' + encodeURIComponent(cls) : ''), undefined, tok);
+        return { teacher: !!r.teacher, all: !!r.all, open: r.open || {}, token: tok, cls: r.class || '', classes: r.classes || [], active: r.activeClass || '' };
       } catch (e) {
         lastErr = e;
         if (e.status !== 401) break;
@@ -54,21 +56,26 @@
     const tile = d => `<button class="task-tile" data-demo="${d.id}"><div class="tile-num">▶</div><div class="tile-body"><h4>${esc(d.title)}</h4><p>${esc(d.short)}</p><div class="tile-meta"><span class="muted small">${d.steps.length} Schritte</span></div></div></button>`;
     if (teacher) {
       const n = NWDemos.DEMOS.filter(d => a.open[d.id]).length;
-      $('demo-open-count').textContent = n === 0 ? 'Für Schüler ist noch keine Vorführung freigegeben.'
-        : n === NWDemos.DEMOS.length ? 'Alle Vorführungen sind für Schüler freigegeben.'
-        : `${n} von ${NWDemos.DEMOS.length} Vorführungen sind für Schüler freigegeben.`;
+      const cname = (a.classes.find(c => c.id === a.cls) || {}).name;
+      const who = cname ? `die ${cname}` : 'Schüler';
+      $('demo-class').hidden = !a.classes.length;
+      $('sel-demo-class').innerHTML = a.classes.map(c => `<option value="${esc(c.id)}"${c.id === a.cls ? ' selected' : ''}>${esc(c.name)}${c.id === a.active ? ' (aktiv)' : ''}</option>`).join('');
+      $('demo-open-count').textContent = n === 0 ? `Für ${who} ist noch keine Vorführung freigegeben.`
+        : n === NWDemos.DEMOS.length ? `Alle Vorführungen sind für ${who} freigegeben.`
+        : `${n} von ${NWDemos.DEMOS.length} Vorführungen sind für ${who} freigegeben.`;
       $('btn-open-all').disabled = n === NWDemos.DEMOS.length;
       $('btn-close-all').disabled = n === 0;
-      $('demo-list').innerHTML = list.map(d => `<div class="demo-item${a.open[d.id] ? '' : ' closed'}">${tile(d)}<label class="toggle"><input type="checkbox" data-open="${d.id}"${a.open[d.id] ? ' checked' : ''}> Für Schüler freigeben</label></div>`).join('');
+      $('demo-list').innerHTML = list.map(d => `<div class="demo-item${a.open[d.id] ? '' : ' closed'}">${tile(d)}<label class="toggle"><input type="checkbox" data-open="${d.id}"${a.open[d.id] ? ' checked' : ''}> Für ${cname ? esc(cname) : 'Schüler'} freigeben</label></div>`).join('');
     } else {
       $('demo-list').innerHTML = list.map(tile).join('');
     }
   }
   async function setOpen(ids, open) {
     try {
-      await api('POST', '/api/teacher/demos', { demos: ids, open }, S.access.token);
-      for (const id of ids) { if (open) S.access.open[id] = true; else delete S.access.open[id]; }
-      toast(open ? (ids.length > 1 ? 'Alle Vorführungen freigegeben.' : 'Vorführung freigegeben.') : (ids.length > 1 ? 'Alle Vorführungen gesperrt.' : 'Vorführung gesperrt.'), 'ok');
+      const a = S.access, cname = (a.classes.find(c => c.id === a.cls) || {}).name, f = cname ? ' für die ' + cname : '';
+      await api('POST', '/api/teacher/demos', { demos: ids, open, class: a.cls || undefined }, a.token);
+      for (const id of ids) { if (open) a.open[id] = true; else delete a.open[id]; }
+      toast(open ? (ids.length > 1 ? `Alle Vorführungen${f} freigegeben.` : `Vorführung${f} freigegeben.`) : (ids.length > 1 ? `Alle Vorführungen${f} gesperrt.` : `Vorführung${f} gesperrt.`), 'ok');
     } catch (e) {
       toast(e.message, 'error');
     }
@@ -77,6 +84,12 @@
   $('demo-list').addEventListener('change', ev => {
     const c = ev.target.closest('[data-open]');
     if (c) setOpen([c.dataset.open], c.checked);
+  });
+  // Andere Klasse wählen: gilt auch für die Lehreransicht
+  $('sel-demo-class').addEventListener('change', async ev => {
+    store.set('nw_view_class', ev.target.value);
+    try { S.access = await loadAccess(); } catch (e) { toast(e.message, 'error'); }
+    showList();
   });
   $('btn-open-all').addEventListener('click', () => setOpen(NWDemos.DEMOS.map(d => d.id), true));
   $('btn-close-all').addEventListener('click', () => setOpen(NWDemos.DEMOS.map(d => d.id), false));

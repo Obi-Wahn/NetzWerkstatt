@@ -224,7 +224,8 @@
   });
 
   function updateSolutionButton() {
-    $('btn-solution').hidden = !(S.task && S.task.solution && S.me && S.me.released[S.task.id]);
+    // Die Lehrkraft (Baukasten, Ausprobieren) kann jede Musterlösung ansehen
+    $('btn-solution').hidden = !(S.task && S.task.solution && S.me && (S.me.preview || S.me.released[S.task.id]));
   }
 
   $('btn-solution').addEventListener('click', () => {

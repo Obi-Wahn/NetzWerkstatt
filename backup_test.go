@@ -105,3 +105,21 @@ func TestSicherungUndWiederherstellen(t *testing.T) {
 		t.Fatalf("Datendatei als Sicherung: %d", code)
 	}
 }
+
+func TestSicherungMitFreigabenProKlasse(t *testing.T) {
+	srv, h, teacher := testServer(t)
+	call(t, h, "POST", "/api/teacher/class-add", teacher, map[string]string{"name": "10a"})
+	_, r := call(t, h, "POST", "/api/teacher/class-add", teacher, map[string]string{"name": "10b"})
+	idB := r["id"].(string)
+	call(t, h, "POST", "/api/teacher/unlock", teacher, map[string]any{"tasks": []string{"dns"}, "unlocked": true, "class": idB})
+	call(t, h, "POST", "/api/teacher/demos", teacher, map[string]any{"demos": []string{"dhcp"}, "open": true, "class": idB})
+	_, backup := rawCall(t, srv, "GET", "/api/teacher/backup", teacher, nil)
+	call(t, h, "POST", "/api/teacher/unlock", teacher, map[string]any{"tasks": []string{"dns"}, "unlocked": false, "class": idB})
+	if code, res := rawCall(t, srv, "POST", "/api/teacher/restore", teacher, backup); code != 200 {
+		t.Fatalf("Wiederherstellen: %d %s", code, res)
+	}
+	b := srv.store.classByID(idB)
+	if b == nil || !b.Unlocked["dns"] || !b.Demos["dhcp"] || srv.store.Classes[0].Unlocked["dns"] {
+		t.Fatalf("Freigaben pro Klasse nicht wiederhergestellt: %+v", b)
+	}
+}
