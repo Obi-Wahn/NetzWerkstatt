@@ -58,10 +58,11 @@
       <label class="toggle"><input type="checkbox" id="chk-anon"> Namen beim Zeigen ausblenden</label>
       <label class="toggle"><input type="checkbox" id="chk-only-submitted"> nur Abgaben</label>
       <button id="btn-compare" class="btn primary" disabled>Ausgewählte vergleichen</button>
+      <button id="btn-delete-sel" class="btn danger" disabled title="Die Arbeiten der ausgewählten Schülerinnen und Schüler zu dieser Aufgabe löschen">Ausgewählte löschen</button>
     </div>
     <div class="table-wrap">
       <table class="students">
-        <thead><tr><th class="sel"></th><th>Name</th><th>Status</th><th>Ziele</th><th>Zuletzt</th><th></th></tr></thead>
+        <thead><tr><th class="sel"><input type="checkbox" id="chk-sel-all" title="Alle angezeigten Arbeiten auswählen" aria-label="Alle angezeigten Arbeiten auswählen"></th><th>Name</th><th>Status</th><th>Ziele</th><th>Zuletzt</th><th></th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
       <p id="empty" class="muted empty" hidden>Noch keine Schülerinnen und Schüler angemeldet. Zeige den Zugang am Beamer, damit sich alle anmelden können.</p>
