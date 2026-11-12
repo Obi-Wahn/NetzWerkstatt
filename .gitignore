@@ -1,5 +1,8 @@
 # Erzeugte Programmdateien
 dist/
+# Mit „go build“ gebautes Programm im Hauptordner
+/netzwerkstatt
+/netzwerkstatt.exe
 # Daten aus dem Unterricht (Namen der Schülerinnen und Schüler) – niemals einchecken!
 netzwerkstatt-daten.json
 netzwerkstatt-daten.json.tmp
