@@ -195,3 +195,40 @@ func TestSchuelerGesammeltLoeschen(t *testing.T) {
 		t.Fatalf("nur der Lehrkraft-Zugang sollte bleiben")
 	}
 }
+
+func TestMusterloesungenGesammeltFreigeben(t *testing.T) {
+	srv, h, teacher := testServer(t)
+	room := srv.store.RoomCode
+	_, r := login(t, h, room, "Mia", "1234")
+	stu := r["token"].(string)
+
+	// einzeln wie bisher
+	if code, r := call(t, h, "POST", "/api/teacher/release", teacher, map[string]any{"task": "zwei-pcs", "released": true}); code != 200 {
+		t.Fatalf("Einzeln freigeben: %d %v", code, r)
+	}
+	// ein ganzes Thema auf einmal
+	if code, r := call(t, h, "POST", "/api/teacher/release", teacher, map[string]any{"tasks": []string{"bus", "ring", "stern"}, "released": true}); code != 200 {
+		t.Fatalf("Thema freigeben: %d %v", code, r)
+	}
+	_, me := call(t, h, "GET", "/api/me", stu, nil)
+	rel := me["released"].(map[string]any)
+	for _, id := range []string{"zwei-pcs", "bus", "ring", "stern"} {
+		if rel[id] != true {
+			t.Fatalf("%s sollte freigegeben sein: %v", id, rel)
+		}
+	}
+	// wieder sperren
+	call(t, h, "POST", "/api/teacher/release", teacher, map[string]any{"tasks": []string{"bus", "ring"}, "released": false})
+	_, me = call(t, h, "GET", "/api/me", stu, nil)
+	rel = me["released"].(map[string]any)
+	if rel["bus"] == true || rel["ring"] == true || rel["stern"] != true {
+		t.Fatalf("Sperren hat nicht gestimmt: %v", rel)
+	}
+	// Schüler dürfen nicht freigeben, leere Anfrage ist ungültig
+	if code, _ := call(t, h, "POST", "/api/teacher/release", stu, map[string]any{"tasks": []string{"bus"}, "released": true}); code != 401 {
+		t.Fatalf("Schüler darf nicht freigeben: %d", code)
+	}
+	if code, _ := call(t, h, "POST", "/api/teacher/release", teacher, map[string]any{"released": true}); code != 400 {
+		t.Fatalf("Leere Anfrage sollte abgelehnt werden: %d", code)
+	}
+}
