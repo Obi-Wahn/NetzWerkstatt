@@ -615,8 +615,11 @@ table.cmp col.k { width: 26%; }
 .name-dns .chips { margin: 0 0 6px; }
 
 /* ---------------------------------------------------------------- Schwierigkeitsgrade */
-.level-pick { margin: 2px 0 10px; }
-.level-pick[hidden] { display: none; }
+.level-wrap { margin: 2px 0 10px; }
+.level-wrap[hidden] { display: none; }
+.level-head { font-size: .85em; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+.level-pick { margin: 0 0 4px; }
+.level-text { font-size: .85em !important; color: var(--muted); margin: 0; }
 .stars { color: var(--warn); letter-spacing: 1px; font-size: .9em; }
 .goals li.next { outline: 2px solid var(--brand-line); }
 .goal-help { display: block; margin-top: 5px; font-size: .92em; color: var(--brand); font-weight: 600; }

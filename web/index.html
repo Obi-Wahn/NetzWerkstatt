@@ -94,7 +94,11 @@
     <aside class="side">
       <section class="card task-card" id="task-card">
         <h3>Aufgabe</h3>
-        <div id="level-pick" class="seg level-pick" role="group" aria-label="Schwierigkeitsgrad"></div>
+        <div id="level-wrap" class="level-wrap">
+          <div class="level-head" id="level-head">Wie viel Hilfe möchtest du?</div>
+          <div id="level-pick" class="seg level-pick" role="group" aria-labelledby="level-head"></div>
+          <p id="level-text" class="level-text"></p>
+        </div>
         <p id="task-intro"></p>
         <button id="task-more" type="button">Ganzen Aufgabentext lesen</button>
         <ul id="goals" class="goals"></ul>

@@ -475,7 +475,8 @@
   function applyLevel(changed) {
     const lv = level();
     const pick = $('level-pick');
-    pick.hidden = !!S.task.free;
+    $('level-wrap').hidden = !!S.task.free;
+    $('level-text').textContent = (NWStufen.LEVELS.find(l => l.id === lv) || {}).text || '';
     pick.innerHTML = NWStufen.LEVELS.map(l => `<button data-level="${l.id}" class="${l.id === lv ? 'on' : ''}" aria-pressed="${l.id === lv}" title="${esc(l.text)}" ${readOnly() ? 'disabled' : ''}>${esc(l.label)}</button>`).join('');
     for (const l of NWStufen.LEVELS) document.body.classList.toggle('stufe-' + l.id, l.id === lv);
     $('task-tip-wrap').hidden = !S.task.tip || lv === 'schwer';
