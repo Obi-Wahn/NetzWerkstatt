@@ -45,7 +45,17 @@ type Student struct {
 	// Noch kein Code (oder von der Lehrkraft zurückgesetzt) – der nächste
 	// eingegebene Code wird übernommen.
 	CodeHash string `json:"codeHash,omitempty"`
+	// Class ist die ID der Klasse, in der sich der Schüler angemeldet hat (leer = ohne Klasse).
+	Class string `json:"class,omitempty"`
 }
+
+// Class ist eine Klasse der Lehrkraft. Neue Schüler landen in der aktiven Klasse.
+type Class struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+const maxClasses = 60
 
 var codeRe = regexp.MustCompile(`^[0-9]{4}$`)
 
@@ -73,6 +83,8 @@ type Store struct {
 	Unlocked        map[string]bool            `json:"unlocked"` // taskID -> für Schüler freigeschaltet
 	CustomTasks     []json.RawMessage          `json:"customTasks"`
 	Demos           map[string]bool            `json:"demos"` // demoID -> Vorführung für Schüler freigegeben
+	Classes         []*Class                   `json:"classes"`
+	ActiveClass     string                     `json:"activeClass"` // ID der aktiven Klasse ("" = keine Klassen angelegt)
 
 	mu   sync.Mutex
 	path string
@@ -136,6 +148,15 @@ func loadStore(path string) *Store {
 	}
 	if s.CustomTasks == nil {
 		s.CustomTasks = []json.RawMessage{}
+	}
+	if s.Classes == nil {
+		s.Classes = []*Class{}
+	}
+	if s.classByID(s.ActiveClass) == nil {
+		s.ActiveClass = ""
+		if len(s.Classes) > 0 {
+			s.ActiveClass = s.Classes[0].ID
+		}
 	}
 	s.saveLocked()
 	return s
@@ -226,16 +247,67 @@ func (s *Store) openDemos() map[string]bool {
 	return open
 }
 
+func (s *Store) classByID(id string) *Class {
+	if id == "" {
+		return nil
+	}
+	for _, c := range s.Classes {
+		if c.ID == id {
+			return c
+		}
+	}
+	return nil
+}
+
+// className liefert den Namen der Klasse eines Schülers ("" = ohne Klasse).
+func (s *Store) className(id string) string {
+	if c := s.classByID(id); c != nil {
+		return c.Name
+	}
+	return ""
+}
+
+// inActiveClass: Darf dieser Schüler gerade arbeiten? Sind Klassen angelegt, nur die
+// Schüler der aktiven Klasse. So arbeitet an einem geteilten Rechner niemand aus
+// Versehen im Konto eines Schülers aus einer anderen Klasse weiter.
+func (s *Store) inActiveClass(st *Student) bool {
+	return st.Teacher || len(s.Classes) == 0 || st.Class == s.ActiveClass
+}
+
+// studentByToken findet den angemeldeten Schüler; Schüler aus nicht aktiven Klassen
+// gelten als abgemeldet. Aufrufer muss s.mu halten.
 func (s *Store) studentByToken(tok string) *Student {
 	if tok == "" {
 		return nil
 	}
 	for _, st := range s.Students {
 		if st.Token == tok {
+			if !s.inActiveClass(st) {
+				return nil
+			}
 			return st
 		}
 	}
 	return nil
+}
+
+// normClassName kürzt und bereinigt einen Klassennamen.
+func normClassName(n string) string {
+	n = strings.Join(strings.Fields(n), " ")
+	if len([]rune(n)) > 20 {
+		n = string([]rune(n)[:20])
+	}
+	return n
+}
+
+// classNameTaken prüft, ob es den Namen schon gibt (außer bei der Klasse except).
+func (s *Store) classNameTaken(name, except string) bool {
+	for _, c := range s.Classes {
+		if c.ID != except && strings.EqualFold(c.Name, name) {
+			return true
+		}
+	}
+	return false
 }
 
 // ---------------------------------------------------------------- HTTP-Helfer
@@ -361,7 +433,8 @@ func (srv *Server) routes() http.Handler {
 			return
 		}
 		for _, st := range s.Students {
-			if st.Teacher || !strings.EqualFold(st.Name, name) {
+			// Namen gelten je Klasse: „Lena“ in der 10a und „Lena“ in der 10b sind zwei Schülerinnen.
+			if st.Teacher || st.Class != s.ActiveClass || !strings.EqualFold(st.Name, name) {
 				continue
 			}
 			if st.CodeHash == "" {
@@ -391,7 +464,7 @@ func (srv *Server) routes() http.Handler {
 			writeJSON(w, 200, map[string]any{"token": tok, "name": n, "returning": true})
 			return
 		}
-		st := &Student{ID: randomToken(6), Name: name, Token: randomToken(16), Created: time.Now().Unix()}
+		st := &Student{ID: randomToken(6), Name: name, Token: randomToken(16), Created: time.Now().Unix(), Class: s.ActiveClass}
 		st.CodeHash = codeHash(st, code)
 		s.Students = append(s.Students, st)
 		s.saveLocked()
@@ -418,7 +491,7 @@ func (srv *Server) routes() http.Handler {
 				unlocked[id] = true
 			}
 		}
-		writeJSON(w, 200, map[string]any{"name": st.Name, "works": status, "released": s.Released,
+		writeJSON(w, 200, map[string]any{"name": st.Name, "className": s.className(st.Class), "works": status, "released": s.Released,
 			"unlocked": unlocked, "preview": st.Teacher, "customTasks": s.customForStudents(st.Teacher),
 			"demos": s.openDemos(), "allDemos": st.Teacher})
 	})
@@ -529,6 +602,7 @@ func (srv *Server) routes() http.Handler {
 			Name    string          `json:"name"`
 			Works   map[string]Work `json:"works"`
 			HasCode bool            `json:"hasCode"`
+			Class   string          `json:"class"`
 		}
 		rows := []row{}
 		var own map[string]Work
@@ -537,7 +611,7 @@ func (srv *Server) routes() http.Handler {
 				own = s.Works[st.ID]
 				continue
 			}
-			rows = append(rows, row{ID: st.ID, Name: st.Name, Works: s.Works[st.ID], HasCode: st.CodeHash != ""})
+			rows = append(rows, row{ID: st.ID, Name: st.Name, Works: s.Works[st.ID], HasCode: st.CodeHash != "", Class: st.Class})
 		}
 		sort.Slice(rows, func(i, j int) bool { return strings.ToLower(rows[i].Name) < strings.ToLower(rows[j].Name) })
 		addrs := []string{}
@@ -545,7 +619,187 @@ func (srv *Server) routes() http.Handler {
 			addrs = append(addrs, fmt.Sprintf("http://%s:%d", ip, srv.port))
 		}
 		writeJSON(w, 200, map[string]any{"students": rows, "released": s.Released, "roomCode": s.RoomCode, "addresses": addrs,
-			"unlocked": s.Unlocked, "customTasks": s.CustomTasks, "ownWorks": own})
+			"unlocked": s.Unlocked, "customTasks": s.CustomTasks, "ownWorks": own,
+			"classes": s.Classes, "activeClass": s.ActiveClass})
+	})
+
+	// ------------------------------------------------ Klassen
+
+	// Neue Klasse anlegen. Die erste Klasse wird gleich aktiv; Schüler, die schon ohne
+	// Klasse angemeldet sind, kommen dabei in diese Klasse.
+	mux.HandleFunc("POST /api/teacher/class-add", func(w http.ResponseWriter, r *http.Request) {
+		if !srv.isTeacher(r) {
+			fail(w, 401, "Bitte als Lehrkraft anmelden.")
+			return
+		}
+		var req struct{ Name string }
+		if err := readBody(r, &req); err != nil {
+			fail(w, 400, "Ungültige Anfrage.")
+			return
+		}
+		name := normClassName(req.Name)
+		if name == "" {
+			fail(w, 400, "Bitte gib einen Namen für die Klasse ein, z. B. „10a“.")
+			return
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.classNameTaken(name, "") {
+			fail(w, 400, "Eine Klasse mit diesem Namen gibt es schon.")
+			return
+		}
+		if len(s.Classes) >= maxClasses {
+			fail(w, 400, fmt.Sprintf("Es sind höchstens %d Klassen möglich.", maxClasses))
+			return
+		}
+		c := &Class{ID: randomToken(4), Name: name}
+		s.Classes = append(s.Classes, c)
+		if s.ActiveClass == "" {
+			s.ActiveClass = c.ID
+			for _, st := range s.Students {
+				if !st.Teacher && st.Class == "" {
+					st.Class = c.ID
+				}
+			}
+		}
+		s.saveLocked()
+		writeJSON(w, 200, map[string]any{"ok": true, "id": c.ID, "active": s.ActiveClass == c.ID})
+	})
+
+	mux.HandleFunc("POST /api/teacher/class-rename", func(w http.ResponseWriter, r *http.Request) {
+		if !srv.isTeacher(r) {
+			fail(w, 401, "Bitte als Lehrkraft anmelden.")
+			return
+		}
+		var req struct{ ID, Name string }
+		if err := readBody(r, &req); err != nil {
+			fail(w, 400, "Ungültige Anfrage.")
+			return
+		}
+		name := normClassName(req.Name)
+		if name == "" {
+			fail(w, 400, "Bitte gib einen Namen für die Klasse ein.")
+			return
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		c := s.classByID(req.ID)
+		if c == nil {
+			fail(w, 404, "Diese Klasse gibt es nicht mehr.")
+			return
+		}
+		if s.classNameTaken(name, c.ID) {
+			fail(w, 400, "Eine Klasse mit diesem Namen gibt es schon.")
+			return
+		}
+		c.Name = name
+		s.saveLocked()
+		writeJSON(w, 200, map[string]bool{"ok": true})
+	})
+
+	// Klasse aktiv schalten: Neue Anmeldungen landen in dieser Klasse, Schüler anderer
+	// Klassen werden abgemeldet (ihre Arbeiten bleiben erhalten).
+	mux.HandleFunc("POST /api/teacher/class-activate", func(w http.ResponseWriter, r *http.Request) {
+		if !srv.isTeacher(r) {
+			fail(w, 401, "Bitte als Lehrkraft anmelden.")
+			return
+		}
+		var req struct{ ID string }
+		if err := readBody(r, &req); err != nil {
+			fail(w, 400, "Ungültige Anfrage.")
+			return
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.classByID(req.ID) == nil {
+			fail(w, 404, "Diese Klasse gibt es nicht mehr.")
+			return
+		}
+		s.ActiveClass = req.ID
+		s.saveLocked()
+		writeJSON(w, 200, map[string]bool{"ok": true})
+	})
+
+	// Klasse löschen – mit allen ihren Schülern und deren Arbeiten.
+	mux.HandleFunc("POST /api/teacher/class-delete", func(w http.ResponseWriter, r *http.Request) {
+		if !srv.isTeacher(r) {
+			fail(w, 401, "Bitte als Lehrkraft anmelden.")
+			return
+		}
+		var req struct{ ID string }
+		if err := readBody(r, &req); err != nil {
+			fail(w, 400, "Ungültige Anfrage.")
+			return
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.classByID(req.ID) == nil {
+			fail(w, 404, "Diese Klasse gibt es nicht mehr.")
+			return
+		}
+		keptC := []*Class{}
+		for _, c := range s.Classes {
+			if c.ID != req.ID {
+				keptC = append(keptC, c)
+			}
+		}
+		s.Classes = keptC
+		keptS := []*Student{}
+		for _, st := range s.Students {
+			if !st.Teacher && st.Class == req.ID {
+				delete(s.Works, st.ID)
+				continue
+			}
+			keptS = append(keptS, st)
+		}
+		s.Students = keptS
+		if s.ActiveClass == req.ID {
+			s.ActiveClass = ""
+			if len(s.Classes) > 0 {
+				s.ActiveClass = s.Classes[0].ID
+			}
+		}
+		s.saveLocked()
+		writeJSON(w, 200, map[string]bool{"ok": true})
+	})
+
+	// Schüler in eine andere Klasse verschieben (z. B. wenn die falsche Klasse aktiv war).
+	mux.HandleFunc("POST /api/teacher/move-student", func(w http.ResponseWriter, r *http.Request) {
+		if !srv.isTeacher(r) {
+			fail(w, 401, "Bitte als Lehrkraft anmelden.")
+			return
+		}
+		var req struct{ Student, Class string }
+		if err := readBody(r, &req); err != nil {
+			fail(w, 400, "Ungültige Anfrage.")
+			return
+		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		c := s.classByID(req.Class)
+		if c == nil {
+			fail(w, 404, "Diese Klasse gibt es nicht mehr.")
+			return
+		}
+		var st *Student
+		for _, x := range s.Students {
+			if x.ID == req.Student && !x.Teacher {
+				st = x
+			}
+		}
+		if st == nil {
+			fail(w, 404, "Diese Schülerin oder diesen Schüler gibt es nicht mehr.")
+			return
+		}
+		for _, x := range s.Students {
+			if x != st && !x.Teacher && x.Class == c.ID && strings.EqualFold(x.Name, st.Name) {
+				fail(w, 400, fmt.Sprintf("In der Klasse %s gibt es schon jemanden mit dem Namen „%s“.", c.Name, st.Name))
+				return
+			}
+		}
+		st.Class = c.ID
+		s.saveLocked()
+		writeJSON(w, 200, map[string]bool{"ok": true})
 	})
 
 	// Aufgaben für Schüler freischalten oder sperren (einzeln oder ein ganzes Thema)

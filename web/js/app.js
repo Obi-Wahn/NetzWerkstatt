@@ -111,7 +111,7 @@
   function showTasks() {
     show('tasks');
     listSig = JSON.stringify(S.me);
-    $('who').textContent = S.me ? S.me.name : '';
+    $('who').textContent = S.me ? S.me.name + (S.me.className ? ' · ' + S.me.className : '') : '';
     $('preview-note').hidden = !(S.me && S.me.preview);
     // Vorführungen erst, wenn die Lehrkraft mindestens eine freigegeben hat
     $('btn-demos').hidden = !(S.me && (S.me.allDemos || Object.keys(S.me.demos || {}).length));

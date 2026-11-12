@@ -20,6 +20,7 @@
     token: store.get('nw_teacher'),
     data: null,
     task: backTask || NWTasks.TASKS[0].id,
+    view: store.get('nw_view_class'), // angezeigte Klasse (ID, '' = ohne Klasse)
     selected: new Set(),
     timer: null,
   };
@@ -60,10 +61,146 @@
       throw e;
     }
     NWEigene.install(S.data.customTasks || []);
+    applyView();
     if (!graded().some(t => t.id === S.task)) S.task = NWTasks.TASKS[0].id;
     render();
     refreshAccessTasks();
   }
+
+  // ---------------------------------------------------------------- Klassen
+  const classes = () => (S.data && S.data.classes) || [];
+  const classById = id => classes().find(c => c.id === id);
+  const className = id => { const c = classById(id); return c ? c.name : 'Ohne Klasse'; };
+
+  /** Nur die Schüler der angezeigten Klasse in S.data.students; alle stehen in S.data.allStudents. */
+  function applyView() {
+    const d = S.data;
+    d.allStudents = d.students;
+    if (!classes().length) { S.view = null; return; }
+    const valid = new Set(classes().map(c => c.id));
+    if (d.allStudents.some(s => !s.class)) valid.add('');
+    if (S.view === null || !valid.has(S.view)) S.view = d.activeClass;
+    d.students = d.allStudents.filter(s => (s.class || '') === S.view);
+  }
+  function setView(id) {
+    S.view = id; store.set('nw_view_class', id); S.selected.clear();
+    S.data.students = S.data.allStudents;
+    applyView(); render();
+  }
+
+  function classBarHTML() {
+    const d = S.data;
+    if (!classes().length) {
+      return `<span class="muted">Alle Schülerinnen und Schüler stehen in einer gemeinsamen Liste.</span><div class="spacer"></div>`
+        + `<button class="btn small" data-cls="manage" title="Klassen anlegen: Wer sich anmeldet, landet in der aktiven Klasse">＋ Klassen anlegen</button>`;
+    }
+    const n = id => d.allStudents.filter(s => (s.class || '') === id).length;
+    const opts = classes().map(c => `<option value="${esc(c.id)}" ${c.id === S.view ? 'selected' : ''}>${esc(c.name)}${c.id === d.activeClass ? ' (aktiv)' : ''} – ${n(c.id)}</option>`);
+    if (d.allStudents.some(s => !s.class)) opts.push(`<option value="" ${S.view === '' ? 'selected' : ''}>Ohne Klasse – ${n('')}</option>`);
+    const active = S.view === d.activeClass;
+    const state = active
+      ? `<span class="lock-state on" title="Wer sich jetzt anmeldet, landet in dieser Klasse">aktiv – neue Anmeldungen landen hier</span>`
+      : `<span class="lock-state off">nicht aktiv</span>${S.view ? `<button class="btn small primary" data-cls="activate" title="Neue Anmeldungen landen dann in dieser Klasse">Diese Klasse aktiv schalten</button>` : ''}`;
+    return `<label class="class-pick">Klasse <select id="sel-class" aria-label="Angezeigte Klasse">${opts.join('')}</select></label>${state}<div class="spacer"></div>`
+      + `<button class="btn small" data-cls="manage">Klassen verwalten</button>`;
+  }
+  function renderClassBar() {
+    const html = classBarHTML();
+    const bar = $('class-bar');
+    if (bar.dataset.html !== html) { bar.innerHTML = html; bar.dataset.html = html; }
+  }
+
+  async function activate(id) {
+    const d = S.data, c = classById(id), old = classById(d.activeClass);
+    if (!c || id === d.activeClass) return false;
+    const text = `Klasse ${c.name} aktiv schalten? Wer sich ab jetzt anmeldet, landet in der ${c.name}.`
+      + (old ? ` Wer gerade in der ${old.name} angemeldet ist, wird abgemeldet – die Arbeiten bleiben gespeichert.` : '');
+    if (!(await confirmBox(text, 'Aktiv schalten'))) return false;
+    try {
+      await api('POST', '/api/teacher/class-activate', { id }, S.token);
+      toast(`Die ${c.name} ist jetzt aktiv.`, 'ok');
+      await load();
+      return true;
+    } catch (e) { toast(e.message, 'error'); return false; }
+  }
+
+  // Dialog „Klassen verwalten“: anlegen, umbenennen, aktiv schalten, löschen
+  function openClasses(msg) {
+    const d = S.data;
+    const n = id => d.allStudents.filter(s => (s.class || '') === id).length;
+    const rows = classes().map(c => `<li class="class-row">
+        <input data-rename="${esc(c.id)}" value="${esc(c.name)}" maxlength="20" aria-label="Name der Klasse" spellcheck="false">
+        <span class="muted small cnt">${n(c.id)} ${n(c.id) === 1 ? 'Schüler/in' : 'Schüler/innen'}</span>
+        ${c.id === d.activeClass ? '<span class="lock-state on">aktiv</span>' : `<button type="button" class="btn small" data-activate="${esc(c.id)}">Aktiv schalten</button>`}
+        <button type="button" class="btn small ghost" data-cdel="${esc(c.id)}" title="Klasse mit allen Schülern und Arbeiten löschen">Löschen</button>
+      </li>`).join('');
+    const body = openModal(`<h2 class="modal-title">Klassen verwalten</h2>
+      <p class="muted small">Wer sich anmeldet, landet automatisch in der <b>aktiven</b> Klasse. Namen gelten je Klasse: „Lena“ in der 10a und „Lena“ in der 10b sind zwei verschiedene Schülerinnen.${classes().length ? '' : ' Die erste Klasse wird gleich aktiv; wer schon angemeldet ist, kommt in diese Klasse.'}</p>
+      ${rows ? `<ul class="class-list">${rows}</ul>` : ''}
+      <form id="class-new" class="row class-new" autocomplete="off">
+        <input id="class-new-name" maxlength="20" placeholder="z. B. 10a" aria-label="Name der neuen Klasse" spellcheck="false" required>
+        <button type="submit" class="btn primary">＋ Klasse anlegen</button>
+      </form>
+      <p class="error" id="class-error" role="alert">${esc(msg || '')}</p>`);
+    const err = body.querySelector('#class-error');
+    body.querySelector('#class-new').addEventListener('submit', async ev => {
+      ev.preventDefault();
+      try {
+        const r = await api('POST', '/api/teacher/class-add', { name: body.querySelector('#class-new-name').value }, S.token);
+        if (r.active) { S.view = r.id; store.set('nw_view_class', r.id); }
+        await load();
+        openClasses();
+        const f = document.getElementById('class-new-name');
+        if (f) f.focus();
+      } catch (e) { err.textContent = e.message; }
+    });
+    for (const inp of body.querySelectorAll('[data-rename]')) {
+      inp.addEventListener('change', async () => {
+        try { await api('POST', '/api/teacher/class-rename', { id: inp.dataset.rename, name: inp.value }, S.token); await load(); toast('Klasse umbenannt.', 'ok'); }
+        catch (e) { err.textContent = e.message; inp.value = className(inp.dataset.rename); }
+      });
+      inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); inp.blur(); } });
+    }
+    body.addEventListener('click', async ev => {
+      const a = ev.target.closest('[data-activate]');
+      const del = ev.target.closest('[data-cdel]');
+      if (a) { await activate(a.dataset.activate); openClasses(); }
+      if (del) {
+        const c = classById(del.dataset.cdel), k = n(c.id);
+        const text = k
+          ? `Klasse ${c.name} löschen? Dabei werden auch ${k === 1 ? 'die Schülerin bzw. der Schüler' : `alle ${k} Schülerinnen und Schüler`} der Klasse mit allen Arbeiten gelöscht. Das kann nicht rückgängig gemacht werden.`
+          : `Klasse ${c.name} löschen?`;
+        if (!(await confirmBox(text, 'Löschen', true))) { openClasses(); return; }
+        try { await api('POST', '/api/teacher/class-delete', { id: c.id }, S.token); toast(`Klasse ${c.name} gelöscht.`, 'ok'); await load(); openClasses(); }
+        catch (e) { openClasses(e.message); }
+      }
+    });
+  }
+
+  // Schüler in eine andere Klasse verschieben
+  function openMove(s) {
+    const others = classes().filter(c => c.id !== (s.class || ''));
+    const body = openModal(`<h2 class="modal-title">${esc(s.name)} in andere Klasse verschieben</h2>
+      <p class="muted small">Jetzt in: <b>${esc(className(s.class))}</b>. Die Arbeiten werden mitgenommen.</p>
+      <div class="row">${others.map(c => `<button class="btn" data-to="${esc(c.id)}">${esc(c.name)}</button>`).join('')}</div>
+      <p class="error" id="move-error" role="alert"></p>`);
+    body.addEventListener('click', async ev => {
+      const b = ev.target.closest('[data-to]');
+      if (!b) return;
+      try {
+        await api('POST', '/api/teacher/move-student', { student: s.id, class: b.dataset.to }, S.token);
+        closeModal(); toast(`${s.name} ist jetzt in der ${className(b.dataset.to)}.`, 'ok'); await load();
+      } catch (e) { body.querySelector('#move-error').textContent = e.message; }
+    });
+  }
+
+  $('class-bar').addEventListener('change', ev => { if (ev.target.id === 'sel-class') setView(ev.target.value); });
+  $('class-bar').addEventListener('click', ev => {
+    const b = ev.target.closest('[data-cls]');
+    if (!b) return;
+    if (b.dataset.cls === 'manage') openClasses();
+    if (b.dataset.cls === 'activate') activate(S.view);
+  });
 
   // ---------------------------------------------------------------- Darstellung
   function taskObj() { return NWTasks.byId(S.task); }
@@ -72,6 +209,7 @@
   function render() {
     const d = S.data;
     $('room-code').textContent = d.roomCode;
+    renderClassBar();
     // Aufgabenliste, nach Themen gruppiert, mit Schaltern zum Freischalten
     const count = id => d.students.filter(s => s.works && s.works[id] && s.works[id].submitted).length;
     $('task-tabs').innerHTML = NWTasks.GROUPS.map(g => {
@@ -112,6 +250,10 @@
     const only = $('chk-only-submitted').checked;
     const rows = d.students.filter(s => !only || (s.works && s.works[S.task] && s.works[S.task].submitted));
     $('empty').hidden = d.students.length > 0;
+    $('empty').textContent = S.view
+      ? `In der Klasse ${className(S.view)} hat sich noch niemand angemeldet.` + (S.view === d.activeClass ? ' Zeige den Zugang am Beamer, damit sich alle anmelden können.' : ' Schalte sie aktiv, damit sich die Klasse anmelden kann.')
+      : 'Noch keine Schülerinnen und Schüler angemeldet. Zeige den Zugang am Beamer, damit sich alle anmelden können.';
+    const canMove = s => classes().some(c => c.id !== (s.class || ''));
     $('rows').innerHTML = rows.map(s => {
       const w = s.works && s.works[S.task];
       let status = '<span class="badge">nicht begonnen</span>', prog = '', when = '';
@@ -131,6 +273,7 @@
           ${w && w.submitted ? `<button class="btn small ghost" data-return="${s.id}" title="Abgabe zurückgeben, damit weitergearbeitet werden kann">Zurückgeben</button>` : ''}
           ${has ? `<button class="btn small ghost" data-delwork="${s.id}" title="Nur die Arbeit zu dieser Aufgabe löschen – die Anmeldung und andere Aufgaben bleiben">Arbeit löschen</button>` : ''}
           <span class="keep">${s.hasCode ? `<button class="btn small ghost" data-code="${s.id}" title="Vergessenen Code zurücksetzen">Code zurücksetzen</button>` : '<span class="badge" title="Beim nächsten Anmelden gilt der neu eingegebene Code">Code frei</span>'}
+          ${canMove(s) ? `<button class="btn small ghost" data-move="${s.id}" title="In eine andere Klasse verschieben">⇄ Klasse</button>` : ''}
           <button class="btn small ghost" data-del="${s.id}" title="Schüler/in mit allen Arbeiten löschen">✕</button></span></td></tr>`;
     }).join('');
     // nicht mehr vorhandene Auswahl entfernen
@@ -254,6 +397,8 @@
     const code = ev.target.closest('[data-code]');
     const dw = ev.target.closest('[data-delwork]');
     if (dw) { await deleteWorks([dw.dataset.delwork]); return; }
+    const mv = ev.target.closest('[data-move]');
+    if (mv) openMove(student(mv.dataset.move));
     if (code) {
       const s = student(code.dataset.code);
       if (!(await confirmBox(`Code von ${s.name} zurücksetzen? Beim nächsten Anmelden gilt der Code, den ${s.name} dann eingibt. Die Arbeiten bleiben erhalten.`, 'Zurücksetzen'))) return;
@@ -385,7 +530,8 @@
     const own = Object.entries(S.data.ownWorks || {}).filter(([, w]) => w && w.network);
     if (own.length) groups.push({ label: 'Mein Baukasten', items: own.map(([tid, w]) => ({ key: 'own:' + tid, label: title(tid), net: () => w.network })) });
     const stu = [];
-    for (const s of S.data.students) for (const [tid, w] of Object.entries(s.works || {})) if (w && w.network) stu.push({ key: `stu:${s.id}:${tid}`, label: `${s.name}: ${title(tid)}`, net: () => w.network });
+    const who = s => classes().length ? `${s.name} (${className(s.class)})` : s.name;
+    for (const s of S.data.allStudents) for (const [tid, w] of Object.entries(s.works || {})) if (w && w.network) stu.push({ key: `stu:${s.id}:${tid}`, label: `${who(s)}: ${title(tid)}`, net: () => w.network });
     if (stu.length) groups.push({ label: 'Arbeiten der Schüler', items: stu });
     const built = [];
     for (const t of NWTasks.TASKS) {
@@ -603,6 +749,7 @@
           <div class="big-url">${esc(addr)}</div>
           <p class="muted">Raumcode</p>
           <div class="big-code">${esc(S.data.roomCode)}</div>
+          ${classById(S.data.activeClass) ? `<p class="muted">Klasse</p><div class="big-class">${esc(className(S.data.activeClass))}</div>` : ''}
         </div>
         <div class="access-qr">${NWQR.svg(qrURL, 320)}<p class="muted">QR-Code scannen – der Raumcode ist schon eingetragen.</p></div>
       </div>

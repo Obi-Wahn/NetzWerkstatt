@@ -22,5 +22,6 @@ jobs:
         run: |
           test -z "$(gofmt -l .)"
           go vet ./...
+          go test ./...
       - name: Pakete bauen
         run: ./build.sh
