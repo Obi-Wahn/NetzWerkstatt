@@ -50,7 +50,8 @@ table.students { width: 100%; border-collapse: collapse; }
 .students th { font-size: .8em; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
 .students td.name { font-weight: 600; white-space: normal; }
 .students th.sel, .students td.sel { width: 40px; }
-.students td.sel input { width: 20px; height: 20px; min-height: 0; }
+.students td.sel input, .students th.sel input { width: 20px; height: 20px; min-height: 0; }
+.dash-tools .btn.danger { margin-top: 0; }
 .students tr:last-child td { border-bottom: 0; }
 .students .actions { text-align: right; }
 .students .actions .btn { margin-left: 4px; }

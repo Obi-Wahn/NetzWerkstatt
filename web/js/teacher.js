@@ -125,10 +125,11 @@
       }
       const has = w && w.network;
       return `<tr>
-        <td class="sel">${has ? `<input type="checkbox" data-sel="${s.id}" ${S.selected.has(s.id) ? 'checked' : ''} aria-label="Zum Vergleichen auswählen">` : ''}</td>
+        <td class="sel">${has ? `<input type="checkbox" data-sel="${s.id}" ${S.selected.has(s.id) ? 'checked' : ''} aria-label="${esc(s.name)} auswählen">` : ''}</td>
         <td class="name">${esc(s.name)}</td><td>${status}</td><td>${prog}</td><td class="muted">${when}</td>
         <td class="actions">${has ? `<button class="btn small" data-view="${s.id}">Zeigen</button>` : ''}
           ${w && w.submitted ? `<button class="btn small ghost" data-return="${s.id}" title="Abgabe zurückgeben, damit weitergearbeitet werden kann">Zurückgeben</button>` : ''}
+          ${has ? `<button class="btn small ghost" data-delwork="${s.id}" title="Nur die Arbeit zu dieser Aufgabe löschen – die Anmeldung und andere Aufgaben bleiben">Arbeit löschen</button>` : ''}
           <span class="keep">${s.hasCode ? `<button class="btn small ghost" data-code="${s.id}" title="Vergessenen Code zurücksetzen">Code zurücksetzen</button>` : '<span class="badge" title="Beim nächsten Anmelden gilt der neu eingegebene Code">Code frei</span>'}
           <button class="btn small ghost" data-del="${s.id}" title="Schüler/in mit allen Arbeiten löschen">✕</button></span></td></tr>`;
     }).join('');
@@ -138,7 +139,24 @@
       if (!st || !(st.works && st.works[S.task] && st.works[S.task].network)) S.selected.delete(id);
     }
     $('btn-compare').disabled = S.selected.size !== 2;
-    $('btn-compare').textContent = S.selected.size === 2 ? 'Ausgewählte vergleichen' : `Zum Vergleichen 2 auswählen (${S.selected.size}/2)`;
+    $('btn-compare').textContent = S.selected.size === 2 ? 'Ausgewählte vergleichen' : S.selected.size > 2 ? 'Zum Vergleichen genau 2 auswählen' : `Zum Vergleichen 2 auswählen (${S.selected.size}/2)`;
+    $('btn-delete-sel').disabled = S.selected.size === 0;
+    $('btn-delete-sel').textContent = S.selected.size ? `Ausgewählte löschen (${S.selected.size})` : 'Ausgewählte löschen';
+    // „Alle auswählen“ bezieht sich auf die angezeigten Zeilen mit Arbeit
+    const selectable = selectableIds();
+    const on = selectable.filter(id => S.selected.has(id)).length;
+    $('chk-sel-all').disabled = !selectable.length;
+    $('chk-sel-all').checked = selectable.length > 0 && on === selectable.length;
+    $('chk-sel-all').indeterminate = on > 0 && on < selectable.length;
+  }
+
+  // Angezeigte Zeilen, die zur aktuellen Aufgabe eine Arbeit haben (beachtet „nur Abgaben“)
+  function selectableIds() {
+    const only = $('chk-only-submitted').checked;
+    return S.data.students.filter(s => {
+      const w = s.works && s.works[S.task];
+      return w && w.network && (!only || w.submitted);
+    }).map(s => s.id);
   }
 
   function student(id) { return S.data.students.find(s => s.id === id); }
@@ -174,7 +192,6 @@
     if (grp) setUnlocked(NWTasks.all().filter(t => t.group === grp.dataset.unlockGroup).map(t => t.id), grp.checked);
   });
   $('chk-unlock').addEventListener('change', ev => setUnlocked([S.task], ev.target.checked));
-  $('chk-only-submitted').addEventListener('change', render);
 
   $('chk-release').addEventListener('change', async ev => {
     try {
@@ -193,18 +210,50 @@
   $('rows').addEventListener('change', ev => {
     const c = ev.target.closest('[data-sel]');
     if (!c) return;
-    if (c.checked) {
-      if (S.selected.size >= 2) { c.checked = false; toast('Bitte höchstens zwei auswählen.', 'error'); return; }
-      S.selected.add(c.dataset.sel);
-    } else S.selected.delete(c.dataset.sel);
+    if (c.checked) S.selected.add(c.dataset.sel);
+    else S.selected.delete(c.dataset.sel);
     render();
   });
+  $('chk-sel-all').addEventListener('change', ev => {
+    const ids = selectableIds();
+    for (const id of ids) { if (ev.target.checked) S.selected.add(id); else S.selected.delete(id); }
+    render();
+  });
+  $('chk-only-submitted').addEventListener('change', () => {
+    // Beim Umschalten auf „nur Abgaben“ keine unsichtbaren Zeilen ausgewählt lassen
+    if ($('chk-only-submitted').checked) { const vis = new Set(selectableIds()); for (const id of [...S.selected]) if (!vis.has(id)) S.selected.delete(id); }
+    render();
+  });
+
+  // ---------------------------------------------------------------- Arbeiten löschen
+  // Ein Aufruf für einen, viele oder (später) alle Einträge: jeweils Schüler/in + Aufgabe.
+  async function deleteWorks(ids) {
+    const t = taskObj();
+    const list = ids.map(student).filter(Boolean);
+    if (!list.length) return;
+    const n = list.length;
+    const sub = list.filter(s => s.works[S.task] && s.works[S.task].submitted).length;
+    const who = n === 1 ? `die Arbeit von ${list[0].name}` : `die Arbeiten von ${n} Schülerinnen und Schülern`;
+    const names = n > 1 ? '\n' + list.slice(0, 12).map(s => '• ' + s.name).join('\n') + (n > 12 ? `\n… und ${n - 12} weitere` : '') + '\n' : ' ';
+    const extra = sub ? (n === 1 ? 'Sie ist schon abgegeben. ' : (sub === 1 ? 'Davon ist 1 schon abgegeben. ' : `Davon sind ${sub} schon abgegeben. `)) : '';
+    const msg = `Wirklich ${who} zur Aufgabe „${t.title}“ löschen?${names}${extra}Die Anmeldung und die Arbeiten zu anderen Aufgaben bleiben erhalten. Das Löschen kann nicht rückgängig gemacht werden.`;
+    if (!(await confirmBox(msg, n === 1 ? 'Arbeit löschen' : `${n} Arbeiten löschen`, true))) return;
+    try {
+      const r = await api('POST', '/api/teacher/delete-works', { items: list.map(s => ({ student: s.id, task: S.task })) }, S.token);
+      for (const s of list) S.selected.delete(s.id);
+      toast(r.deleted === 1 ? 'Arbeit gelöscht.' : `${r.deleted} Arbeiten gelöscht.`, 'ok');
+      await load();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+  $('btn-delete-sel').addEventListener('click', () => deleteWorks([...S.selected]));
 
   $('rows').addEventListener('click', async ev => {
     const v = ev.target.closest('[data-view]');
     const r = ev.target.closest('[data-return]');
     const del = ev.target.closest('[data-del]');
     const code = ev.target.closest('[data-code]');
+    const dw = ev.target.closest('[data-delwork]');
+    if (dw) { await deleteWorks([dw.dataset.delwork]); return; }
     if (code) {
       const s = student(code.dataset.code);
       if (!(await confirmBox(`Code von ${s.name} zurücksetzen? Beim nächsten Anmelden gilt der Code, den ${s.name} dann eingibt. Die Arbeiten bleiben erhalten.`, 'Zurücksetzen'))) return;

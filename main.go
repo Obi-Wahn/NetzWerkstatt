@@ -760,6 +760,36 @@ func (srv *Server) routes() http.Handler {
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	})
 
+	// Arbeiten löschen: einzeln oder viele auf einmal. Jeder Eintrag nennt Schüler/in und Aufgabe;
+	// so lassen sich auch alle Arbeiten einer Aufgabe oder einer Gruppe in einem Schritt löschen.
+	mux.HandleFunc("POST /api/teacher/delete-works", func(w http.ResponseWriter, r *http.Request) {
+		if !srv.isTeacher(r) {
+			fail(w, 401, "Bitte als Lehrkraft anmelden.")
+			return
+		}
+		var req struct {
+			Items []struct{ Student, Task string } `json:"items"`
+		}
+		if err := readBody(r, &req); err != nil || len(req.Items) == 0 || len(req.Items) > 20000 {
+			fail(w, 400, "Ungültige Anfrage.")
+			return
+		}
+		s.mu.Lock()
+		n := 0
+		for _, it := range req.Items {
+			works := s.Works[it.Student]
+			if _, ok := works[it.Task]; ok {
+				delete(works, it.Task)
+				n++
+			}
+		}
+		if n > 0 {
+			s.saveLocked()
+		}
+		s.mu.Unlock()
+		writeJSON(w, 200, map[string]any{"ok": true, "deleted": n})
+	})
+
 	mux.HandleFunc("POST /api/teacher/delete-student", func(w http.ResponseWriter, r *http.Request) {
 		if !srv.isTeacher(r) {
 			fail(w, 401, "Bitte als Lehrkraft anmelden.")

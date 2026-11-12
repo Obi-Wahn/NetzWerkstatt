@@ -157,6 +157,7 @@
     S.net = saved && saved.network ? saved.network : task.start();
     if (!S.net.events) S.net.events = [];
     S.submitted = !!(saved && saved.submitted);
+    S.onServer = !!(saved && saved.network);
     S.selected = null; S.pending = null; S.netKind = null;
     setTool('move');
     $('task-title').textContent = task.title;
@@ -233,6 +234,7 @@
     S.saveTimer = null;
     try {
       await api('PUT', '/api/work/' + encodeURIComponent(S.task.id), { network: S.net }, S.token);
+      S.onServer = true; S.savedAt = Date.now();
       $('save-state').textContent = 'Gespeichert ✓';
       $('save-state').className = 'save-state ok';
     } catch (e) {
@@ -253,6 +255,7 @@
     if (open && !(await confirmBox(`Es ${open === 1 ? 'ist noch 1 Ziel' : `sind noch ${open} Ziele`} offen. Trotzdem abgeben?`, 'Trotzdem abgeben'))) return;
     try {
       await api('PUT', '/api/work/' + encodeURIComponent(S.task.id), { network: S.net, submitted: true }, S.token);
+      S.onServer = true; S.savedAt = Date.now();
       S.submitted = true;
       S.selected = null;
       toast('Abgegeben! Deine Lehrkraft kann dein Netzwerk jetzt sehen.', 'ok');
@@ -1823,8 +1826,18 @@ ${faultFinderHTML(link, ro)}
   // Musterlösungen können während der Stunde freigegeben werden
   setInterval(async () => {
     if (!S.token || document.hidden) return;
+    const asked = Date.now();
     await refreshMe();
-    if (!$('screen-editor').hidden) updateSolutionButton();
+    if ($('screen-editor').hidden) return;
+    // Hat die Lehrkraft die Arbeit gelöscht, nicht stillschweigend weiterspeichern, sondern neu beginnen
+    if (S.task && !S.task.free && S.onServer && !S.saveTimer && (S.savedAt || 0) < asked
+      && S.me && S.me.works && !S.me.works[S.task.id]) {
+      S.onServer = false;
+      toast('Deine Lehrkraft hat deine Arbeit zu dieser Aufgabe gelöscht. Du fängst neu an.', 'error');
+      openTask(S.task.id);
+      return;
+    }
+    updateSolutionButton();
   }, 15000);
 
   start();
