@@ -91,6 +91,7 @@ Das Fenster mit den Startmeldungen während der Stunde offen lassen. Zum Beenden
 - Das Programm lädt **nichts aus dem Internet** und sendet nichts dorthin. Alle Schriften, Bilder und Skripte sind im Programm enthalten. Der Browser wird zusätzlich per Content-Security-Policy angewiesen, nur Inhalte vom eigenen Server zu laden.
 - Es gibt keine E-Mail-Adressen für Schülerinnen und Schüler, nur einen vierstelligen Code (gespeichert wird nur ein Prüfwert, nicht der Code selbst), kein Tracking und keine Cookies. Im Browser wird nur ein Anmelde-Schlüssel gespeichert, damit man nach einem Neuladen angemeldet bleibt.
 - Nach der Unterrichtseinheit kann die Datendatei einfach gelöscht werden. Einzelne Personen lassen sich auch in der Lehrkraft-Ansicht löschen.
+- Eine heruntergeladene Sicherung („Daten sichern“) enthält die Namen der Schülerinnen und Schüler, aber nicht das Lehrer-Passwort. Sie sollte so sicher aufbewahrt werden wie andere Schülerdaten.
 
 ## Was die NetzWerkstatt kann
 
@@ -151,6 +152,7 @@ Alle Aufgaben haben Teilziele, die automatisch abgehakt werden, sobald sie errei
 
 - **Lehrkraft-Ansicht:** Live-Übersicht über alle Schülerinnen und Schüler, Abgaben am Beamer zeigen (auf Wunsch ohne Namen), zwei Lösungen nebeneinander vergleichen, jede Lösung genau ansehen (Ziele, Einstellungen, durchgeführte Tests), Musterlösungen mit Lösungsweg zeigen oder für die Klasse freigeben, Abgaben zurückgeben.
 - **Klassen:** Unter „Klassen verwalten“ legt die Lehrkraft Klassen an (z. B. 10a, 10b) und schaltet eine davon aktiv. Wer sich anmeldet, landet automatisch in der aktiven Klasse. Oben in der Lehrkraft-Ansicht wählt man, welche Klasse angezeigt wird; so bleiben Abgaben der Klassen getrennt. Wird eine andere Klasse aktiv geschaltet, sind die Schüler der bisherigen Klasse abgemeldet (ihre Arbeiten bleiben gespeichert) – an geteilten Rechnern arbeitet so niemand im Konto eines anderen weiter. Wer in der falschen Klasse gelandet ist, lässt sich mit „⇄ Klasse“ verschieben.
+- **Daten sichern:** Mit „Daten sichern“ lädt die Lehrkraft alles als eine Datei herunter: Klassen, Schülerinnen und Schüler, Arbeiten, Freischaltungen, Freigaben und eigene Aufgaben. Aus dieser Datei lässt sich der Stand später wiederherstellen, auch auf einem anderen Rechner. Raumcode und Lehrer-Passwort bleiben dabei, wie sie sind. Vor dem Wiederherstellen legt das Programm den bisherigen Stand als Datei neben die Datendatei.
 - **Aufgaben freischalten:** Die Lehrkraft bestimmt, welche Aufgaben und Themen (auch das freie Bauen) die Klasse sieht. Änderungen erscheinen bei den Schülern sofort, ohne Neuladen. Ab Werk sind die Aufgaben 1–5 und das freie Bauen freigeschaltet. Mit angelegten Klassen hat jede Klasse ihre eigenen Freischaltungen für Aufgaben, Musterlösungen und Vorführungen; sie gelten für die oben gewählte Klasse. Eine neue Klasse beginnt wie ab Werk oder übernimmt die Freischaltungen einer anderen Klasse.
 - **Vorführungen:** Fertige Netze, in denen Schritt für Schritt erklärt wird, was passiert (Webseite aufrufen, NAT, DHCP, Gateway, Topologien, TCP und UDP) – zum Vorführen am Beamer oder zum Nachschauen. Am Ende geht es direkt zur passenden Aufgabe.
 - **Eigene Aufgaben:** Im Aufgaben-Editor der Lehrkraft-Ansicht entstehen eigene Aufgaben aus Text, automatisch geprüften Zielen, Startaufbau und Musterlösung. Start und Musterlösung baut die Lehrkraft im „Baukasten“ (Schüleransicht mit allen Aufgaben) oder übernimmt sie aus einer Schülerarbeit oder einer eingebauten Aufgabe. Eigene Aufgaben lassen sich als Datei exportieren und bei anderen Lehrkräften importieren. Importierte Dateien werden genau geprüft; sie enthalten keinen Programmcode.
@@ -195,6 +197,7 @@ Auf GitHub unter Releases → „Draft a new release“ einen neuen Tag wie `v0.
 | --- | --- |
 | `start.go` | Start: Prüfungen, Meldungen, Browser öffnen |
 | `main.go` | Server: Anmeldung, Speichern, Lehrkraft-Schnittstelle, Auslieferung der Webseiten |
+| `backup.go` | Sicherung herunterladen und wiederherstellen |
 | `paket/` | Anleitungen und Startskript für die Download-Pakete |
 | `web/js/sim.js` | Netzwerkmodell und Simulation (Weg der Pakete, DNS, HTTP) |
 | `web/js/tasks.js` | Aufgaben, Teilziele und Musterlösungen |

@@ -99,12 +99,14 @@
     load().catch(() => {}); // Netze der neuen Klasse holen
   }
 
+  const backupBtn = `<button class="btn small" data-cls="backup" title="Alle Daten als Sicherungsdatei herunterladen oder aus einer Sicherung wiederherstellen">Daten sichern</button>`;
   function classBarHTML() {
     const d = S.data;
     if (!classes().length) {
       return `<span class="muted">Alle Schülerinnen und Schüler stehen in einer gemeinsamen Liste.</span><div class="spacer"></div>`
         + `<button class="btn small" data-cls="students" title="Anmeldungen und Arbeiten mehrerer Schüler auf einmal löschen">Schüler verwalten</button>`
-        + `<button class="btn small" data-cls="manage" title="Klassen anlegen: Wer sich anmeldet, landet in der aktiven Klasse">＋ Klassen anlegen</button>`;
+        + `<button class="btn small" data-cls="manage" title="Klassen anlegen: Wer sich anmeldet, landet in der aktiven Klasse">＋ Klassen anlegen</button>`
+        + backupBtn;
     }
     const n = id => d.allStudents.filter(s => (s.class || '') === id).length;
     const opts = classes().map(c => `<option value="${esc(c.id)}" ${c.id === S.view ? 'selected' : ''}>${esc(c.name)}${c.id === d.activeClass ? ' (aktiv)' : ''} – ${n(c.id)}</option>`);
@@ -115,7 +117,8 @@
       : `<span class="lock-state off">nicht aktiv</span>${S.view ? `<button class="btn small primary" data-cls="activate" title="Neue Anmeldungen landen dann in dieser Klasse">Diese Klasse aktiv schalten</button>` : ''}`;
     return `<label class="class-pick">Klasse <select id="sel-class" aria-label="Angezeigte Klasse">${opts.join('')}</select></label>${state}<div class="spacer"></div>`
       + `<button class="btn small" data-cls="students" title="Anmeldungen und Arbeiten mehrerer Schüler dieser Klasse auf einmal löschen">Schüler verwalten</button>`
-      + `<button class="btn small" data-cls="manage">Klassen verwalten</button>`;
+      + `<button class="btn small" data-cls="manage">Klassen verwalten</button>`
+      + backupBtn;
   }
   function renderClassBar() {
     const html = classBarHTML();
@@ -283,7 +286,89 @@
     if (b.dataset.cls === 'manage') openClasses();
     if (b.dataset.cls === 'students') openStudents();
     if (b.dataset.cls === 'activate') activate(S.view);
+    if (b.dataset.cls === 'backup') openBackup();
   });
+
+  // ---------------------------------------------------------------- Daten sichern und wiederherstellen
+  const fmtDate = t => new Date(t * 1000).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const pad = n => String(n).padStart(2, '0');
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+  function countsText(c) {
+    return [c.classes ? '• ' + plural(c.classes, 'Klasse', 'Klassen') : null,
+      '• ' + plural(c.students, 'Schülerin bzw. Schüler', 'Schülerinnen und Schüler'),
+      '• ' + plural(c.works, 'Arbeit', 'Arbeiten'),
+      c.customTasks ? '• ' + plural(c.customTasks, 'eigene Aufgabe', 'eigene Aufgaben') : null].filter(Boolean).join('\n');
+  }
+
+  async function sendBackup(url, file) {
+    let res;
+    try {
+      res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + S.token }, body: file });
+    } catch (e) { throw new Error('Keine Verbindung zum NetzWerkstatt-Server.'); }
+    let data = {};
+    try { data = await res.json(); } catch (e) { /* leer */ }
+    if (!res.ok) throw new Error(data.error || ('Fehler ' + res.status));
+    return data;
+  }
+
+  function openBackup(msg) {
+    const last = Number(store.get('nw_last_backup')) || 0;
+    const body = openModal(`<h2 class="modal-title">Daten sichern</h2>
+      <div class="backup-part">
+        <h3>Sicherung herunterladen</h3>
+        <p class="muted small">Speichert alles in einer Datei: Klassen, Schülerinnen und Schüler, alle Arbeiten, Freischaltungen, freigegebene Musterlösungen und Vorführungen sowie deine eigenen Aufgaben. Das Lehrer-Passwort ist nicht enthalten, die Namen der Schülerinnen und Schüler schon: Bewahre die Datei so sicher auf wie andere Schülerdaten, z. B. im Dienst-Cloudspeicher der Schule.</p>
+        <div class="row"><button class="btn primary" id="bk-down">Sicherung herunterladen</button>
+        <span class="muted small">${last ? 'Zuletzt auf diesem Gerät: ' + fmtDate(last) : ''}</span></div>
+      </div>
+      <div class="backup-part">
+        <h3>Aus einer Sicherung wiederherstellen</h3>
+        <p class="muted small">Ersetzt <b>alle</b> jetzigen Daten durch die aus der Sicherungsdatei – zum Beispiel nach einem Rechnerwechsel. Raumcode und Lehrer-Passwort bleiben, wie sie sind. Der bisherige Stand wird vorher automatisch neben dem Programm gespeichert.</p>
+        <div class="row"><button class="btn" id="bk-up">Sicherungsdatei wählen …</button></div>
+        <input type="file" id="bk-file" accept=".json,application/json" hidden>
+      </div>
+      <p class="error" id="bk-error" role="alert">${esc(msg || '')}</p>`);
+    const err = body.querySelector('#bk-error');
+    body.querySelector('#bk-down').addEventListener('click', async ev => {
+      const btn = ev.currentTarget;
+      btn.disabled = true; err.textContent = '';
+      try {
+        let res;
+        try { res = await fetch('/api/teacher/backup', { headers: { Authorization: 'Bearer ' + S.token } }); }
+        catch (e) { throw new Error('Keine Verbindung zum NetzWerkstatt-Server.'); }
+        if (!res.ok) { let d = {}; try { d = await res.json(); } catch (e) { /* leer */ } throw new Error(d.error || ('Fehler ' + res.status)); }
+        const text = await res.text();
+        const n = new Date();
+        download(`netzwerkstatt-sicherung-${n.getFullYear()}-${pad(n.getMonth() + 1)}-${pad(n.getDate())}-${pad(n.getHours())}${pad(n.getMinutes())}.json`, text);
+        store.set('nw_last_backup', String(Math.floor(Date.now() / 1000)));
+        toast('Sicherung heruntergeladen. Sie steht in deinem Download-Ordner.', 'ok');
+        closeModal();
+      } catch (e) { err.textContent = e.message; btn.disabled = false; }
+    });
+    const fileInp = body.querySelector('#bk-file');
+    body.querySelector('#bk-up').addEventListener('click', () => fileInp.click());
+    fileInp.addEventListener('change', async () => {
+      const file = fileInp.files[0];
+      if (!file) return;
+      if (file.size > 256 * 1024 * 1024) { err.textContent = 'Die Datei ist zu groß.'; return; }
+      let info;
+      try { info = await sendBackup('/api/teacher/restore-check', file); } catch (e) { err.textContent = e.message; return; }
+      const text = `Alle jetzigen Daten durch diese Sicherung ersetzen?${info.created ? `\nSicherung vom ${fmtDate(info.created)}` : ''}\n\nDarin stehen:\n${countsText(info.counts)}\n\n`
+        + 'Alles, was seit der Sicherung dazugekommen ist, ist danach in der Lehreransicht weg. Wer sich seitdem neu angemeldet hat, muss sich noch einmal anmelden. Der bisherige Stand wird vorher neben dem Programm gespeichert.';
+      if (!(await confirmBox(text, 'Wiederherstellen', true))) { openBackup(); return; }
+      try {
+        const r = await sendBackup('/api/teacher/restore', file);
+        S.selected.clear();
+        S.view = null; store.del('nw_view_class');
+        await load();
+        const done = openModal(`<h2 class="modal-title">Sicherung wiederhergestellt</h2>
+          <p>Die Daten aus der Sicherung sind jetzt da:</p><p class="confirm-text">${esc(countsText(r.counts))}</p>
+          <p class="muted small">Der vorherige Stand liegt neben dem Programm in der Datei <b>${esc(r.copy)}</b>. Falls du die falsche Sicherung erwischt hast, kannst du diese Datei genauso wiederherstellen.</p>
+          <div class="row end"><button class="btn primary" id="bk-ok">OK</button></div>`);
+        done.querySelector('#bk-ok').addEventListener('click', closeModal);
+      } catch (e) { openBackup(e.message); }
+    });
+  }
 
   // ---------------------------------------------------------------- Darstellung
   function taskObj() { return NWTasks.byId(S.task); }

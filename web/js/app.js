@@ -43,10 +43,42 @@
   const taskParam = new URLSearchParams(location.search).get('aufgabe');
   if (taskParam) history.replaceState(null, '', location.pathname);
 
+  // Geteilte iPads: Wer das Gerät länger nicht benutzt hat, wird beim nächsten Öffnen gefragt,
+  // ob noch dieselbe Person davor sitzt. Sonst arbeitet der Nächste im fremden Konto weiter.
+  const AWAY = 20 * 60 * 1000;
+  let lastMark = 0;
+  function markActive() {
+    const now = Date.now();
+    if (now - lastMark < 30000) return;
+    lastMark = now; store.set('nw_last', String(now));
+  }
+  document.addEventListener('pointerdown', markActive, { passive: true });
+  document.addEventListener('keydown', markActive);
+  function stillMe(name) {
+    return new Promise(resolve => {
+      const body = openModal(`<h2 class="modal-title">Bist du ${esc(name)}?</h2>
+        <p>Auf diesem Gerät ist <b>${esc(name)}</b> angemeldet. Wenn du jemand anderes bist, melde dich bitte mit deinem eigenen Namen an.</p>
+        <div class="row end"><button class="btn ghost" data-r="0">Nein, ich bin jemand anderes</button><button class="btn primary" data-r="1">Ja, ich bin ${esc(name)}</button></div>`);
+      document.getElementById('modal-close').hidden = true;
+      body.querySelectorAll('button[data-r]').forEach(b => b.addEventListener('click', () => {
+        document.getElementById('modal-close').hidden = false;
+        closeModal(); resolve(b.dataset.r === '1');
+      }));
+    });
+  }
+
   async function start() {
     if (!S.token) { show('login'); if (roomParam) setTimeout(() => $('login-name').focus(), 50); return; }
     try {
-      setMe(await api('GET', '/api/me', undefined, S.token));
+      const me = await api('GET', '/api/me', undefined, S.token);
+      const last = Number(store.get('nw_last')) || 0;
+      if (!me.preview && Date.now() - last > AWAY && (show('login'), !(await stillMe(me.name)))) {
+        store.del('nw_token'); S.token = null;
+        show('login');
+        return;
+      }
+      markActive();
+      setMe(me);
       const free = NWTasks.all().find(t => t.free);
       const wanted = taskParam && NWTasks.byId(taskParam);
       if (freeParam && free && visible(free)) openTask(free.id);
@@ -66,6 +98,7 @@
       const r = await api('POST', '/api/login', { name: $('login-name').value, room: $('login-room').value, code: $('login-code').value });
       S.token = r.token;
       store.set('nw_token', r.token);
+      lastMark = 0; markActive();
       setMe(await api('GET', '/api/me', undefined, S.token));
       $('login-code').value = '';
       if (r.newCode) toast(`Dein Code ist gespeichert, ${r.name}. Merke ihn dir gut!`, 'ok');
@@ -353,8 +386,14 @@
     if (!b || readOnly()) return;
     // Verbindungswerkzeug: noch einmal antippen schaltet zurück auf „Auswählen“
     if (b.dataset.tool) { setTool(S.tool === b.dataset.tool ? 'move' : b.dataset.tool); return; }
-    const [type, preset] = b.dataset.type.split(':');
-    const p = NWView.freeSpot(S.net, type, $('canvas'));
+    // Gerade aus der Leiste gezogen: das Gerät liegt schon auf der Arbeitsfläche
+    if (palDragDone && ev.timeStamp - palDragDone < 600) { palDragDone = 0; return; }
+    addFromPalette(b.dataset.type);
+  });
+  /** Gerät aus der Geräteleiste anlegen – an einer freien Stelle oder dort, wo es hingezogen wurde. */
+  function addFromPalette(spec, at) {
+    const [type, preset] = spec.split(':');
+    const p = at ? NWView.clampPos(at.x, at.y, type) : NWView.freeSpot(S.net, type, $('canvas'));
     const d = NW.createDevice(S.net, type, p.x, p.y);
     if (preset && SERVER_PRESETS[preset]) {
       const names = new Set(S.net.devices.map(o => o.name));
@@ -369,10 +408,73 @@
     setTool('move');
     renderAll();
     scheduleSave();
+  }
+
+  // Geräte aus der Leiste auf die Arbeitsfläche ziehen (Maus und Finger), zusätzlich zum Antippen.
+  // Maus: sofort ziehen. Finger: seitlich wegziehen oder kurz gedrückt halten und dann ziehen –
+  // so bleiben Leiste und Seite mit dem Finger weiter rollbar.
+  let palDrag = null, palDragDone = 0;
+  const HOLD_MS = 250;
+  function palDragEnd(ev, drop) {
+    const g = palDrag;
+    if (!g) return;
+    palDrag = null;
+    clearTimeout(g.timer);
+    if (g.ghost) g.ghost.remove();
+    $('canvas').classList.remove('drop-ok');
+    if (!g.active) return;
+    palDragDone = ev.timeStamp || 1;
+    if (drop && overCanvas(ev) && S.net && !readOnly()) addFromPalette(g.type, NWView.toWorld($('canvas'), ev));
+  }
+  function overCanvas(ev) {
+    const r = $('canvas').getBoundingClientRect();
+    return ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+  }
+  function palDragStart(ev) {
+    const g = palDrag;
+    g.active = true;
+    clearTimeout(g.timer);
+    try { g.btn.setPointerCapture(g.pid); } catch (e) { /* schon beendet */ }
+    const gh = document.createElement('div');
+    gh.className = 'pal-ghost';
+    gh.setAttribute('aria-hidden', 'true');
+    gh.innerHTML = NWView.iconSVG(g.type.split(':')[0], 40);
+    document.body.appendChild(gh);
+    g.ghost = gh;
+    palDragMove(ev);
+  }
+  function palDragMove(ev) {
+    const g = palDrag;
+    g.ghost.style.transform = `translate(${ev.clientX}px, ${ev.clientY}px)`;
+    $('canvas').classList.toggle('drop-ok', overCanvas(ev));
+  }
+  palette.addEventListener('pointerdown', ev => {
+    const b = ev.target.closest('.pal-btn[data-type]');
+    if (palDrag) palDragEnd(ev, false);
+    if (!b || readOnly() || !ev.isPrimary || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
+    palDrag = { btn: b, type: b.dataset.type, pid: ev.pointerId, x: ev.clientX, y: ev.clientY, touch: ev.pointerType !== 'mouse', active: false, last: ev };
+    if (palDrag.touch) palDrag.timer = setTimeout(() => { if (palDrag && !palDrag.active) palDragStart(palDrag.last); }, HOLD_MS);
   });
+  palette.addEventListener('pointermove', ev => {
+    const g = palDrag;
+    if (!g || ev.pointerId !== g.pid) return;
+    g.last = ev;
+    if (g.active) { palDragMove(ev); return; }
+    const dx = ev.clientX - g.x, dy = ev.clientY - g.y;
+    if (Math.hypot(dx, dy) < 8) return;
+    // Mit dem Finger: seitlich ziehen startet das Ziehen, senkrecht rollt die Seite (dann bricht der Browser ab)
+    if (!g.touch || Math.abs(dx) > Math.abs(dy)) palDragStart(ev);
+    else { clearTimeout(g.timer); palDrag = null; }
+  });
+  palette.addEventListener('pointerup', ev => { if (palDrag && ev.pointerId === palDrag.pid) palDragEnd(ev, true); });
+  palette.addEventListener('pointercancel', ev => { if (palDrag && ev.pointerId === palDrag.pid) palDragEnd(ev, false); });
+  // Während des Ziehens darf die Seite nicht mitrollen (iPad)
+  palette.addEventListener('touchmove', ev => { if (palDrag && palDrag.active) ev.preventDefault(); }, { passive: false });
+  // Langes Drücken soll kein Kontextmenü öffnen
+  palette.addEventListener('contextmenu', ev => { if (ev.target.closest('.pal-btn[data-type]')) ev.preventDefault(); });
 
   const HINTS = {
-    move: 'Tippe ein Gerät oder eine Verbindung an, um es einzustellen und zu testen (z. B. Ping). Geräte kannst du auch verschieben. Zum Verbinden tippe in der Geräteleiste z. B. auf „Netzwerkkabel“.',
+    move: 'Tippe ein Gerät oder eine Verbindung an, um es einzustellen und zu testen (z. B. Ping). Geräte kannst du auch verschieben oder aus der Geräteleiste auf die Fläche ziehen. Zum Verbinden tippe in der Geräteleiste z. B. auf „Netzwerkkabel“.',
     kabel: 'Tippe nacheinander auf die zwei Geräte, die du mit einem Kabel verbinden willst.',
     glasfaser: 'Tippe nacheinander auf die zwei Geräte (z. B. Switches in verschiedenen Gebäuden), die eine Glasfaserleitung quer durch die Stadt verbinden soll.',
     wlan: 'Tippe auf einen Access Point oder Router und dann auf ein Tablet, Smartphone oder einen Laptop.',

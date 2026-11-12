@@ -103,5 +103,30 @@
     }).join('') + '</ul></div>';
   }
 
-  root.NWCommon = { store, api, esc, toast, openModal, closeModal, confirmBox, showNetwork, goalsHTML, quizHTML };
+  // Am PC mit Maus heißt es „Klicke“ statt „Tippe“. Die Texte stehen einmal (für das iPad)
+  // in den Aufgaben und Hinweisen; hier werden sie beim Anzeigen passend umgeschrieben.
+  const WORDS = { Tippe: 'Klicke', tippe: 'klicke', Antippen: 'Anklicken', antippen: 'anklicken', tippst: 'klickst', Tippen: 'Klicken', tippen: 'klicken', antippst: 'anklickst' };
+  const WORD_RE = /\b(Tippe|tippe|Antippen|antippen|antippst|tippst|Tippen|tippen)\b/g;
+  const mouse = !!(root.matchMedia && root.matchMedia('(hover: hover) and (pointer: fine)').matches);
+  function mouseWords(s) { return mouse ? String(s).replace(WORD_RE, w => WORDS[w]) : String(s); }
+  function fixNode(n) {
+    if (n.nodeType === 3) { const t = mouseWords(n.data); if (t !== n.data) n.data = t; return; }
+    if (n.nodeType !== 1 || n.closest('input, textarea, [contenteditable]')) return;
+    for (const el of [n, ...n.querySelectorAll('[title]')]) if (el.title) el.title = mouseWords(el.title);
+    const w = document.createTreeWalker(n, NodeFilter.SHOW_TEXT);
+    for (let t = w.nextNode(); t; t = w.nextNode()) fixNode(t);
+  }
+  if (mouse && root.MutationObserver && root.document) {
+    document.addEventListener('DOMContentLoaded', () => {
+      fixNode(document.body);
+      new MutationObserver(list => {
+        for (const m of list) {
+          if (m.type === 'characterData') fixNode(m.target);
+          else m.addedNodes.forEach(fixNode);
+        }
+      }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    });
+  }
+
+  root.NWCommon = { store, api, esc, toast, mouseWords, openModal, closeModal, confirmBox, showNetwork, goalsHTML, quizHTML };
 })(window);
