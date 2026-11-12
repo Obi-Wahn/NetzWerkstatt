@@ -139,6 +139,13 @@ func loadStore(path string) *Store {
 	if s.TeacherPassword == "" || oldPassword.MatchString(s.TeacherPassword) {
 		s.TeacherPassword = randomWord()
 	}
+	s.normalize()
+	s.writeFile(s.snapshotLocked())
+	return s
+}
+
+// normalize ergänzt fehlende Teile der Daten (ältere Versionen, Sicherungsdateien).
+func (s *Store) normalize() {
 	if s.Works == nil {
 		s.Works = map[string]map[string]Work{}
 	}
@@ -167,8 +174,6 @@ func loadStore(path string) *Store {
 			s.ActiveClass = s.Classes[0].ID
 		}
 	}
-	s.writeFile(s.snapshotLocked())
-	return s
 }
 
 // saveLocked merkt vor, dass sich die Daten geändert haben. Aufrufer muss s.mu halten.
@@ -1285,6 +1290,8 @@ func (srv *Server) routes() http.Handler {
 		s.mu.Unlock()
 		writeJSON(w, 200, map[string]bool{"ok": true})
 	})
+
+	srv.backupRoutes(mux)
 
 	// ------------------------------------------------ statische Dateien
 	sub, _ := fs.Sub(webFiles, "web")
