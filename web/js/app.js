@@ -198,7 +198,7 @@
     if (!S.net.events) S.net.events = [];
     S.submitted = !!(saved && saved.submitted);
     S.onServer = !!(saved && saved.network);
-    S.selected = null; S.pending = null; S.netKind = null;
+    S.selected = null; S.pending = null; S.netKind = null; S.goalPrev = null;
     setTool('move');
     document.querySelector('.side').classList.remove('task-open');
     $('task-title').textContent = task.title;
@@ -262,7 +262,7 @@
     renderAll(); scheduleSave();
     toast('Die Aufgabe beginnt wieder von vorn.', 'ok', { label: 'Rückgängig', run: () => {
       if (readOnly() || S.task !== task || $('screen-editor').hidden) return;
-      S.net = before; S.selected = null; renderAll(); scheduleSave();
+      S.net = before; S.selected = null; S.goalPrev = null; renderAll(); scheduleSave();
       toast('Dein altes Netzwerk ist wieder da.', 'ok');
     } });
   });
@@ -634,20 +634,32 @@
   function renderGoals() {
     const res = NWTasks.evaluate(S.task, S.net);
     const next = level() === 'leicht' ? res.findIndex(x => !x) : -1;
+    const now = res.findIndex(x => !x); // das Ziel, das jetzt dran ist (auf jeder Stufe)
     const done = res.filter(Boolean).length;
+    // Gerade erreichte Ziele erkennen, um den Wechsel zum nächsten Ziel deutlich zu zeigen
+    const prev = S.goalPrev;
+    const fresh = prev && prev.length === res.length && !readOnly() ? res.map((x, i) => x && !prev[i]) : res.map(() => false);
+    S.goalPrev = res;
     // Kompakt (Gerät gewählt): erreichte Ziele als eine Zeile zusammengefasst, offene ausgeschrieben
     const sum = done && done < res.length ? `<li class="sum">✓ ${done} von ${res.length} Zielen erreicht</li>` : '';
+    const anyFresh = fresh.some(Boolean);
     $('goals').innerHTML = sum + S.task.goals.map((g, i) => {
       const h = i === next ? NWStufen.help(S.task, i) : '';
-      return `<li class="${res[i] ? 'done' : ''}${i === next ? ' next' : ''}">${esc(g.text)}${h ? `<span class="goal-help">👉 ${esc(h)}</span>` : ''}</li>`;
+      const cls = [res[i] ? 'done' : '', i === next ? 'next' : '', i === now ? 'now' : '', fresh[i] ? 'fresh' : '', anyFresh && i === now ? 'fresh-now' : ''].filter(Boolean).join(' ');
+      const tag = i === now ? '<span class="goal-tag">Jetzt dran</span>' : '';
+      return `<li class="${cls}">${tag}${esc(g.text)}${h ? `<span class="goal-help">👉 ${esc(h)}</span>` : ''}</li>`;
     }).join('');
     S.allDone = !!(S.task.goals.length && res.every(Boolean));
     $('all-done').hidden = !S.allDone || readOnly();
     // Kurzfassung, solange ein Gerät eingestellt wird: Fortschritt und das nächste offene Ziel
-    const open = S.task.goals.find((g, i) => !res[i]);
-    $('task-mini').innerHTML = !S.task.goals.length ? '' : `<span class="mini-prog${open ? '' : ' ok'}">${open ? `${done} von ${res.length} Zielen` : '✓ Alle Ziele erreicht'}</span>`
-      + (open ? `<span class="mini-next">Als Nächstes: ${esc(open.text)}${next >= 0 && NWStufen.help(S.task, next) ? `<span class="goal-help">👉 ${esc(NWStufen.help(S.task, next))}</span>` : ''}</span>` : '')
+    const open = S.task.goals[now];
+    const bar = `<span class="mini-bar" aria-hidden="true">${res.map((x, i) => `<i class="${x ? 'done' : ''}${i === now ? ' now' : ''}"></i>`).join('')}</span>`;
+    $('task-mini').innerHTML = !S.task.goals.length ? '' : `<span class="mini-prog${open ? '' : ' ok'}">${open ? `${done} von ${res.length} Zielen geschafft` : '✓ Alle Ziele erreicht'}${bar}</span>`
+      + (open ? `<span class="mini-next${anyFresh ? ' fresh-now' : ''}"><b class="mini-label">Als Nächstes${S.task.goals.length > 1 ? ` (Ziel ${now + 1})` : ''}:</b> ${esc(open.text)}${next >= 0 && NWStufen.help(S.task, next) ? `<span class="goal-help">👉 ${esc(NWStufen.help(S.task, next))}</span>` : ''}</span>` : '')
       + `<button type="button" class="mini-open" data-act-task="open"><span class="when-zu">Ganze Aufgabe zeigen ▾</span><span class="when-auf">Aufgabe wieder kürzen ▴</span></button>`;
+    // Ziel geschafft: kurze Meldung mit dem nächsten Ziel (beim Erreichen aller Ziele übernimmt „Jetzt abgeben“)
+    if (anyFresh && open) toast(`✓ Ziel geschafft! Als Nächstes: ${open.text}`, 'ok goal');
+    else if (anyFresh && S.allDone && !S.task.free) toast('✓ Alle Ziele erreicht! Du kannst jetzt abgeben.', 'ok goal');
     renderQuiz();
     updateCardMore();
     updateNextStep();
@@ -1569,7 +1581,7 @@ ${faultFinderHTML(link, ro)}
     renderAll(); scheduleSave();
     toast(`${what} gelöscht.`, '', { label: 'Rückgängig', run: () => {
       if (readOnly() || S.task !== task || $('screen-editor').hidden) return;
-      S.net = before; renderAll(); scheduleSave();
+      S.net = before; S.goalPrev = null; renderAll(); scheduleSave();
       toast(`${what} ist wieder da.`, 'ok');
     } });
   }

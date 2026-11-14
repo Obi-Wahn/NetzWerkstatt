@@ -50,7 +50,7 @@
     }
     t.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { t.hidden = true; }, action ? 7000 : kind === 'error' ? 5000 : 2800);
+    toastTimer = setTimeout(() => { t.hidden = true; }, action ? 7000 : kind === 'error' || /\bgoal\b/.test(kind || '') ? 5000 : 2800);
   }
 
   function openModal(html, opts) {
