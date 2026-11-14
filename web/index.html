@@ -56,7 +56,7 @@
 <section id="screen-editor" class="screen editor" hidden>
   <header class="topbar">
     <a id="btn-teacher" class="btn" href="lehrer.html" hidden title="Zurück zur Lehreransicht">← Lehreransicht</a>
-    <button id="btn-back" class="btn ghost">← Aufgaben</button>
+    <button id="btn-back" class="btn ghost">← <span class="when-next">Zurück zu den </span>Aufgaben</button>
     <h1 id="task-title" class="task-title"></h1>
     <div class="spacer"></div>
     <span id="save-state" class="save-state"></span>
@@ -87,7 +87,8 @@
         <svg id="canvas" class="canvas" role="img" aria-label="Arbeitsfläche mit dem Netzwerk"></svg>
         <div id="netkinds" class="netkinds" aria-live="polite"></div>
         <div id="readonly-banner" class="readonly-banner" hidden>
-          Abgegeben – du kannst nichts mehr ändern. <button id="btn-unsubmit" class="btn small">Abgabe zurücknehmen</button>
+          <span>Abgegeben – du kannst nichts mehr ändern.</span>
+          <span class="ro-actions"><button id="btn-unsubmit" class="btn small">Abgabe zurücknehmen</button><button id="btn-back2" class="btn small primary">← Zurück zu den Aufgaben</button></span>
         </div>
       </div>
       <section class="log-wrap" id="log-wrap">
@@ -113,7 +114,7 @@
         <button id="task-more" type="button">Ganzen Aufgabentext lesen</button>
         <ul id="goals" class="goals"></ul>
         <div id="quiz" class="quiz" hidden></div>
-        <div id="all-done" class="all-done" hidden>Alle Ziele erreicht! Du kannst jetzt abgeben.</div>
+        <div id="all-done" class="all-done" hidden>Alle Ziele erreicht! Tippe oben rechts auf <b>„Jetzt abgeben“</b> ↗</div>
         <details id="task-tip-wrap"><summary>Tipp</summary><p id="task-tip"></p></details>
         <details id="task-think-wrap" hidden><summary>Zum Nachdenken</summary><p id="task-think"></p></details>
         <button id="card-more" class="card-more" type="button" hidden>▼ Weitere Ziele weiter unten</button>

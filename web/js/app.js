@@ -227,6 +227,7 @@
     location.href = S.task && !S.task.free ? 'lehrer.html?aufgabe=' + encodeURIComponent(S.task.id) : 'lehrer.html';
   });
 
+  $('btn-back2').addEventListener('click', () => $('btn-back').click());
   $('btn-back').addEventListener('click', async () => {
     await flushSave();
     await refreshMe();
@@ -602,7 +603,7 @@
     $('readonly-banner').hidden = !readOnly();
     $('btn-submit').disabled = readOnly();
     $('btn-reset').disabled = readOnly();
-    $('btn-submit').textContent = readOnly() ? 'Abgegeben ✓' : 'Abgeben';
+    updateNextStep();
     document.body.classList.toggle('is-readonly', readOnly());
     updatePalUp();
   }
@@ -640,7 +641,8 @@
       const h = i === next ? NWStufen.help(S.task, i) : '';
       return `<li class="${res[i] ? 'done' : ''}${i === next ? ' next' : ''}">${esc(g.text)}${h ? `<span class="goal-help">👉 ${esc(h)}</span>` : ''}</li>`;
     }).join('');
-    $('all-done').hidden = !(S.task.goals.length && res.every(Boolean)) || readOnly();
+    S.allDone = !!(S.task.goals.length && res.every(Boolean));
+    $('all-done').hidden = !S.allDone || readOnly();
     // Kurzfassung, solange ein Gerät eingestellt wird: Fortschritt und das nächste offene Ziel
     const open = S.task.goals.find((g, i) => !res[i]);
     $('task-mini').innerHTML = !S.task.goals.length ? '' : `<span class="mini-prog${open ? '' : ' ok'}">${open ? `${done} von ${res.length} Zielen` : '✓ Alle Ziele erreicht'}</span>`
@@ -648,6 +650,16 @@
       + `<button type="button" class="mini-open" data-act-task="open"><span class="when-zu">Ganze Aufgabe zeigen ▾</span><span class="when-auf">Aufgabe wieder kürzen ▴</span></button>`;
     renderQuiz();
     updateCardMore();
+    updateNextStep();
+  }
+
+  // Alle Ziele erreicht: „Abgeben“ hervorheben; nach dem Abgeben ist „Zurück zu den Aufgaben“ der nächste Schritt
+  function updateNextStep() {
+    const ready = !readOnly() && !S.task.free && S.allDone;
+    $('btn-submit').textContent = readOnly() ? 'Abgegeben ✓' : ready ? '✓ Jetzt abgeben' : 'Abgeben';
+    $('btn-submit').classList.toggle('ready', ready);
+    $('btn-submit').classList.toggle('sent', readOnly());
+    $('btn-back').classList.toggle('next', readOnly());
   }
 
   // Ist die Aufgabe kompakt und passt nicht ganz hinein, zeigt ein Hinweis unten, dass es weitergeht

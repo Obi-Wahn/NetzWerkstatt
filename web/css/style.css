@@ -801,3 +801,31 @@ table.cmp col.k { width: 26%; }
 @media (min-width: 861px) and (max-width: 1100px) {
   .workspace:not(.demo-space) { grid-template-columns: 290px minmax(0, 1fr) 136px; }
 }
+
+/* Nächster Schritt in der Kopfzeile: alle Ziele erreicht → „Jetzt abgeben“ leuchtet grün;
+   nach dem Abgeben → „Zurück zu den Aufgaben“ wird zum Hauptknopf. */
+#btn-back .when-next { display: none; }
+#btn-back.next .when-next { display: inline; }
+.btn.primary.ready, #btn-back.next {
+  background: var(--ok); border-color: var(--ok); color: var(--on-color); font-weight: 700;
+  animation: next-pulse 1.6s ease-out infinite;
+}
+.btn.primary.ready { padding-left: 18px; padding-right: 18px; }
+#btn-back.next { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+/* Abgegeben: ruhig und grün statt eines ausgegrauten blauen Knopfs */
+.btn.primary.sent:disabled { opacity: 1; background: var(--ok-soft); border-color: var(--ok-soft); color: var(--ok); }
+@keyframes next-pulse {
+  0% { box-shadow: 0 0 0 0 var(--next-glow); }
+  70%, 100% { box-shadow: 0 0 0 10px transparent; }
+}
+.btn.primary.ready { --next-glow: rgba(31, 138, 76, .55); }
+#btn-back.next { --next-glow: rgba(29, 95, 168, .5); }
+:root[data-theme="dark"] .btn.primary.ready { --next-glow: rgba(79, 198, 132, .55); }
+:root[data-theme="dark"] #btn-back.next { --next-glow: rgba(94, 166, 245, .5); }
+@media (prefers-reduced-motion: reduce) {
+  .btn.primary.ready, #btn-back.next { animation: none; box-shadow: 0 0 0 3px var(--next-glow); }
+}
+.readonly-banner .ro-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.readonly-banner .btn.primary { margin: 0; }
+/* iPad hochkant: Platz für „Zurück zu den Aufgaben“, damit die Kopfzeile nicht umbricht */
+@media (max-width: 900px) { #screen-editor .topbar .theme-btn span { display: none; } }
