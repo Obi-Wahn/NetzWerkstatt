@@ -731,3 +731,61 @@ table.cmp col.k { width: 26%; }
 @supports (-webkit-touch-callout: none) {
   input:not([type="checkbox"]):not([type="radio"]), select, textarea { font-size: 16px; }
 }
+
+/* ---------------------------------------------------------------- Bereiche deutlich kennzeichnen */
+/* Jeder Bereich (Geräte und Kabel, Aufgabe, Gerät einstellen, Datenpakete) hat eine gut sichtbare Überschrift mit Symbol */
+.area-head { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 0 0 7px; border-bottom: 2px solid var(--brand-line);
+  font-size: 1em; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--brand); line-height: 1.2; }
+.card h3.area-head { color: var(--brand); font-size: 1em; }
+.area-ico { flex: none; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.palette > .area-head { font-size: .78em; gap: 5px; margin: 2px 2px 4px; padding-bottom: 6px; }
+.palette > .area-head .area-ico { width: 18px; height: 18px; }
+
+/* Einstellungen: auch ohne gewähltes Gerät sichtbar, damit klar ist, wo sie erscheinen */
+.inspector.empty { border: 2px dashed var(--brand-line); background: var(--panel); }
+.insp-empty { color: var(--muted); font-size: .95em; margin: 0; }
+.inspector:not(.empty) > .area-head { padding-right: 36px; }
+.inspector .insp-close { top: 8px; right: 8px; }
+
+/* Gerät gewählt: Die Aufgabe schrumpft auf eine Kurzfassung, die Einstellungen bekommen den Platz */
+.task-mini { display: none; }
+.side.has-sel .task-mini { display: grid; gap: 4px; font-size: .9em; }
+.side.has-sel:not(.task-open) .task-card > :not(.area-head):not(.task-mini) { display: none; }
+.side.has-sel:not(.task-open) #task-intro, .side.has-sel:not(.task-open) #task-more, .side.has-sel:not(.task-open) #goals,
+.side.has-sel:not(.task-open) #level-wrap, .side.has-sel:not(.task-open) #card-more { display: none; }
+.side.has-sel:not(.task-open) .task-card { max-height: none; overflow: visible; }
+.side.has-sel .task-card .area-head { margin-bottom: 6px; }
+.mini-prog { font-weight: 700; }
+.mini-prog.ok { color: var(--ok); }
+.mini-next { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
+.mini-open { justify-self: start; font: inherit; font-size: .92em; font-weight: 700; color: var(--brand); background: none; border: 0; padding: 4px 0; min-height: 32px; cursor: pointer; }
+.side.task-open .task-mini { order: -1; }
+.mini-open .when-auf, .side.task-open .mini-open .when-zu { display: none; }
+.side.task-open .mini-open .when-auf { display: inline; }
+
+/* Datenpakete: leer nur eine Zeile, mit Paketen größer, über die Überschrift einklappbar */
+.log-wrap { flex: none; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.log-head { width: 100%; margin: 0; padding: 7px 12px; border: 0; border-bottom: 1px solid var(--line); background: var(--panel-2); font: inherit; font-size: .85em; font-weight: 800; text-align: left; cursor: pointer; touch-action: manipulation; }
+.log-head .area-ico { width: 19px; height: 19px; }
+.log-count { font-weight: 600; color: var(--muted); text-transform: none; letter-spacing: 0; }
+.log-head .chev { margin-left: auto; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; transition: transform .15s; }
+.log-wrap .log { border: 0; border-radius: 0; height: min(150px, 20vh); }
+.log-wrap.empty .log { height: auto; }
+.log-wrap.empty .log-head { cursor: default; }
+.log-wrap.empty .log-head .chev { display: none; }
+.log-wrap.zu .log { display: none; }
+.log-wrap.zu .log-head { border-bottom: 0; }
+.log-wrap.zu .log-head .chev { transform: rotate(-90deg); }
+
+/* Modus Verbinden/Löschen: farbiger Rahmen, Schild oben und Knopf „Fertig“ */
+.canvas-wrap.mode-connect { border: 3px solid var(--accent); }
+.canvas-wrap.mode-delete { border: 3px solid var(--bad); }
+.mode-chip { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); z-index: 3; pointer-events: none; white-space: nowrap;
+  background: var(--accent); color: #1c1c1c; font-weight: 800; font-size: .9em; padding: 5px 14px; border-radius: 99px; box-shadow: 0 3px 10px rgba(20, 35, 60, .2); }
+.canvas-wrap.mode-delete .mode-chip { background: var(--bad); color: var(--on-color); }
+.tool-done { background: var(--ok); border-color: var(--ok); color: var(--on-color); font-weight: 700; }
+.tool-done[hidden] { display: none; }
+@media (max-width: 600px) { .tool-done span { display: inline; } }
+@media (max-width: 860px) {
+  .palette > .area-head { flex: 0 0 100%; font-size: .9em; margin: 0 0 2px; }
+}

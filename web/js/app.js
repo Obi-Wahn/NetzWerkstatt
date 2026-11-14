@@ -6,7 +6,14 @@
   const $ = id => document.getElementById(id);
 
   // Hinweis im leeren Paket-Protokoll
-  const LOG_EMPTY = '<div class="log-empty">Hier erscheinen die Datenpakete, sobald du einen Ping sendest, eine Webseite aufrufst, einen Internetdienst nutzt oder per DHCP eine Adresse anforderst. <b>So geht’s:</b> Tippe auf der Arbeitsfläche ein Gerät an und dann oben bei „Testen“ z. B. auf „Ping“.</div>';
+  // Solange keine Pakete unterwegs waren, ist der Bereich nur eine Zeile hoch
+  const LOG_EMPTY = '<div class="log-empty">Noch keine Pakete unterwegs. Sie erscheinen hier, sobald du z. B. einen Ping sendest: Gerät antippen und bei „Testen“ auf „Ping“.</div>';
+  // Symbole der Bereichsüberschriften (24×24)
+  const AREA_ICO = {
+    geraete: '<rect x="3" y="4" width="7" height="6" rx="1"/><rect x="14" y="4" width="7" height="6" rx="1"/><rect x="3" y="14" width="7" height="6" rx="1"/><path d="M14 17h7M17.5 13.5v7"/>',
+    einstellen: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/>',
+  };
+  const areaHead = (k, text) => `<h3 class="area-head"><svg viewBox="0 0 24 24" class="area-ico" aria-hidden="true">${AREA_ICO[k]}</svg><span>${text}</span></h3>`;
 
   const S = {
     token: store.get('nw_token'),
@@ -202,7 +209,7 @@
     $('task-think').textContent = task.think || '';
     $('task-think-wrap').hidden = !task.think;
     $('btn-submit').hidden = !!task.free;
-    $('log').innerHTML = LOG_EMPTY;
+    resetLog();
     $('save-state').textContent = '';
     show('editor');
     updateSolutionButton();
@@ -247,7 +254,7 @@
     if (before.level) S.net.level = before.level; // Neu anfangen behält den Schwierigkeitsgrad
     S.selected = null; S.pending = null; S.netKind = null;
     setTool('move');
-    $('log').innerHTML = LOG_EMPTY;
+    resetLog();
     renderAll(); scheduleSave();
     toast('Die Aufgabe beginnt wieder von vorn.', 'ok', { label: 'Rückgängig', run: () => {
       if (readOnly() || S.task !== task || $('screen-editor').hidden) return;
@@ -357,7 +364,7 @@
       }
       return `<button class="pal-btn" data-type="${t}" title="${plain} hinzufügen">${NWView.iconSVG(t.split(':')[0], 30)}<span>${esc(l)}</span></button>`;
     };
-    const html = groups.map(([id, title, items]) => {
+    const html = areaHead('geraete', 'Geräte und Kabel') + groups.map(([id, title, items]) => {
       const zu = palClosed.has(id);
       return `<section class="pal-group${zu ? ' zu' : ''}" data-group="${id}"><button class="palette-title" data-group="${id}" aria-expanded="${!zu}" title="${zu ? 'Aufklappen' : 'Einklappen'}"><span>${esc(title)}</span><svg viewBox="0 0 24 24" class="chev" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>` +
         `<div class="pal-items">${items.map(btn).join('')}</div></section>`;
@@ -512,8 +519,25 @@
     document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
     renderPalette();
     showHint(t);
+    showMode(t);
     if (S.net) renderCanvas();
   }
+  // Verbinden und Löschen sind „Modi“: Ein farbiger Rahmen um die Arbeitsfläche und ein Knopf „Fertig“
+  // zeigen, dass man gerade nicht einstellt – und wie man wieder zum Einstellen kommt.
+  const MODE_NAMES = { kabel: 'Verbinden mit Netzwerkkabel', glasfaser: 'Verbinden mit Glasfaser', wlan: 'Verbinden per WLAN', bluetooth: 'Koppeln per Bluetooth', delete: 'Löschen' };
+  function showMode(t) {
+    const m = MODE_NAMES[t];
+    const wrap = document.querySelector('.canvas-wrap');
+    wrap.classList.toggle('mode-connect', !!m && t !== 'delete');
+    wrap.classList.toggle('mode-delete', t === 'delete');
+    $('mode-chip').hidden = !m;
+    $('mode-chip').textContent = m ? 'Modus: ' + m : '';
+    $('tool-done').hidden = !m;
+    $('tool-done-lbl').textContent = t === 'delete' ? 'Fertig mit Löschen' : 'Fertig mit Verbinden';
+    $('tool-done').title = 'Zurück zu „Auswählen“: Geräte antippen, einstellen und testen';
+    if (!S.selected) renderInspectorBody();
+  }
+  $('tool-done').addEventListener('click', () => setTool('move'));
   document.querySelectorAll('.tool').forEach(b => b.addEventListener('click', () => {
     if (readOnly() && b.dataset.tool !== 'move') return;
     setTool(b.dataset.tool);
@@ -612,6 +636,11 @@
       return `<li class="${res[i] ? 'done' : ''}${i === next ? ' next' : ''}">${esc(g.text)}${h ? `<span class="goal-help">👉 ${esc(h)}</span>` : ''}</li>`;
     }).join('');
     $('all-done').hidden = !(S.task.goals.length && res.every(Boolean)) || readOnly();
+    // Kurzfassung, solange ein Gerät eingestellt wird: Fortschritt und das nächste offene Ziel
+    const open = S.task.goals.find((g, i) => !res[i]);
+    $('task-mini').innerHTML = !S.task.goals.length ? '' : `<span class="mini-prog${open ? '' : ' ok'}">${open ? `${done} von ${res.length} Zielen` : '✓ Alle Ziele erreicht'}</span>`
+      + (open ? `<span class="mini-next">Als Nächstes: ${esc(open.text)}</span>` : '')
+      + `<button type="button" class="mini-open" data-act-task="open"><span class="when-zu">Ganze Aufgabe zeigen ▾</span><span class="when-auf">Aufgabe wieder kürzen ▴</span></button>`;
     renderQuiz();
     updateCardMore();
   }
@@ -1139,23 +1168,35 @@
   };
   $('task-intro').addEventListener('click', () => { if (document.querySelector('.side.has-sel')) toggleIntro(); });
   $('task-more').addEventListener('click', toggleIntro);
+  // Gerät gewählt: Die Aufgabe ist nur eine Kurzfassung oben; „Aufgabe ganz zeigen“ klappt sie auf
+  $('task-card').addEventListener('click', ev => {
+    const b = ev.target.closest('[data-act-task]');
+    if (!b) return;
+    document.querySelector('.side').classList.toggle('task-open');
+    updateCardMore();
+  });
 
   function renderInspector() {
     renderInspectorBody();
     if (!S.selected) return;
-    insp.insertAdjacentHTML('afterbegin', '<button class="insp-close btn ghost" data-act="close-insp" aria-label="Einstellungen schließen" title="Schließen">✕</button>');
+    const isLink = S.net.links.some(l => l.id === S.selected);
+    insp.insertAdjacentHTML('afterbegin', areaHead('einstellen', isLink ? 'Verbindung einstellen' : 'Gerät einstellen') + '<button class="insp-close btn ghost" data-act="close-insp" aria-label="Einstellungen schließen" title="Schließen">✕</button>');
+    document.querySelector('.side').classList.remove('task-open');
     positionInspector();
   }
 
   function renderInspectorBody() {
     document.querySelector('.side').classList.toggle('has-sel', !!S.selected);
     updateCardMore();
-    insp.hidden = !S.selected && wide.matches;
+    insp.hidden = false;
+    insp.classList.toggle('empty', !S.selected);
     insp.classList.toggle('sheet', !!S.selected && !wide.matches);
     document.body.classList.toggle('has-sheet', !!S.selected && !wide.matches);
     const ro = readOnly();
     if (!S.selected) {
-      insp.innerHTML = `<h3>Einstellungen</h3><p class="muted">Tippe auf ein Gerät, um es einzustellen und zu testen.</p>`;
+      insp.innerHTML = areaHead('einstellen', 'Gerät einstellen') + (S.tool !== 'move' && !ro
+        ? `<p class="insp-empty">Du bist gerade im Modus <b>${esc(MODE_NAMES[S.tool] || '')}</b>. Zum Einstellen tippe über der Arbeitsfläche auf <b>„✓ ${S.tool === 'delete' ? 'Fertig mit Löschen' : 'Fertig mit Verbinden'}“</b>.</p>`
+        : `<p class="insp-empty">Tippe auf der Arbeitsfläche ein Gerät oder ein Kabel an. Dann kannst du es <b>hier</b> einstellen (z. B. die IP-Adresse) und testen (z. B. Ping).</p>`);
       insp.style.left = insp.style.top = '';
       return;
     }
@@ -1814,16 +1855,28 @@ ${faultFinderHTML(link, ro)}
   });
 
   // ---------------------------------------------------------------- Protokoll (Paket-Log)
+  // Bereich „Datenpakete“: leer nur eine Zeile, mit Paketen größer; über die Überschrift ein- und ausklappbar
+  const logWrap = $('log-wrap');
+  function updateLog() {
+    const n = $('log').querySelectorAll('.log-entry').length;
+    logWrap.classList.toggle('empty', !n);
+    $('log-count').textContent = n ? `(${n})` : '';
+    $('log-toggle').setAttribute('aria-expanded', String(!logWrap.classList.contains('zu')));
+  }
+  function resetLog() { $('log').innerHTML = LOG_EMPTY; logWrap.classList.remove('zu'); updateLog(); }
+  $('log-toggle').addEventListener('click', () => { logWrap.classList.toggle('zu'); updateLog(); });
   function logStep(step) {
     const log = $('log');
     const empty = log.querySelector('.log-empty');
     if (empty) empty.remove();
+    logWrap.classList.remove('zu');
     const div = document.createElement('div');
     div.className = 'log-entry ' + (step.kind || '') + (step.ok === false ? ' failed' : '') + (step.tcp ? ' tcp' : '');
     const pc = /^TCP/.test(step.proto || '') ? ' tcp' : /^UDP/.test(step.proto || '') ? ' udp' : '';
     div.innerHTML = `<span class="log-label">${esc(step.label)}</span>${step.proto ? `<span class="log-proto${pc}">${esc(step.proto)}</span>` : ''}<span class="log-text">${esc(step.text || '')}</span>${step.note ? `<span class="log-note">↔ ${esc(step.note)}</span>` : ''}`;
     log.prepend(div);
     while (log.children.length > 40) log.lastChild.remove();
+    updateLog();
   }
   function logResult(ok, text, hint) {
     const log = $('log');
@@ -1832,7 +1885,11 @@ ${faultFinderHTML(link, ro)}
     // Nach der Abgabe ist nichts mehr änderbar: Tipps zum Ändern gehen erst nach dem Zurücknehmen
     if (!ok && hint && readOnly()) hint = 'Du hast schon abgegeben. Nimm die Abgabe zurück, um etwas zu ändern. ' + hint;
     div.innerHTML = `<span class="log-label">${ok ? '✓ Erfolg' : '✕ Problem'}</span><span class="log-text">${esc(text)}${hint ? `<br><span class="log-hint">Tipp: ${esc(hint)}</span>` : ''}</span>`;
+    const empty = log.querySelector('.log-empty');
+    if (empty) empty.remove();
     log.prepend(div);
+    logWrap.classList.remove('zu');
+    updateLog();
   }
 
   async function runSteps(steps) {

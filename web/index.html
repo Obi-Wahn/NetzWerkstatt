@@ -75,6 +75,7 @@
           <svg viewBox="0 0 24 24" class="ti"><path d="M12 3v18M3 12h18M12 3l-3 3M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg><span>Auswählen</span></button>
         <button class="tool" data-tool="delete" title="Gerät oder Verbindung löschen">
           <svg viewBox="0 0 24 24" class="ti"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg><span>Löschen</span></button>
+        <button id="tool-done" class="tool tool-done" type="button" hidden>✓ <span id="tool-done-lbl">Fertig mit Verbinden</span></button>
         <div id="tool-hint" class="tool-hint"></div>
         <div class="seg addr-switch" role="group" aria-label="Adressen auf der Arbeitsfläche">
           <button class="on" data-addr="v4" aria-pressed="true" title="IPv4-Adressen anzeigen">IPv4</button>
@@ -82,18 +83,27 @@
         </div>
       </div>
       <div class="canvas-wrap">
+        <div id="mode-chip" class="mode-chip" hidden></div>
         <svg id="canvas" class="canvas" role="img" aria-label="Arbeitsfläche mit dem Netzwerk"></svg>
         <div id="netkinds" class="netkinds" aria-live="polite"></div>
         <div id="readonly-banner" class="readonly-banner" hidden>
           Abgegeben – du kannst nichts mehr ändern. <button id="btn-unsubmit" class="btn small">Abgabe zurücknehmen</button>
         </div>
       </div>
-      <div class="log" id="log" aria-live="polite"><div class="log-empty">Hier erscheinen die Datenpakete, sobald du einen Ping sendest, eine Webseite aufrufst oder einen Internetdienst nutzt.</div></div>
+      <section class="log-wrap" id="log-wrap">
+        <button id="log-toggle" class="area-head log-head" type="button" aria-expanded="true" aria-controls="log">
+          <svg viewBox="0 0 24 24" class="area-ico" aria-hidden="true"><path d="M3 7l9-4 9 4-9 4-9-4zM3 7v10l9 4 9-4V7M12 11v10"/></svg>
+          <span>Datenpakete</span><span id="log-count" class="log-count"></span>
+          <svg viewBox="0 0 24 24" class="chev" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <div class="log" id="log" aria-live="polite"></div>
+      </section>
     </div>
 
     <aside class="side">
       <section class="card task-card" id="task-card">
-        <h3>Aufgabe</h3>
+        <h3 class="area-head"><svg viewBox="0 0 24 24" class="area-ico" aria-hidden="true"><path d="M9 4h6v3H9zM7 5H5v16h14V5h-2M8.5 12l2 2 4-4M8.5 17h7"/></svg><span>Aufgabe</span></h3>
+        <div id="task-mini" class="task-mini"></div>
         <div id="level-wrap" class="level-wrap">
           <div class="level-head" id="level-head">Wie viel Hilfe möchtest du?</div>
           <div id="level-pick" class="seg level-pick" role="group" aria-labelledby="level-head"></div>
