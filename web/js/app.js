@@ -513,6 +513,7 @@
     });
   }
   function setTool(t) {
+    if (!HINTS[t]) t = 'move'; // unbekanntes Werkzeug: lieber Auswählen als gar nichts
     S.tool = t; S.pending = null;
     // Beim Verbinden oder Löschen stört das Einstellungsfenster nur
     if (t !== 'move' && S.selected && S.net) { S.selected = null; renderInspector(); }
@@ -538,7 +539,8 @@
     if (!S.selected) renderInspectorBody();
   }
   $('tool-done').addEventListener('click', () => setTool('move'));
-  document.querySelectorAll('.tool').forEach(b => b.addEventListener('click', () => {
+  // Nur die Werkzeugknöpfe (der Knopf „Fertig“ hat kein data-tool und schaltet selbst zurück)
+  document.querySelectorAll('.tool[data-tool]').forEach(b => b.addEventListener('click', () => {
     if (readOnly() && b.dataset.tool !== 'move') return;
     setTool(b.dataset.tool);
   }));
