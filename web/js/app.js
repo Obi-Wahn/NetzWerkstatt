@@ -641,7 +641,7 @@
     // Kurzfassung, solange ein Gerät eingestellt wird: Fortschritt und das nächste offene Ziel
     const open = S.task.goals.find((g, i) => !res[i]);
     $('task-mini').innerHTML = !S.task.goals.length ? '' : `<span class="mini-prog${open ? '' : ' ok'}">${open ? `${done} von ${res.length} Zielen` : '✓ Alle Ziele erreicht'}</span>`
-      + (open ? `<span class="mini-next">Als Nächstes: ${esc(open.text)}</span>` : '')
+      + (open ? `<span class="mini-next">Als Nächstes: ${esc(open.text)}${next >= 0 && NWStufen.help(S.task, next) ? `<span class="goal-help">👉 ${esc(NWStufen.help(S.task, next))}</span>` : ''}</span>` : '')
       + `<button type="button" class="mini-open" data-act-task="open"><span class="when-zu">Ganze Aufgabe zeigen ▾</span><span class="when-auf">Aufgabe wieder kürzen ▴</span></button>`;
     renderQuiz();
     updateCardMore();
