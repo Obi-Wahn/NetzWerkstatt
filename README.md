@@ -6,9 +6,9 @@ Die NetzWerkstatt ist für den Informatikunterricht der Sekundarstufe I gedacht.
 
 Das Programm läuft auf dem Rechner der Lehrkraft (Windows, Linux oder Mac) und muss nicht installiert werden. Die Schülerinnen und Schüler brauchen nur einen Browser, am PC oder auf dem iPad.
 
-![Aufgabe „Eine Webseite aufrufen“: Der PC ist über den Heimrouter mit dem Internetanbieter verbunden, ein HTTP-Request ist auf dem Weg zum Webserver. Unten stehen die Pakete mit Protokoll und Port, rechts die Aufgabe mit abgehakten Zielen und die Einstellungen des PCs.](docs/bilder/webseite-aufrufen.png)
+![Aufgabe „Eine Webseite aufrufen“: Der PC ist über den Heimrouter mit dem Internetanbieter verbunden, ein HTTP-Request ist auf dem Weg zum Webserver. Unten stehen die Pakete mit Protokoll und Port, links die Aufgabe (alle Ziele erreicht) und darunter die Einstellungen des PCs, rechts die Geräteleiste.](docs/bilder/webseite-aufrufen.png)
 
-*Bauen und Testen auf einer Fläche: Links die Geräteleiste, in der Mitte das Netz mit den laufenden Datenpaketen, darunter das Protokoll (hier DNS-Anfrage, DNS-Antwort und HTTP-Request mit NAT), rechts die Aufgabe und die Einstellungen des angetippten Geräts.*
+*Bauen und Testen auf einer Fläche: Links die Aufgabe und die Einstellungen des angetippten Geräts, in der Mitte das Netz mit den laufenden Datenpaketen, darunter die Datenpakete (hier DNS-Anfrage, DNS-Antwort und HTTP-Request mit NAT), rechts die Geräteleiste.*
 
 ## Inhalt
 
