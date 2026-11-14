@@ -6,9 +6,9 @@ Die NetzWerkstatt ist für den Informatikunterricht der Sekundarstufe I gedacht.
 
 Das Programm läuft auf dem Rechner der Lehrkraft (Windows, Linux oder Mac) und muss nicht installiert werden. Die Schülerinnen und Schüler brauchen nur einen Browser, am PC oder auf dem iPad.
 
-![Aufgabe „Eine Webseite aufrufen“: Der PC ist über den Heimrouter mit dem Internetanbieter verbunden, ein HTTP-Request ist auf dem Weg zum Webserver. Unten stehen die Pakete mit Protokoll und Port, rechts die Aufgabe mit abgehakten Zielen und die Einstellungen des PCs.](docs/bilder/webseite-aufrufen.png)
+![Aufgabe „Eine Webseite aufrufen“: Der PC ist über den Heimrouter mit dem Internetanbieter verbunden, ein HTTP-Request ist auf dem Weg zum Webserver. Unten stehen die Pakete mit Protokoll und Port, links die Aufgabe (alle Ziele erreicht) und darunter die Einstellungen des PCs, rechts die Geräteleiste.](docs/bilder/webseite-aufrufen.png)
 
-*Bauen und Testen auf einer Fläche: Links die Geräteleiste, in der Mitte das Netz mit den laufenden Datenpaketen, darunter das Protokoll (hier DNS-Anfrage, DNS-Antwort und HTTP-Request mit NAT), rechts die Aufgabe und die Einstellungen des angetippten Geräts.*
+*Bauen und Testen auf einer Fläche: Links die Aufgabe und die Einstellungen des angetippten Geräts, in der Mitte das Netz mit den laufenden Datenpaketen, darunter die Datenpakete (hier DNS-Anfrage, DNS-Antwort und HTTP-Request mit NAT), rechts die Geräteleiste.*
 
 ## Inhalt
 
@@ -97,7 +97,7 @@ Das Fenster mit den Startmeldungen während der Stunde offen lassen. Zum Beenden
 
 ### Netze bauen und einstellen
 
-- **Baukasten:** Die Leiste links ist nach Kategorien sortiert, die sich einklappen lassen: Endgeräte (PC, Laptop, Tablet, Smartphone, Kopfhörer), aktive Komponenten (Switch, Access Point, Router), Verbindungen als passive Komponenten (Netzwerkkabel, Glasfaser, WLAN, Bluetooth, Bus-Kabel), Server (leer oder als Web-, DNS-, Mail-, Video-, Telefonie- oder Spiele-Server) und Internet (Internetanbieter, Rechenzentrum). In Aufgaben erscheint nur, was gebraucht wird. Funktioniert mit Maus und Finger (Windows-PCs und iPads).
+- **Baukasten:** Die Geräteleiste (am PC und iPad quer rechts, auf dem iPad hochkant oben) ist nach Kategorien sortiert, die sich einklappen lassen: Endgeräte (PC, Laptop, Tablet, Smartphone, Kopfhörer), aktive Komponenten (Switch, Access Point, Router), Verbindungen als passive Komponenten (Netzwerkkabel, Glasfaser, WLAN, Bluetooth, Bus-Kabel), Server (leer oder als Web-, DNS-, Mail-, Video-, Telefonie- oder Spiele-Server) und Internet (Internetanbieter, Rechenzentrum). In Aufgaben erscheint nur, was gebraucht wird. Funktioniert mit Maus und Finger (Windows-PCs und iPads).
 - **Anschlüsse:** Am Router und am Switch steht an jedem Kabel, in welchem Anschluss es steckt (WAN, LAN 1–3, Port 1–8). Belegte Buchsen sind im Gerät gefüllt.
 - **Netzwerk-Einstellungen:** IP-Adresse (IPv4), Gateway und DNS-Server (die Subnetzmaske ist fest 255.255.255.0) mit sofortigen Hinweisen, z. B. „lokale (private) Adresse“ oder „Das Gateway muss im selben Netz liegen“. Beim Eintragen von Hand werden passende freie Adressen, der Router als Gateway und ein vorhandener DNS-Server vorgeschlagen.
 - **Heimrouter:** Drei LAN-Anschlüsse und eingebautes WLAN bilden zusammen das Heimnetz (wie ein eingebauter Switch), dazu ein Internet-Anschluss (WAN) mit abschaltbarem eingebautem Modem. Ab Werk hat das Heimnetz eine freie Adresse (192.168.0.1, beim nächsten Router 192.168.1.1 …) und DHCP ist an. Kabel lassen sich zwischen LAN und WAN umstecken.

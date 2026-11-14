@@ -20,7 +20,7 @@
   // Hinweise für die Stufe „Leicht“: je Aufgabe ein Text pro Ziel (in derselben Reihenfolge wie die Ziele)
   const HELP = {
     'zwei-pcs': [
-      'Tippe links in der Geräteleiste zweimal auf „PC“.',
+      'Tippe in der Geräteleiste zweimal auf „PC“.',
       'Tippe in der Geräteleiste auf „Netzwerkkabel“ und dann nacheinander auf die beiden PCs.',
       'Tippe einen PC an. Unter „Netzwerk-Einstellungen“ trägst du z. B. 192.168.1.1 ein, beim anderen PC 192.168.1.2.',
       'Tippe einen PC an, schreibe unter „Ping“ die Adresse des anderen PCs in das Feld und sende den Ping.',
