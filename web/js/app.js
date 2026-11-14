@@ -200,6 +200,7 @@
     S.onServer = !!(saved && saved.network);
     S.selected = null; S.pending = null; S.netKind = null;
     setTool('move');
+    document.querySelector('.side').classList.remove('task-open');
     $('task-title').textContent = task.title;
     $('task-intro').textContent = task.intro;
     $('task-tip').textContent = task.tip || '';
@@ -214,6 +215,8 @@
     show('editor');
     updateSolutionButton();
     renderAll();
+    // Neue Aufgabe: Aufgabentext von oben an zeigen (nicht dort, wo die letzte Aufgabe gerollt war)
+    document.querySelector('.side').scrollTop = 0;
   }
 
   $('btn-teacher').addEventListener('click', async ev => {
@@ -1188,7 +1191,10 @@
   }
 
   function renderInspectorBody() {
-    document.querySelector('.side').classList.toggle('has-sel', !!S.selected);
+    const side = document.querySelector('.side');
+    // Einstellungen geschlossen: Die Aufgabe ist wieder ganz zu sehen – also oben anfangen
+    if (side.classList.contains('has-sel') && !S.selected && wide.matches) side.scrollTop = 0;
+    side.classList.toggle('has-sel', !!S.selected);
     updateCardMore();
     insp.hidden = false;
     insp.classList.toggle('empty', !S.selected);
