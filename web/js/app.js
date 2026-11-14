@@ -831,7 +831,7 @@
     openModal(`<h2 class="modal-title">Erkannte Topologie</h2>${parts.join('')}`, { wide: true });
   }
 
-  // ---------------------------------------------------------------- Einstellungen (rechte Spalte)
+  // ---------------------------------------------------------------- Einstellungen (Spalte unter der Aufgabe)
   const insp = $('inspector');
 
   function field(label, path, value, check, opts) {
@@ -1098,7 +1098,7 @@
     if (!el) return;
     el.open = true;
     if (wide.matches) {
-      // Rechte Spalte: Abschnitt direkt unter die oben stehende Aufgabe rollen
+      // Spalte mit Aufgabe und Einstellungen: Abschnitt direkt unter die oben stehende Aufgabe rollen
       const side = document.querySelector('.side');
       const top = el.getBoundingClientRect().top - $('task-card').getBoundingClientRect().bottom - 8;
       side.scrollBy({ top, behavior: 'smooth' });
@@ -1124,7 +1124,7 @@
   }, true);
 
   // ---------------------------------------------------------------- Einstellungen neben der Arbeitsfläche
-  // Auf großen Bildschirmen stehen die Einstellungen oben in der rechten Spalte, die Aufgabe
+  // Auf großen Bildschirmen stehen die Einstellungen in der linken Spalte unter der Aufgabe, die Aufgabe
   // rückt kompakt darunter. So verdecken sie nie Geräte oder Verbindungen auf der Arbeitsfläche.
   // Auf schmalen Bildschirmen (Tablet hochkant) sind sie eine Leiste unten; die Seite rollt dann
   // so, dass die Arbeitsfläche darüber frei bleibt.

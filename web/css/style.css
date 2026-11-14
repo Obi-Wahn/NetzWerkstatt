@@ -789,3 +789,13 @@ table.cmp col.k { width: 26%; }
 @media (max-width: 860px) {
   .palette > .area-head { flex: 0 0 100%; font-size: .9em; margin: 0 0 2px; }
 }
+
+/* Leserichtung von links nach rechts: zuerst die Aufgabe (mit den Einstellungen darunter), dann Arbeitsfläche, dann Geräte */
+@media (min-width: 861px) {
+  .workspace:not(.demo-space) { grid-template-columns: 330px minmax(0, 1fr) 144px; }
+  .workspace:not(.demo-space) > .side { order: -1; border-left: 0; border-right: 1px solid var(--line); }
+  .workspace:not(.demo-space) > .palette { order: 2; border-right: 0; border-left: 1px solid var(--line); }
+}
+@media (min-width: 861px) and (max-width: 1100px) {
+  .workspace:not(.demo-space) { grid-template-columns: 290px minmax(0, 1fr) 136px; }
+}
