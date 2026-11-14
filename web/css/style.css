@@ -302,13 +302,13 @@ input:disabled { background: var(--chip-bg); color: var(--muted); }
 .side { border-left: 1px solid var(--line); background: var(--bg); overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
 .card h3 { font-size: 1em; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
-.task-card p { font-size: .95em; }
+.task-card p { font-size: 1.05em; line-height: 1.5; color: var(--ink); }
 .goals { list-style: none; padding: 0; margin: 0 0 10px; display: grid; gap: 6px; }
-.goals li { position: relative; padding: 7px 8px 7px 36px; border-radius: 9px; background: var(--panel-2); font-size: .93em; }
-.goals li::before { content: ""; position: absolute; left: 9px; top: 8px; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--cloud-line); background: var(--input-bg); }
+.goals li { position: relative; padding: 8px 9px 8px 38px; border-radius: 9px; background: var(--panel-2); border: 2px solid transparent; font-size: 1.02em; line-height: 1.42; color: var(--ink); }
+.goals li::before { content: ""; position: absolute; left: 9px; top: 9px; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--cloud-line); background: var(--input-bg); }
 .goals li.done { background: var(--ok-soft); }
 .goals li.done::before { border-color: var(--ok); background: var(--ok); }
-.goals li.done::after { content: ""; position: absolute; left: 15px; top: 11px; width: 5px; height: 9px; border: solid var(--on-color); border-width: 0 2.5px 2.5px 0; transform: rotate(45deg); }
+.goals li.done::after { content: ""; position: absolute; left: 15px; top: 12px; width: 5px; height: 9px; border: solid var(--on-color); border-width: 0 2.5px 2.5px 0; transform: rotate(45deg); }
 .goals.compact li { padding-top: 4px; padding-bottom: 4px; }
 .goals.compact li::before { top: 5px; }
 .goals.compact li.done::after { top: 8px; }
@@ -418,12 +418,12 @@ select { font: inherit; width: 100%; padding: 8px; border: 1px solid var(--line)
 .side.has-sel #task-tip-wrap, .side.has-sel #task-think-wrap { display: none; }
 .side.has-sel .task-card { flex: none; padding: 10px 12px; position: sticky; top: -10px; z-index: 2; max-height: 40vh; overflow-y: auto; overscroll-behavior: contain; box-shadow: 0 6px 14px -8px rgba(20, 35, 60, .35); }
 .side.has-sel .task-card h3 { margin-bottom: 2px; }
-.side.has-sel #task-intro:not(.full) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; cursor: pointer; font-size: .88em; }
+.side.has-sel #task-intro:not(.full) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; cursor: pointer; font-size: .98em; }
 .side.has-sel #task-more { display: inline; }
 #task-more { display: none; font: inherit; font-size: .82em; font-weight: 600; color: var(--brand); background: none; border: 0; padding: 0 0 6px; cursor: pointer; }
-.side.has-sel .goals li { padding-top: 4px; padding-bottom: 4px; font-size: .86em; }
-.side.has-sel .goals li::before { top: 5px; }
-.side.has-sel .goals li.done::after { top: 8px; }
+.side.has-sel .goals li { padding-top: 5px; padding-bottom: 5px; font-size: .98em; }
+.side.has-sel .goals li::before { top: 6px; }
+.side.has-sel .goals li.done::after { top: 9px; }
 /* Kompakt: erreichte Ziele nur als Zusammenfassung, darunter die offenen */
 /* Kompakt (Gerät gewählt): Erklärung zur Hilfe ausblenden, damit mehr Ziele Platz haben */
 .side.has-sel .level-text { display: none; }
@@ -638,7 +638,7 @@ table.cmp col.k { width: 26%; }
 .level-pick { margin: 0 0 4px; }
 .level-text { font-size: .85em !important; color: var(--muted); margin: 0; }
 .stars { color: var(--warn); letter-spacing: 1px; font-size: .9em; }
-.goals li.next { outline: 2px solid var(--brand-line); }
+
 .goal-help { display: block; margin-top: 5px; font-size: .92em; color: var(--brand); font-weight: 600; }
 /* Auf der Stufe „Schwer“ gibt es keine 💡-Vorschläge */
 .stufe-schwer .chip.suggest { display: none; }
@@ -749,7 +749,7 @@ table.cmp col.k { width: 26%; }
 
 /* Gerät gewählt: Die Aufgabe schrumpft auf eine Kurzfassung, die Einstellungen bekommen den Platz */
 .task-mini { display: none; }
-.side.has-sel .task-mini { display: grid; gap: 4px; font-size: .9em; }
+.side.has-sel .task-mini { display: grid; gap: 6px; font-size: 1.04em; line-height: 1.45; color: var(--ink); }
 .side.has-sel:not(.task-open) .task-card > :not(.area-head):not(.task-mini) { display: none; }
 .side.has-sel:not(.task-open) #task-intro, .side.has-sel:not(.task-open) #task-more, .side.has-sel:not(.task-open) #goals,
 .side.has-sel:not(.task-open) #level-wrap, .side.has-sel:not(.task-open) #card-more { display: none; }
@@ -758,9 +758,9 @@ table.cmp col.k { width: 26%; }
 .mini-prog { font-weight: 700; }
 .mini-prog.ok { color: var(--ok); }
 /* Das nächste Ziel steht vollständig da (nicht abgeschnitten) */
-.mini-next { display: block; }
+.mini-next { display: block; padding: 8px 10px; border-radius: 9px; background: var(--brand-soft); border-left: 4px solid var(--brand); }
 .mini-next .goal-help { display: block; margin-top: 4px; }
-.mini-open { justify-self: start; font: inherit; font-size: .92em; font-weight: 700; color: var(--brand); background: none; border: 0; padding: 4px 0; min-height: 32px; cursor: pointer; }
+.mini-open { justify-self: start; font: inherit; font-size: .95em; font-weight: 700; color: var(--brand); background: none; border: 0; padding: 4px 0; min-height: 32px; cursor: pointer; }
 .side.task-open .task-mini { order: -1; }
 .mini-open .when-auf, .side.task-open .mini-open .when-zu { display: none; }
 .side.task-open .mini-open .when-auf { display: inline; }
@@ -829,3 +829,21 @@ table.cmp col.k { width: 26%; }
 .readonly-banner .btn.primary { margin: 0; }
 /* iPad hochkant: Platz für „Zurück zu den Aufgaben“, damit die Kopfzeile nicht umbricht */
 @media (max-width: 900px) { #screen-editor .topbar .theme-btn span { display: none; } }
+
+/* Aufgabe gut lesbar: das Ziel, das jetzt dran ist, hebt sich deutlich ab; erreichte Ziele sind abgehakt */
+.goals li.now { background: var(--brand-soft); border-color: var(--brand); }
+.goals li.now::before { border-color: var(--brand); }
+.goal-tag { display: inline-block; margin: 0 6px 2px 0; padding: 0 7px; border-radius: 6px; background: var(--brand); color: var(--brand-ink); font-size: .78em; font-weight: 700; vertical-align: 1px; }
+.goals li.done { color: var(--ink); }
+.mini-prog { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mini-bar { display: inline-flex; gap: 4px; }
+.mini-bar i { display: block; width: 18px; height: 8px; border-radius: 4px; background: var(--line-strong); }
+.mini-bar i.done { background: var(--ok); }
+.mini-bar i.now { background: var(--brand); }
+.mini-label { color: var(--brand); }
+/* Gerade ein Ziel geschafft: das erreichte Ziel blinkt grün, das nächste leuchtet kurz auf */
+.goals li.fresh { animation: goal-done 1.6s ease-out; }
+.goals li.fresh-now, .mini-next.fresh-now { animation: goal-next 1.6s ease-out .5s backwards; }
+@keyframes goal-done { 0%, 35% { box-shadow: 0 0 0 4px var(--ok); } 100% { box-shadow: 0 0 0 0 transparent; } }
+@keyframes goal-next { 0% { box-shadow: 0 0 0 0 var(--brand); } 30% { box-shadow: 0 0 0 5px var(--brand); } 100% { box-shadow: 0 0 0 0 transparent; } }
+@media (prefers-reduced-motion: reduce) { .goals li.fresh, .goals li.fresh-now, .mini-next.fresh-now { animation: none; } }
