@@ -163,8 +163,16 @@ func loadStore(path string) *Store {
 	if b, err := os.ReadFile(path); err == nil {
 		if err := json.Unmarshal(b, s); err != nil {
 			// Beschädigte Datei sichern und neu beginnen, statt abzubrechen.
+			// Die Kopie wird aus dem schon gelesenen Inhalt geschrieben: Das klappt auch dann,
+			// wenn die Datei gerade von einem anderen Programm geöffnet ist und sich deshalb
+			// nicht umbenennen lässt. Klappt auch das nicht, startet der Server nicht, damit
+			// die alte Datei nicht mit leeren Daten überschrieben wird.
 			backup := path + ".defekt-" + time.Now().Format("2006-01-02-150405")
-			_ = os.Rename(path, backup)
+			if err := os.WriteFile(backup, b, 0o600); err != nil {
+				fatal("Die Datendatei ist beschädigt und konnte nicht gesichert werden:\n      " + path +
+					"\n    (" + err.Error() + ")\n    Damit sie nicht überschrieben wird, startet die NetzWerkstatt nicht.\n" +
+					"    Bitte die Datei an einen anderen Ort kopieren oder umbenennen und dann neu starten.")
+			}
 			warn("Die Datendatei war beschädigt und wurde gesichert als:\n      " + backup + "\n    Es wird mit einer leeren Datei weitergemacht.")
 			*s = Store{path: path}
 		}
@@ -176,7 +184,9 @@ func loadStore(path string) *Store {
 		s.TeacherPassword = randomWord()
 	}
 	s.normalize()
-	s.writeFile(s.snapshotLocked())
+	s.wmu.Lock()
+	s.writeFileLocked(s.snapshotLocked())
+	s.wmu.Unlock()
 	return s
 }
 
@@ -244,13 +254,12 @@ func (s *Store) snapshotLocked() []byte {
 	return b
 }
 
-// writeFile schreibt die Daten atomar (erst in eine Hilfsdatei, dann umbenennen).
-func (s *Store) writeFile(b []byte) {
+// writeFileLocked schreibt die Daten atomar (erst in eine Hilfsdatei, dann umbenennen).
+// Aufrufer muss s.wmu halten.
+func (s *Store) writeFileLocked(b []byte) {
 	if b == nil {
 		return
 	}
-	s.wmu.Lock()
-	defer s.wmu.Unlock()
 	tmp := s.path + ".tmp"
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		log.Println("Speichern fehlgeschlagen:", err)
@@ -269,16 +278,31 @@ func (s *Store) markDirty() {
 	s.mu.Unlock()
 }
 
+// beforeWrite wird nur in Tests gesetzt: Es läuft zwischen dem Erstellen des Datenstands
+// und dem Schreiben, damit Tests dort gezielt einen zweiten Speichervorgang einschieben können.
+var beforeWrite func()
+
 // flush schreibt vorgemerkte Änderungen sofort in die Datei.
+//
+// Die Schreibsperre s.wmu wird schon vor dem Erstellen des Datenstands genommen und erst
+// nach dem Schreiben freigegeben. So kommen die Datenstände in derselben Reihenfolge in
+// die Datei, in der sie erstellt wurden: Ein älterer Stand kann nie einen neueren
+// überschreiben, auch wenn mehrere Speichervorgänge gleichzeitig laufen (z. B. das
+// regelmäßige Speichern und das Beenden des Servers).
 func (s *Store) flush() {
+	s.wmu.Lock()
+	defer s.wmu.Unlock()
 	s.mu.Lock()
 	if !s.dirty {
 		s.mu.Unlock()
 		return
 	}
 	b := s.snapshotLocked()
-	s.mu.Unlock()
-	s.writeFile(b) // außerhalb der Sperre: Schüler können währenddessen weiterarbeiten
+	s.mu.Unlock() // Schüler können während des Schreibens weiterarbeiten
+	if beforeWrite != nil {
+		beforeWrite()
+	}
+	s.writeFileLocked(b)
 }
 
 // autoSave schreibt vorgemerkte Änderungen regelmäßig in die Datei.
