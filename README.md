@@ -84,6 +84,8 @@ Das Fenster mit den Startmeldungen während der Stunde offen lassen. Zum Beenden
 - **Der Raumcode ist anders als beim letzten Mal:** Er wird bei jedem Start neu ausgewürfelt. Wer schon angemeldet ist, arbeitet trotzdem einfach weiter. Ein fester Raumcode lässt sich mit einer [Startoption](#startoptionen-für-fortgeschrittene) festlegen.
 - **Das Programm wurde ein zweites Mal gestartet:** Dann öffnet es nur die Lehrkraft-Ansicht der bereits laufenden NetzWerkstatt.
 - **Das Lehrer-Passwort ist vergessen:** Es steht im Fenster mit den Startmeldungen und bleibt gespeichert, bis es geändert wird. Ein neues lässt sich mit der Startoption `-passwort` festlegen.
+- **Die Lehrkraft-Ansicht verlangt plötzlich das Passwort:** Eine Lehrer-Anmeldung verfällt nach 12 Stunden ohne Benutzung und nach einem Neustart des Programms. Solange die Lehrkraft-Ansicht offen ist, bleibt man angemeldet. Am Ende der Stunde am besten oben auf „Abmelden“ klicken, vor allem an einem Rechner, den auch andere benutzen.
+- **Ein Schüler kann sich nicht neu anmelden („schon sehr viele … angemeldet“):** Pro Klasse sind höchstens 150 Konten möglich. Nicht mehr benötigte Konten unter „Schüler verwalten“ löschen oder eine neue Klasse anlegen.
 
 ## Datenschutz
 

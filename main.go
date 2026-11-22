@@ -90,6 +90,11 @@ type Class struct {
 
 const maxClasses = 60
 
+// Höchstens so viele Schülerkonten je Klasse (bzw. ohne Klasse). Eine Klasse hat etwa 30,
+// mit Tippfehlern und Doppelanmeldungen auch mal mehr. Die Grenze verhindert, dass jemand
+// mit dem Raumcode die Datendatei mit beliebig vielen Konten füllt.
+const maxStudentsPerClass = 150
+
 var codeRe = regexp.MustCompile(`^[0-9]{4}$`)
 
 func codeHash(st *Student, code string) string {
@@ -475,7 +480,7 @@ func bearer(r *http.Request) string {
 type Server struct {
 	port          int
 	store         *Store
-	teacherTokens map[string]time.Time
+	teacherTokens map[string]time.Time // Anmeldungen der Lehrkraft: Token -> letzte Nutzung
 	tmu           sync.Mutex
 	// Fehlversuche beim Schüler-Code (Schüler-ID -> Anzahl, Sperre bis)
 	codeFails map[string]*codeFail
@@ -494,11 +499,36 @@ type codeFail struct {
 const maxCodeFails = 5
 const codeLockTime = time.Minute
 
+// Eine Lehrer-Anmeldung verfällt, wenn sie so lange nicht benutzt wurde. Solange die
+// Lehreransicht offen ist, fragt sie alle paar Sekunden nach und bleibt so angemeldet;
+// ein langer Schultag wird also nicht unterbrochen. Ein vergessener Lehrer-PC ist aber
+// spätestens am nächsten Morgen abgemeldet.
+const teacherIdle = 12 * time.Hour
+
 func (srv *Server) isTeacher(r *http.Request) bool {
 	srv.tmu.Lock()
 	defer srv.tmu.Unlock()
-	_, ok := srv.teacherTokens[bearer(r)]
-	return ok
+	tok := bearer(r)
+	last, ok := srv.teacherTokens[tok]
+	if !ok {
+		return false
+	}
+	now := time.Now()
+	if now.Sub(last) > teacherIdle {
+		delete(srv.teacherTokens, tok)
+		return false
+	}
+	srv.teacherTokens[tok] = now
+	return true
+}
+
+// dropOldTeacherTokens räumt verfallene Anmeldungen weg (aufrufen mit srv.tmu gesperrt).
+func (srv *Server) dropOldTeacherTokens() {
+	for tok, last := range srv.teacherTokens {
+		if time.Since(last) > teacherIdle {
+			delete(srv.teacherTokens, tok)
+		}
+	}
 }
 
 // codeLocked sagt, wie lange ein Schülerkonto nach zu vielen falschen Codes noch gesperrt ist.
@@ -639,6 +669,17 @@ func (srv *Server) routes() http.Handler {
 			}
 			srv.clearCodeFails(id)
 			writeJSON(w, 200, map[string]any{"token": tok, "name": n, "returning": true})
+			return
+		}
+		inClass := 0
+		for _, o := range s.Students {
+			if !o.Teacher && o.Class == s.ActiveClass {
+				inClass++
+			}
+		}
+		if inClass >= maxStudentsPerClass || len(s.Students) >= maxStudents {
+			s.mu.Unlock()
+			fail(w, 403, "Hier sind schon sehr viele Schülerinnen und Schüler angemeldet. Bitte sag deiner Lehrkraft Bescheid.")
 			return
 		}
 		st := &Student{ID: randomToken(6), Name: name, Token: randomToken(16), Created: time.Now().Unix(), Class: s.ActiveClass}
@@ -791,9 +832,18 @@ func (srv *Server) routes() http.Handler {
 		srv.tmu.Unlock()
 		tok := randomToken(16)
 		srv.tmu.Lock()
+		srv.dropOldTeacherTokens()
 		srv.teacherTokens[tok] = time.Now()
 		srv.tmu.Unlock()
 		writeJSON(w, 200, map[string]string{"token": tok})
+	})
+
+	// Abmelden: Die Anmeldung gilt danach auch auf dem Server nicht mehr.
+	mux.HandleFunc("POST /api/teacher/logout", func(w http.ResponseWriter, r *http.Request) {
+		srv.tmu.Lock()
+		delete(srv.teacherTokens, bearer(r))
+		srv.tmu.Unlock()
+		writeJSON(w, 200, map[string]bool{"ok": true})
 	})
 
 	mux.HandleFunc("GET /api/teacher/overview", func(w http.ResponseWriter, r *http.Request) {
@@ -823,17 +873,16 @@ func (srv *Server) routes() http.Handler {
 				own = s.Works[st.ID]
 				continue
 			}
+			// Ohne ?task= kommt kein einziges Netz mit, nur der Stand.
 			works := s.Works[st.ID]
-			if task != "" {
-				slim := make(map[string]Work, len(works))
-				for tid, wk := range works {
-					if tid != task || (oneClass && st.Class != cls) {
-						wk.Network = nil
-					}
-					slim[tid] = wk
+			slim := make(map[string]Work, len(works))
+			for tid, wk := range works {
+				if task == "" || tid != task || (oneClass && st.Class != cls) {
+					wk.Network = nil
 				}
-				works = slim
+				slim[tid] = wk
 			}
+			works = slim
 			rows = append(rows, row{ID: st.ID, Name: st.Name, Works: works, HasCode: st.CodeHash != "", Class: st.Class})
 		}
 		sort.Slice(rows, func(i, j int) bool { return strings.ToLower(rows[i].Name) < strings.ToLower(rows[j].Name) })
