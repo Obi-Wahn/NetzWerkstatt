@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -408,5 +409,78 @@ func TestFreigabenAusAlterDatei(t *testing.T) {
 	s.classByID("a1").Unlocked["ipv6"] = true
 	if s.classByID("b2").Unlocked["ipv6"] || s.Unlocked["ipv6"] {
 		t.Fatalf("Freigaben der Klassen müssen unabhängig sein")
+	}
+}
+
+func TestLehrerAnmeldungVerfaelltUndAbmelden(t *testing.T) {
+	srv, h, teacher := testServer(t)
+	if code, _ := call(t, h, "GET", "/api/teacher/overview?task=stern", teacher, nil); code != 200 {
+		t.Fatalf("Frische Anmeldung sollte gelten: %d", code)
+	}
+	// Lange nicht benutzt: verfällt
+	srv.tmu.Lock()
+	srv.teacherTokens[teacher] = time.Now().Add(-teacherIdle - time.Minute)
+	srv.tmu.Unlock()
+	if code, _ := call(t, h, "GET", "/api/teacher/overview?task=stern", teacher, nil); code != 401 {
+		t.Fatalf("Verfallene Anmeldung sollte abgelehnt werden: %d", code)
+	}
+	// Benutzung verlängert die Anmeldung
+	srv.tmu.Lock()
+	srv.teacherTokens["aktiv"] = time.Now().Add(-teacherIdle + time.Minute)
+	srv.tmu.Unlock()
+	if code, _ := call(t, h, "GET", "/api/teacher/overview?task=stern", "aktiv", nil); code != 200 {
+		t.Fatalf("Noch gültige Anmeldung sollte gelten: %d", code)
+	}
+	srv.tmu.Lock()
+	last := srv.teacherTokens["aktiv"]
+	srv.tmu.Unlock()
+	if time.Since(last) > time.Minute {
+		t.Fatalf("Benutzung sollte die Anmeldung verlängern")
+	}
+	// Abmelden: danach gilt die Anmeldung auch auf dem Server nicht mehr
+	if code, _ := call(t, h, "POST", "/api/teacher/logout", "aktiv", nil); code != 200 {
+		t.Fatalf("Abmelden: %d", code)
+	}
+	if code, _ := call(t, h, "GET", "/api/teacher/overview?task=stern", "aktiv", nil); code != 401 {
+		t.Fatalf("Nach dem Abmelden sollte die Anmeldung nicht mehr gelten: %d", code)
+	}
+}
+
+func TestSchuelerObergrenzeJeKlasse(t *testing.T) {
+	srv, h, teacher := testServer(t)
+	room := srv.store.RoomCode
+	srv.store.mu.Lock()
+	for i := 0; i < maxStudentsPerClass; i++ {
+		srv.store.Students = append(srv.store.Students, &Student{ID: randomToken(6), Name: fmt.Sprintf("S%d", i), Token: randomToken(16)})
+	}
+	srv.store.mu.Unlock()
+	if code, r := login(t, h, room, "Neu", "1234"); code != 403 {
+		t.Fatalf("Über der Obergrenze sollte keine neue Anmeldung klappen: %d %v", code, r)
+	}
+	// Wer schon ein Konto hat, kommt weiter hinein.
+	srv.store.mu.Lock()
+	srv.store.Students[0].CodeHash = codeHash(srv.store.Students[0], "1111")
+	srv.store.mu.Unlock()
+	if code, r := login(t, h, room, "S0", "1111"); code != 200 {
+		t.Fatalf("Vorhandenes Konto sollte sich anmelden können: %d %v", code, r)
+	}
+	// In einer neuen Klasse ist wieder Platz.
+	call(t, h, "POST", "/api/teacher/class-add", teacher, map[string]string{"name": "10a"})
+	_, r := call(t, h, "POST", "/api/teacher/class-add", teacher, map[string]string{"name": "10b"})
+	call(t, h, "POST", "/api/teacher/class-activate", teacher, map[string]string{"id": r["id"].(string)})
+	if code, r := login(t, h, room, "Neu", "1234"); code != 200 {
+		t.Fatalf("In einer neuen Klasse sollte die Anmeldung klappen: %d %v", code, r)
+	}
+}
+
+func TestUebersichtOhneAufgabeOhneNetze(t *testing.T) {
+	srv, h, teacher := testServer(t)
+	_, r := login(t, h, srv.store.RoomCode, "Ida", "1234")
+	stu := r["token"].(string)
+	call(t, h, "PUT", "/api/work/stern", stu, map[string]any{"network": map[string]any{"devices": []any{}, "links": []any{}}})
+	_, ov := call(t, h, "GET", "/api/teacher/overview", teacher, nil)
+	works := ov["students"].([]any)[0].(map[string]any)["works"].(map[string]any)
+	if works["stern"] == nil || works["stern"].(map[string]any)["network"] != nil {
+		t.Fatalf("Ohne Aufgabe sollte nur der Stand, aber kein Netz mitkommen: %v", works)
 	}
 }

@@ -45,7 +45,11 @@
   });
 
   $('btn-logout').addEventListener('click', () => {
-    store.del('nw_teacher'); S.token = null; clearInterval(S.timer); show('login');
+    // Auch auf dem Server abmelden, damit die Anmeldung nicht weiter gilt
+    if (S.token) api('POST', '/api/teacher/logout', {}, S.token).catch(() => {});
+    store.del('nw_teacher'); S.token = null; clearInterval(S.timer);
+    $('login-pw').value = ''; $('login-error').textContent = '';
+    show('login');
   });
 
   function loop() {
@@ -63,7 +67,11 @@
       $('conn-lost').hidden = true;
     } catch (e) {
       $('conn-lost').hidden = !e.offline;
-      if (e.status === 401) { store.del('nw_teacher'); S.token = null; clearInterval(S.timer); show('login'); }
+      if (e.status === 401) {
+        store.del('nw_teacher'); S.token = null; clearInterval(S.timer);
+        $('login-error').textContent = 'Du bist nicht mehr angemeldet (nach langer Pause oder einem Neustart des Programms). Bitte melde dich neu an.';
+        show('login');
+      }
       throw e;
     }
     // Inzwischen andere Aufgabe oder Klasse gewählt: Diese Antwort passt nicht mehr
