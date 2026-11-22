@@ -484,3 +484,68 @@ func TestUebersichtOhneAufgabeOhneNetze(t *testing.T) {
 		t.Fatalf("Ohne Aufgabe sollte nur der Stand, aber kein Netz mitkommen: %v", works)
 	}
 }
+
+// Zwei Speichervorgänge laufen gleichzeitig: Der erste hat seinen Datenstand schon
+// erstellt, schreibt aber erst, nachdem der zweite (neuere) Stand fertig ist. In der
+// Datei muss danach trotzdem der neuere Stand stehen.
+func TestGleichzeitigesSpeichernBehaeltNeuestenStand(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "daten.json")
+	st := loadStore(path)
+
+	stand := func(name string) {
+		st.mu.Lock()
+		st.Classes = []*Class{{ID: "k", Name: name}}
+		st.saveLocked()
+		st.mu.Unlock()
+	}
+
+	stand("alt")
+	angehalten := make(chan struct{})
+	weiter := make(chan struct{})
+	beforeWrite = func() {
+		beforeWrite = nil // nur der erste Speichervorgang wird angehalten
+		close(angehalten)
+		<-weiter
+	}
+	t.Cleanup(func() { beforeWrite = nil })
+
+	ersterFertig := make(chan struct{})
+	go func() { st.flush(); close(ersterFertig) }()
+	<-angehalten // erster Vorgang hat den alten Stand erstellt, aber noch nicht geschrieben
+
+	stand("neu") // währenddessen arbeitet jemand weiter
+	zweiterFertig := make(chan struct{})
+	go func() { st.flush(); close(zweiterFertig) }()
+	select {
+	case <-zweiterFertig: // ohne gemeinsame Sperre schreibt der zweite Vorgang zuerst
+	case <-time.After(200 * time.Millisecond): // mit Sperre wartet er auf den ersten
+	}
+	close(weiter)
+	<-ersterFertig
+	<-zweiterFertig
+
+	if got := loadStore(path).Classes; len(got) != 1 || got[0].Name != "neu" {
+		t.Fatalf("In der Datei steht ein älterer Stand: %+v", got)
+	}
+}
+
+// Eine beschädigte Datendatei wird gesichert, bevor mit leeren Daten weitergemacht wird.
+func TestBeschaedigteDateiWirdGesichert(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "daten.json")
+	kaputt := []byte(`{"students": [ kaputt`)
+	if err := os.WriteFile(path, kaputt, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st := loadStore(path)
+	if len(st.Students) != 0 {
+		t.Fatal("Nach beschädigter Datei sollte mit leeren Daten begonnen werden")
+	}
+	kopien, _ := filepath.Glob(path + ".defekt-*")
+	if len(kopien) != 1 {
+		t.Fatalf("Es sollte genau eine Sicherung der beschädigten Datei geben, gefunden: %v", kopien)
+	}
+	if b, _ := os.ReadFile(kopien[0]); !bytes.Equal(b, kaputt) {
+		t.Fatalf("Die Sicherung enthält nicht den alten Inhalt: %q", b)
+	}
+}
